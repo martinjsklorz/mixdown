@@ -21,14 +21,9 @@ final class Qwen3Recognizer: SpeechRecognizer, @unchecked Sendable {
         progress: @escaping @Sendable (Double) -> Void
     ) async throws -> Qwen3Recognizer {
         let directory = try ModelCache.directory(for: repositoryID, base: cacheBase)
-        // `fromPretrained` checks only for weights when offline and silently loads without a tokenizer
-        // if vocab.json is missing (it then returns token IDs as text), so require the tokenizer files too.
-        let cacheLooksComplete = ["vocab.json", "merges.txt"].allSatisfy {
-            FileManager.default.fileExists(atPath: directory.appendingPathComponent($0).path)
-        }
         let model = try await ModelCache.loadPreferringCache(
             repositoryID,
-            cacheLooksComplete: cacheLooksComplete,
+            cacheLooksComplete: cacheLooksComplete(in: directory),
             progress: progress
         ) { offline, progress in
             try await Qwen3ASRModel.fromPretrained(
@@ -39,6 +34,12 @@ final class Qwen3Recognizer: SpeechRecognizer, @unchecked Sendable {
             )
         }
         return Qwen3Recognizer(model: model)
+    }
+
+    /// `fromPretrained` checks only for weights when offline and silently loads without a tokenizer
+    /// if vocab.json is missing (it then returns token IDs as text), so require the tokenizer files too.
+    static func cacheLooksComplete(in directory: URL) -> Bool {
+        ModelCache.contains(weightsAnd: ["vocab.json", "merges.txt"], in: directory)
     }
 
     func languageHint(forISOCode code: String) -> String? {

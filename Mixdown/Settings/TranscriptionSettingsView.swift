@@ -50,10 +50,7 @@ struct TranscriptionSettingsView: View {
                 HStack {
                     modelStatus(for: coordinator.phase)
                     Spacer()
-                    Button("Download Model Now") {
-                        Task { await coordinator.prepareEngine() }
-                    }
-                    .disabled(!environment.canChangeModel)
+                    downloadAccessory(for: coordinator.phase)
                 }
             }
         }
@@ -82,6 +79,39 @@ struct TranscriptionSettingsView: View {
             Text(environment.coordinator.engineInfo.displayName)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    /// "Downloaded" once the model is on disk, otherwise a button to fetch it ahead of the first recording.
+    /// Nothing while preparing: the progress bar says it all, and files land on disk mid-download.
+    /// Re-evaluated whenever `phase` changes, so it flips to "Downloaded" when a download finishes.
+    @ViewBuilder
+    private func downloadAccessory(for phase: RecordingCoordinator.Phase) -> some View {
+        switch phase {
+        case .preparingModel:
+            EmptyView()
+        // A failed load may mean the cached files are broken; offer the button to retry.
+        case .failed:
+            downloadButton
+        default:
+            if SpeechSwiftEngine.isDownloaded(environment.model) {
+                Label {
+                    Text("Downloaded")
+                } icon: {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                }
+                .foregroundStyle(.secondary)
+            } else {
+                downloadButton
+            }
+        }
+    }
+
+    private var downloadButton: some View {
+        Button("Download Model Now") {
+            Task { await environment.coordinator.prepareEngine() }
+        }
+        .disabled(!environment.canChangeModel)
     }
 
     private func footer(for model: SpeechSwiftModel) -> String {

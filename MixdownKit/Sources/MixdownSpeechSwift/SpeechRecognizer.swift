@@ -31,6 +31,9 @@ protocol SpeechRecognizer: AnyObject, Sendable {
         progress: @escaping @Sendable (Double) -> Void
     ) async throws -> Self
 
+    /// Whether `directory` (from `ModelCache.directory`) holds enough of the model to try an offline load.
+    static func cacheLooksComplete(in directory: URL) -> Bool
+
     /// How the engine cuts the recording before calling `recognize`.
     var chunking: SpeechChunker.Configuration { get }
 
@@ -64,6 +67,13 @@ enum ModelCache {
     /// Per-repository directory below `base` (speech-swift's `models/<org>/<name>` layout). Created if missing.
     static func directory(for repositoryID: String, base: URL) throws -> URL {
         try HuggingFaceDownloader.getCacheDirectory(for: repositoryID, basePath: base)
+    }
+
+    /// Whether `directory` holds weights (all shards, if indexed) and every one of `files`.
+    /// Weights alone are all speech-swift's offline mode checks for.
+    static func contains(weightsAnd files: [String], in directory: URL) -> Bool {
+        HuggingFaceDownloader.weightsExist(in: directory)
+            && files.allSatisfy { FileManager.default.fileExists(atPath: directory.appendingPathComponent($0).path) }
     }
 
     /// Loads from disk without touching the network first, then falls back to an online load.
