@@ -1,0 +1,34 @@
+import Foundation
+
+/// Wording for model download progress, shared by the menu bar, the menu and Settings.
+enum DownloadProgressText {
+    /// "34% · about 6 min left", or just "34%" before there's an estimate.
+    static func detail(progress: Double, remaining: TimeInterval?) -> String {
+        let percent = percentText(progress)
+        guard let remaining else { return percent }
+        return "\(percent) · \(remainingText(remaining))"
+    }
+
+    /// Short text next to the menu bar icon: "6 min" once estimated, "34%" before.
+    static func compact(progress: Double, remaining: TimeInterval?) -> String {
+        guard let remaining else { return percentText(progress) }
+        guard remaining >= 60 else { return "<1 min" }
+        return minutes(remaining).formatted(.units(allowed: [.hours, .minutes], width: .abbreviated))
+    }
+
+    /// "about 6 min left", "about 1 hr, 5 min left", "less than a minute left".
+    static func remainingText(_ remaining: TimeInterval) -> String {
+        guard remaining >= 60 else { return "less than a minute left" }
+        let duration = minutes(remaining).formatted(.units(allowed: [.hours, .minutes], width: .abbreviated))
+        return "about \(duration) left"
+    }
+
+    private static func percentText(_ progress: Double) -> String {
+        progress.formatted(.percent.precision(.fractionLength(0)))
+    }
+
+    /// Rounded up to whole minutes: "about 1 min" for 61 s would undersell it.
+    private static func minutes(_ seconds: TimeInterval) -> Duration {
+        .seconds(Int((seconds / 60).rounded(.up)) * 60)
+    }
+}
