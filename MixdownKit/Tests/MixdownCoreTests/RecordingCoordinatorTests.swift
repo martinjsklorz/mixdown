@@ -343,7 +343,7 @@ struct RecordingCoordinatorTests {
     }
 
     @Test func sourceFailingToStartStopsTheOthers() async {
-        let error = AudioCaptureError.screenCapturePermissionDenied
+        let error = AudioCaptureError.deviceUnavailable("Couldn't create the system audio tap")
         let microphone = MockCapture()
         let coordinator = makeCoordinator(
             captures: [

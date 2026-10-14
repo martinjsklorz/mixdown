@@ -3,7 +3,7 @@ import Foundation
 /// One source's audio from a recording, kept in step with the host clock.
 ///
 /// Sources start at slightly different moments, and some deliver nothing while they're silent
-/// (ScreenCaptureKit stops sending buffers when nothing plays). Chunks that carry a `hostTime`
+/// (a microphone can drop out mid-recording). Chunks that carry a `hostTime`
 /// therefore aren't simply concatenated: a gap in the timestamps is filled with silence, and
 /// `startHostTime` lets `startOffsets(of:)` line several tracks up against each other.
 public struct AudioTrack: Sendable, Equatable {

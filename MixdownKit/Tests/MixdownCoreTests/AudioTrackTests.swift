@@ -14,7 +14,7 @@ struct AudioTrackTests {
     @Test func fillsGapsWithSilence() {
         var track = AudioTrack()
         track.append(Fixtures.chunk(seconds: 1, hostTime: 50))
-        // Nothing arrived for two seconds, like ScreenCaptureKit while nothing plays.
+        // Nothing arrived for two seconds, like a source that drops out.
         track.append(Fixtures.chunk(seconds: 1, hostTime: 53))
 
         #expect(track.startHostTime == 50)
