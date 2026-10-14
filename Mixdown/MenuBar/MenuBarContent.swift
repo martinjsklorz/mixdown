@@ -4,6 +4,7 @@ import SwiftUI
 /// Contents of the menu-style `MenuBarExtra`. Each view here becomes a native `NSMenuItem`.
 struct MenuBarContent: View {
     @Environment(AppEnvironment.self) private var environment
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         let coordinator = environment.coordinator
@@ -34,6 +35,10 @@ struct MenuBarContent: View {
 
         Divider()
 
+        Button("Show Notes") {
+            NSApp.activate()
+            openWindow(id: NotesView.windowID)
+        }
         Button("Open Notes Folder") { environment.openNotesFolder() }
         if coordinator.lastNoteURL != nil {
             Button("Reveal Last Note") { environment.revealLastNote() }

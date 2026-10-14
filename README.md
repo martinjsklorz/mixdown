@@ -12,8 +12,9 @@ Everything happens on your Mac. Your audio never leaves it.
 2. Pick an input: a microphone, or **System Audio**.
 3. Choose **Start Recording**, and **Stop Recording** when you're done.
 
-A few seconds later the note appears in your notes folder. **Open Notes Folder** and
-**Reveal Last Note** in the menu take you there.
+A few seconds later the note appears in your notes folder. **Show Notes** in the menu lists
+your notes by date and previews the one you pick, much like Apple Notes. **Open Notes Folder**
+and **Reveal Last Note** take you to the files.
 
 The first time, macOS asks for permission: **Microphone** to record your voice, or **Screen &
 System Audio Recording** to record system audio. Mixdown never records your screen.

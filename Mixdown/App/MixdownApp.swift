@@ -13,6 +13,15 @@ struct MixdownApp: App {
         }
         .menuBarExtraStyle(.menu)
 
+        Window("Notes", id: NotesView.windowID) {
+            NotesView()
+                .environment(environment)
+        }
+        .defaultSize(width: 900, height: 600)
+        // Only opened from the menu; a menu bar app shouldn't pop up a window at launch or login.
+        .defaultLaunchBehavior(.suppressed)
+        .restorationBehavior(.disabled)
+
         Settings {
             SettingsView()
                 .environment(environment)
