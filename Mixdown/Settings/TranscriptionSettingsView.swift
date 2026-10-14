@@ -82,13 +82,13 @@ struct TranscriptionSettingsView: View {
     }
 
     /// "Downloaded" once the model is on disk, otherwise a button to fetch it ahead of the first recording.
-    /// Nothing while preparing: the progress bar says it all, and files land on disk mid-download.
+    /// A Cancel button while preparing (files land on disk mid-download, so "Downloaded" would be premature).
     /// Re-evaluated whenever `phase` changes, so it flips to "Downloaded" when a download finishes.
     @ViewBuilder
     private func downloadAccessory(for phase: RecordingCoordinator.Phase) -> some View {
         switch phase {
         case .preparingModel:
-            EmptyView()
+            Button("Cancel") { environment.coordinator.cancelPreparation() }
         // A failed load may mean the cached files are broken; offer the button to retry.
         case .failed:
             downloadButton

@@ -19,6 +19,9 @@ struct MenuBarContent: View {
             engineName: coordinator.engineInfo.displayName,
             timeRemaining: coordinator.preparationTimeRemaining
         )
+        if case .preparingModel = coordinator.phase {
+            Button("Cancel Download") { coordinator.cancelPreparation() }
+        }
 
         Divider()
 
