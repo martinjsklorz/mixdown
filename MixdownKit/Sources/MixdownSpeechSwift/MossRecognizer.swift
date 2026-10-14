@@ -39,9 +39,7 @@ final class MossRecognizer: SpeechRecognizer, @unchecked Sendable {
         // falls through to the online load.
         let model = try await ModelCache.loadPreferringCache(
             repositoryID,
-            cacheLooksComplete: FileManager.default.fileExists(
-                atPath: directory.appendingPathComponent("config.json").path
-            ),
+            cacheLooksComplete: cacheLooksComplete(in: directory),
             progress: progress
         ) { offline, progress in
             try await MossMLXModel.fromPretrained(
@@ -52,6 +50,17 @@ final class MossRecognizer: SpeechRecognizer, @unchecked Sendable {
             )
         }
         return MossRecognizer(model: model)
+    }
+
+    /// `MossMLXModel.requiredBundleFiles`, which speech-swift doesn't expose.
+    static func cacheLooksComplete(in directory: URL) -> Bool {
+        ModelCache.contains(
+            weightsAnd: [
+                "config.json", "audio_encoder.safetensors", "decoder.safetensors", "processor_config.json",
+                "preprocessor_config.json", "generation_config.json", "tokenizer.json", "tokenizer_config.json",
+            ],
+            in: directory
+        )
     }
 
     /// MOSS takes no language hint; it transcribes whatever it hears.
