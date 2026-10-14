@@ -2,14 +2,15 @@
 
 # Mixdown
 
-Mixdown lives in your Mac's menu bar. It records your microphone or whatever your Mac is
-playing, such as a call or a video, turns the speech into text, and saves it as a Markdown note.
+Mixdown lives in your Mac's menu bar. It records your microphone, whatever your Mac is
+playing (such as a call or a video), or both at once, turns the speech into text, and saves it as
+a Markdown note.
 Everything happens on your Mac. Your audio never leaves it.
 
 ## Using Mixdown
 
 1. Click the waveform icon in the menu bar.
-2. Pick an input: a microphone, or **System Audio**.
+2. Pick your inputs: a microphone, **System Audio**, or both.
 3. Choose **Start Recording**, and **Stop Recording** when you're done.
 
 A few seconds later the note appears in your notes folder. **Show Notes** in the menu lists
@@ -18,6 +19,18 @@ and **Reveal Last Note** take you to the files.
 
 The first time, macOS asks for permission: **Microphone** to record your voice, or **Screen &
 System Audio Recording** to record system audio. Mixdown never records your screen.
+
+## Recording calls
+
+Turn on both your microphone and **System Audio** to capture both sides of a call: your voice
+through the microphone, everyone else through your Mac's speakers. Choosing a microphone in the
+menu replaces the current one; choosing it again turns it off, as long as System Audio stays on.
+
+Each input is recorded and transcribed on its own, then the lines are merged by time and labeled
+**Me** and **Others**. Change the names under **Settings → Recording**.
+
+Wear headphones if you can. Without them your microphone also hears the other people, and while
+Mixdown drops lines it recognizes as that echo, it can't catch all of it.
 
 ## Speech models
 
@@ -32,7 +45,10 @@ it; files already fetched are kept, so the next download picks up where it left 
 | MOSS Transcribe Diarize 0.9B | ~1 GB | Meetings: labels who is speaking |
 
 With MOSS, speaker numbers start over every 10 minutes, so "Speaker 1" may be someone else
-later in a long recording.
+later in a long recording. When recording a call, MOSS numbers the speakers within each input,
+e.g. "Me (Speaker 1)" and "Me (Speaker 2)" for two people at your Mac, and "Others (Speaker 1)"
+and "Others (Speaker 2)" for two people on the call. The other models don't tell speakers apart,
+so their lines are just labeled "Me" and "Others".
 
 ## Notes
 
@@ -58,6 +74,18 @@ tags: [mixdown]
 **[00:00:00] Speaker 1:** Okay, let's get started with the weekly sync.
 
 **[00:00:04] Speaker 2:** First up, the release timeline…
+```
+
+A call recorded from a microphone and system audio lists both sources and labels each line:
+
+```markdown
+sources: ["MacBook Pro Microphone", "System Audio"]
+source_kinds: [microphone, systemAudio]
+speakers: ["Me", "Others"]
+…
+**[00:00:00] Me:** Morning, everyone.
+
+**[00:00:03] Others:** Let's look at the release plan.
 ```
 
 ## Building from source

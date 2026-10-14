@@ -13,13 +13,16 @@ enum NoteFixtures {
             TranscriptSegment(start: 0, end: 4, text: " Hello everyone."),
             TranscriptSegment(start: 65, end: 70, text: "Next topic. "),
         ],
-        language: String? = "en"
+        language: String? = "en",
+        sources: [AudioInputDevice] = [
+            AudioInputDevice(id: "builtin", name: "MacBook Pro Microphone", kind: .microphone)
+        ]
     ) -> Note {
         Note(
             title: title,
             createdAt: createdAt,
             duration: duration,
-            source: AudioInputDevice(id: "builtin", name: "MacBook Pro Microphone", kind: .microphone),
+            sources: sources,
             engine: TranscriptionEngineInfo(id: "speech-swift", displayName: "Qwen3-ASR 0.6B"),
             transcript: Transcript(segments: segments, language: language)
         )
@@ -49,6 +52,20 @@ struct MarkdownNoteRendererTests {
         let created = try #require(lines.first { $0.hasPrefix("created: ") })
         let parsed = ISO8601DateFormatter().date(from: String(created.dropFirst("created: ".count)))
         #expect(parsed == NoteFixtures.createdAt)
+    }
+
+    @Test func listsMultipleSources() {
+        let markdown = MarkdownNoteRenderer.render(
+            NoteFixtures.note(sources: [
+                AudioInputDevice(id: "builtin", name: "MacBook Pro Microphone", kind: .microphone),
+                .systemAudio,
+            ])
+        )
+        let lines = frontmatterLines(markdown)
+
+        #expect(lines.contains(#"sources: ["MacBook Pro Microphone", "System Audio"]"#))
+        #expect(lines.contains("source_kinds: [microphone, systemAudio]"))
+        #expect(!lines.contains { $0.hasPrefix("source:") || $0.hasPrefix("source_kind:") })
     }
 
     @Test func omitsLanguageWhenUnknown() {

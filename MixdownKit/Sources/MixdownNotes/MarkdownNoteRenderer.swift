@@ -23,8 +23,13 @@ public enum MarkdownNoteRenderer {
         lines.append("title: \(yamlQuoted(singleLine(note.title)))")
         lines.append("created: \(iso8601(note.createdAt))")
         lines.append("duration: \(wholeSeconds(note.duration))")
-        lines.append("source: \(yamlQuoted(note.source.name))")
-        lines.append("source_kind: \(note.source.kind.rawValue)")
+        if let source = note.sources.first, note.sources.count == 1 {
+            lines.append("source: \(yamlQuoted(source.name))")
+            lines.append("source_kind: \(source.kind.rawValue)")
+        } else if !note.sources.isEmpty {
+            lines.append("sources: [\(note.sources.map { yamlQuoted($0.name) }.joined(separator: ", "))]")
+            lines.append("source_kinds: [\(note.sources.map(\.kind.rawValue).joined(separator: ", "))]")
+        }
         lines.append("engine: \(yamlQuoted(note.engine.displayName))")
         if let language = note.transcript.language, !language.isEmpty {
             // Quoted so codes like `no` (Norwegian) aren't read as YAML booleans.
