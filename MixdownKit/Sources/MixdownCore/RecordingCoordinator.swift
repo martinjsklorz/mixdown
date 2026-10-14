@@ -10,7 +10,7 @@ import os
 /// A single input is transcribed as before, without labels.
 ///
 /// All dependencies are protocols, so the coordinator is fully testable with doubles and
-/// knows nothing about CoreAudio, ScreenCaptureKit or the speech model.
+/// knows nothing about CoreAudio or the speech model.
 @MainActor
 @Observable
 public final class RecordingCoordinator {

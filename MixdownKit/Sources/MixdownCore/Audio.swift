@@ -4,7 +4,7 @@ import Foundation
 public enum AudioSourceKind: String, Codable, Sendable, CaseIterable {
     /// A hardware or virtual CoreAudio input device (built-in mic, USB interface, …).
     case microphone
-    /// Everything the Mac is playing back, captured via ScreenCaptureKit.
+    /// Everything the Mac is playing back, captured via a Core Audio process tap.
     case systemAudio
 }
 
@@ -79,7 +79,6 @@ public protocol AudioCaptureFactory: Sendable {
 
 public enum AudioCaptureError: LocalizedError, Equatable, Sendable {
     case microphonePermissionDenied
-    case screenCapturePermissionDenied
     case deviceNotFound(String)
     case deviceUnavailable(String)
     case alreadyRunning
@@ -88,8 +87,6 @@ public enum AudioCaptureError: LocalizedError, Equatable, Sendable {
         switch self {
         case .microphonePermissionDenied:
             "Mixdown needs microphone access. Enable it in System Settings › Privacy & Security › Microphone."
-        case .screenCapturePermissionDenied:
-            "Capturing system audio needs Screen & System Audio Recording access. Enable it in System Settings › Privacy & Security."
         case .deviceNotFound(let name):
             "The audio device “\(name)” is no longer connected."
         case .deviceUnavailable(let reason):

@@ -32,7 +32,5 @@
 	<string>Mixdown records your microphone to transcribe meetings and voice notes on this Mac.</string>
 	<key>NSAudioCaptureUsageDescription</key>
 	<string>Mixdown records the audio your Mac plays, such as calls and videos, to transcribe it on this Mac.</string>
-	<key>NSScreenCaptureUsageDescription</key>
-	<string>Mixdown uses Screen &amp; System Audio Recording to capture the audio your Mac plays. It never records your screen.</string>
 </dict>
 </plist>

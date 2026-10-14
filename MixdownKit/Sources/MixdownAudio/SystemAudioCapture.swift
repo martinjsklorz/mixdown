@@ -1,24 +1,26 @@
 @preconcurrency import AVFoundation
-import CoreGraphics
-import CoreMedia
+import CoreAudio
 import Foundation
 import MixdownCore
 import os
-@preconcurrency import ScreenCaptureKit
 
-/// Captures everything the Mac plays back via ScreenCaptureKit, excluding Mixdown's own audio.
+/// Captures everything the Mac plays back through a Core Audio process tap, excluding Mixdown's
+/// own audio. Needs only the "System Audio Recording Only" permission, not Screen Recording.
 ///
-/// `@unchecked Sendable` class rather than an actor: ScreenCaptureKit needs an `NSObject` for its
-/// output/delegate callbacks. Mutable state lives behind `state`; `resampler` is only touched on
-/// `sampleQueue`.
-final class SystemAudioCapture: NSObject, AudioCapturing, @unchecked Sendable {
+/// macOS has no public API to check that permission and prompts when the tap first starts. If the
+/// user declines, the tap still runs but delivers silence, so a denial can't be reported as an
+/// error.
+///
+/// `@unchecked Sendable`: mutable state lives behind `state`; `resampler` is only touched on
+/// `sampleQueue`, where the tap's IO block runs.
+final class SystemAudioCapture: AudioCapturing, @unchecked Sendable {
     private typealias Continuation = AsyncThrowingStream<AudioChunk, any Error>.Continuation
 
     private enum Phase { case idle, starting, running, stopped }
 
     private struct State {
         var phase: Phase = .idle
-        var stream: SCStream?
+        var tap: ProcessTap?
         var continuation: Continuation?
     }
 
@@ -26,11 +28,8 @@ final class SystemAudioCapture: NSObject, AudioCapturing, @unchecked Sendable {
     private let sampleQueue = DispatchQueue(label: "app.mixdown.audio.system-audio", qos: .userInitiated)
     private let resampler: AudioResampler
 
-    /// Takes the resampler as a parameter because a throwing `init()` would clash with
-    /// `NSObject.init()`, which can't be overridden by a throwing initializer.
-    init(resampler: AudioResampler) {
-        self.resampler = resampler
-        super.init()
+    init() throws {
+        resampler = try AudioResampler()
     }
 
     func start() async throws -> AsyncThrowingStream<AudioChunk, any Error> {
@@ -41,29 +40,31 @@ final class SystemAudioCapture: NSObject, AudioCapturing, @unchecked Sendable {
             state.continuation = continuation
         }
 
-        let captureStream: SCStream
+        let tap = ProcessTap()
         do {
-            captureStream = try await makeStream()
-            try await captureStream.startCapture()
+            let format = try tap.create(excluding: Self.ownProcessObjectID())
+            try tap.start(on: sampleQueue) { [weak self] _, inputData, inputTime, _, _ in
+                self?.consume(inputData, at: inputTime.pointee, format: format)
+            }
         } catch {
-            let mapped = Self.captureError(from: error)
+            tap.invalidate()
             state.withLockUnchecked { state in
                 state.phase = .stopped
                 state.continuation = nil
             }
-            continuation.finish(throwing: mapped)
-            throw mapped
+            continuation.finish(throwing: error)
+            throw error
         }
 
         let isStillStarting = state.withLockUnchecked { state -> Bool in
             guard state.phase == .starting else { return false }
             state.phase = .running
-            state.stream = captureStream
+            state.tap = tap
             return true
         }
         guard isStillStarting else {
-            // stop() ran while the stream was starting; it already finished the continuation.
-            try? await captureStream.stopCapture()
+            // stop() ran while the tap was starting; it already finished the continuation.
+            tap.invalidate()
             return stream
         }
 
@@ -76,24 +77,18 @@ final class SystemAudioCapture: NSObject, AudioCapturing, @unchecked Sendable {
     }
 
     func stop() async {
-        let (captureStream, continuation) = state.withLockUnchecked { state -> (SCStream?, Continuation?) in
+        let (tap, continuation) = state.withLockUnchecked { state -> (ProcessTap?, Continuation?) in
             guard state.phase != .stopped else { return (nil, nil) }
             state.phase = .stopped
             defer {
-                state.stream = nil
+                state.tap = nil
                 state.continuation = nil
             }
-            return (state.stream, state.continuation)
+            return (state.tap, state.continuation)
         }
         guard let continuation else { return }
 
-        if let captureStream {
-            do {
-                try await captureStream.stopCapture()
-            } catch {
-                audioLogger.error("Stopping system audio failed: \(error.localizedDescription, privacy: .public)")
-            }
-        }
+        tap?.invalidate()
         // Let buffers already queued on the sample queue go out before finishing the stream.
         let sampleQueue = sampleQueue
         await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
@@ -103,115 +98,124 @@ final class SystemAudioCapture: NSObject, AudioCapturing, @unchecked Sendable {
         audioLogger.info("System audio capture stopped")
     }
 
-    // MARK: - Setup
+    // MARK: - Samples
 
-    private func makeStream() async throws -> SCStream {
-        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-        let mainDisplayID = CGMainDisplayID()
-        guard let display = content.displays.first(where: { $0.displayID == mainDisplayID })
-            ?? content.displays.first
-        else {
-            throw AudioCaptureError.deviceUnavailable("No display is available for system audio capture")
-        }
-
-        let ownPID = ProcessInfo.processInfo.processIdentifier
-        let ownApps = content.applications.filter { $0.processID == ownPID }
-        let filter = SCContentFilter(display: display, excludingApplications: ownApps, exceptingWindows: [])
-
-        let configuration = SCStreamConfiguration()
-        configuration.capturesAudio = true
-        configuration.excludesCurrentProcessAudio = true
-        configuration.sampleRate = 48_000
-        configuration.channelCount = 2
-        // A display filter always produces video; keep it as cheap as possible. No screen output
-        // is added, so frames are discarded.
-        configuration.width = 2
-        configuration.height = 2
-        configuration.minimumFrameInterval = CMTime(value: 1, timescale: 1)
-        configuration.queueDepth = 3
-        configuration.showsCursor = false
-
-        let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
-        try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: sampleQueue)
-        return stream
-    }
-
-    private static func captureError(from error: any Error) -> AudioCaptureError {
-        if let error = error as? AudioCaptureError { return error }
-        if let error = error as? SCStreamError, error.code == .userDeclined {
-            return .screenCapturePermissionDenied
-        }
-        return .deviceUnavailable(error.localizedDescription)
-    }
-
-    // MARK: - Sample conversion
-
-    /// ScreenCaptureKit stamps buffers on the host clock. A timestamp that's far off "now" means
-    /// that assumption broke, so fall back to the arrival time.
-    private static func hostTime(of sampleBuffer: CMSampleBuffer, buffer: AVAudioPCMBuffer) -> TimeInterval {
-        let arrival = HostClock.now() - Double(buffer.frameLength) / buffer.format.sampleRate
-        let presentation = sampleBuffer.presentationTimeStamp
-        guard presentation.isNumeric, abs(presentation.seconds - arrival) < 2 else { return arrival }
-        return presentation.seconds
-    }
-
-    private static func pcmBuffer(from sampleBuffer: CMSampleBuffer) -> AVAudioPCMBuffer? {
-        guard let description = sampleBuffer.formatDescription,
-              let streamDescription = CMAudioFormatDescriptionGetStreamBasicDescription(description),
-              let format = AVAudioFormat(streamDescription: streamDescription)
-        else { return nil }
-
-        let frameCount = sampleBuffer.numSamples
-        guard frameCount > 0,
-              let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frameCount))
-        else { return nil }
-        buffer.frameLength = buffer.frameCapacity
-
-        let status = CMSampleBufferCopyPCMDataIntoAudioBufferList(
-            sampleBuffer,
-            at: 0,
-            frameCount: Int32(frameCount),
-            into: buffer.mutableAudioBufferList
-        )
-        guard status == noErr else {
-            audioLogger.error("Couldn't read system audio samples (OSStatus \(status, privacy: .public))")
-            return nil
-        }
-        return buffer
-    }
-}
-
-extension SystemAudioCapture: SCStreamOutput {
-    func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-        guard type == .audio, sampleBuffer.isValid,
-              let buffer = Self.pcmBuffer(from: sampleBuffer),
-              let chunk = resampler.process(buffer, hostTime: Self.hostTime(of: sampleBuffer, buffer: buffer))
+    private func consume(_ bufferList: UnsafePointer<AudioBufferList>, at time: AudioTimeStamp, format: AVAudioFormat) {
+        // No copy needed: the resampler copies while downmixing, before the IO block returns.
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, bufferListNoCopy: bufferList, deallocator: nil),
+              let chunk = resampler.process(buffer, hostTime: Self.hostTime(of: time, buffer: buffer))
         else { return }
         let continuation = state.withLockUnchecked { $0.continuation }
         continuation?.yield(chunk)
     }
+
+    /// The HAL stamps IO cycles on the host clock. A timestamp that's missing or far off "now"
+    /// means that assumption broke, so fall back to the arrival time.
+    private static func hostTime(of time: AudioTimeStamp, buffer: AVAudioPCMBuffer) -> TimeInterval {
+        let arrival = HostClock.now() - Double(buffer.frameLength) / buffer.format.sampleRate
+        guard time.mFlags.contains(.hostTimeValid) else { return arrival }
+        let stamped = AVAudioTime.seconds(forHostTime: time.mHostTime)
+        return abs(stamped - arrival) < 2 ? stamped : arrival
+    }
+
+    /// Mixdown's own HAL process object, or `nil` if it has none yet (it hasn't touched audio).
+    private static func ownProcessObjectID() -> AudioObjectID? {
+        var address = CoreAudioHAL.propertyAddress(kAudioHardwarePropertyTranslatePIDToProcessObject)
+        var pid = ProcessInfo.processInfo.processIdentifier
+        var objectID = AudioObjectID(kAudioObjectUnknown)
+        var size = UInt32(MemoryLayout<AudioObjectID>.size)
+        let status = AudioObjectGetPropertyData(
+            CoreAudioHAL.systemObject,
+            &address,
+            UInt32(MemoryLayout<pid_t>.size),
+            &pid,
+            &size,
+            &objectID
+        )
+        guard status == noErr, objectID != AudioObjectID(kAudioObjectUnknown) else { return nil }
+        return objectID
+    }
 }
 
-extension SystemAudioCapture: SCStreamDelegate {
-    func stream(_ stream: SCStream, didStopWithError error: any Error) {
-        let continuation = state.withLockUnchecked { state -> Continuation? in
-            guard state.phase != .stopped else { return nil }
-            state.phase = .stopped
-            defer {
-                state.stream = nil
-                state.continuation = nil
-            }
-            return state.continuation
-        }
-        guard let continuation else { return }
+/// A global process tap and the private aggregate device it's read through. A tap delivers no
+/// buffers on its own; it has to be part of an aggregate device with an IO proc.
+///
+/// `@unchecked Sendable`: `create`, `start` and `invalidate` are called one after another, never
+/// concurrently.
+private final class ProcessTap: @unchecked Sendable {
+    private var tapID = AudioObjectID(kAudioObjectUnknown)
+    private var aggregateID = AudioObjectID(kAudioObjectUnknown)
+    private var ioProcID: AudioDeviceIOProcID?
 
-        // Stopping from the macOS menu bar capture indicator ends the session normally.
-        if let error = error as? SCStreamError, error.code == .userStopped {
-            audioLogger.info("System audio capture stopped by the user")
-            continuation.finish()
-            return
+    /// Creates the tap and its aggregate device and returns the format of the tapped audio.
+    func create(excluding ownProcess: AudioObjectID?) throws -> AVAudioFormat {
+        let description = CATapDescription(stereoGlobalTapButExcludeProcesses: ownProcess.map { [$0] } ?? [])
+        description.name = "Mixdown System Audio"
+        description.uuid = UUID()
+        description.isPrivate = true
+        description.muteBehavior = .unmuted
+        try CoreAudioHAL.check(AudioHardwareCreateProcessTap(description, &tapID), "create the system audio tap")
+
+        let aggregate: [String: Any] = [
+            kAudioAggregateDeviceNameKey: "Mixdown System Audio",
+            kAudioAggregateDeviceUIDKey: UUID().uuidString,
+            kAudioAggregateDeviceIsPrivateKey: true,
+            kAudioAggregateDeviceIsStackedKey: false,
+            kAudioAggregateDeviceTapAutoStartKey: true,
+            // No sub-devices: the tap is the only source and clocks the device, so switching
+            // the output device doesn't affect the capture.
+            kAudioAggregateDeviceSubDeviceListKey: [[String: Any]](),
+            kAudioAggregateDeviceTapListKey: [
+                [kAudioSubTapUIDKey: description.uuid.uuidString, kAudioSubTapDriftCompensationKey: true]
+                    as [String: Any],
+            ],
+        ]
+        try CoreAudioHAL.check(
+            AudioHardwareCreateAggregateDevice(aggregate as CFDictionary, &aggregateID),
+            "create the system audio device"
+        )
+
+        var address = CoreAudioHAL.propertyAddress(kAudioTapPropertyFormat)
+        var streamDescription = AudioStreamBasicDescription()
+        var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+        try CoreAudioHAL.check(
+            AudioObjectGetPropertyData(tapID, &address, 0, nil, &size, &streamDescription),
+            "read the system audio format"
+        )
+        guard let format = AVAudioFormat(streamDescription: &streamDescription) else {
+            throw AudioCaptureError.deviceUnavailable("The system audio format isn't supported")
         }
-        audioLogger.error("System audio capture stopped: \(error.localizedDescription, privacy: .public)")
-        continuation.finish(throwing: Self.captureError(from: error))
+        return format
+    }
+
+    /// Starts IO. macOS asks for the System Audio Recording permission the first time.
+    func start(on queue: DispatchQueue, ioBlock: @escaping AudioDeviceIOBlock) throws {
+        try CoreAudioHAL.check(
+            AudioDeviceCreateIOProcIDWithBlock(&ioProcID, aggregateID, queue, ioBlock),
+            "read from the system audio device"
+        )
+        try CoreAudioHAL.check(AudioDeviceStart(aggregateID, ioProcID), "start the system audio device")
+    }
+
+    /// Stops IO and destroys whatever `create`/`start` set up. Safe after a partial setup.
+    func invalidate() {
+        if aggregateID != AudioObjectID(kAudioObjectUnknown) {
+            if let ioProcID {
+                logFailure(AudioDeviceStop(aggregateID, ioProcID), "AudioDeviceStop")
+                logFailure(AudioDeviceDestroyIOProcID(aggregateID, ioProcID), "AudioDeviceDestroyIOProcID")
+            }
+            logFailure(AudioHardwareDestroyAggregateDevice(aggregateID), "AudioHardwareDestroyAggregateDevice")
+        }
+        if tapID != AudioObjectID(kAudioObjectUnknown) {
+            logFailure(AudioHardwareDestroyProcessTap(tapID), "AudioHardwareDestroyProcessTap")
+        }
+        ioProcID = nil
+        aggregateID = AudioObjectID(kAudioObjectUnknown)
+        tapID = AudioObjectID(kAudioObjectUnknown)
+    }
+
+    private func logFailure(_ status: OSStatus, _ call: String) {
+        guard status != noErr else { return }
+        audioLogger.error("\(call, privacy: .public) failed: \(status, privacy: .public)")
     }
 }

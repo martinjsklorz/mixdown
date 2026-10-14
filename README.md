@@ -19,8 +19,10 @@ A few seconds later the note appears in your notes folder. **Show Notes** in the
 your notes by date and previews the one you pick, much like Apple Notes. **Open Notes Folder**
 and **Reveal Last Note** take you to the files.
 
-The first time, macOS asks for permission: **Microphone** to record your voice, or **Screen &
-System Audio Recording** to record system audio. Mixdown never records your screen.
+The first time, macOS asks for permission: **Microphone** to record your voice, or **System
+Audio Recording** to record what your Mac plays. If system audio comes out silent, check that
+Mixdown is on under System Settings › Privacy & Security › Screen & System Audio Recording ›
+System Audio Recording Only. macOS gives a muted recording rather than an error when it's off.
 
 ## Recording calls
 
