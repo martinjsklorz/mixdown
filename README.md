@@ -10,8 +10,10 @@ Everything happens on your Mac. Your audio never leaves it.
 ## Using Mixdown
 
 1. Click the waveform icon in the menu bar.
-2. Pick your inputs: a microphone, **System Audio**, or both.
-3. Choose **Start Recording**, and **Stop Recording** when you're done.
+2. The first time, choose **Download Model** and wait for it to finish (see
+   [Speech models](#speech-models)). Recording stays off until the model is on your Mac.
+3. Pick your inputs: a microphone, **System Audio**, or both.
+4. Choose **Start Recording**, and **Stop Recording** when you're done.
 
 A few seconds later the note appears in your notes folder. **Show Notes** in the menu lists
 your notes by date and previews the one you pick, much like Apple Notes. **Open Notes Folder**
@@ -34,8 +36,9 @@ Mixdown drops lines it recognizes as that echo, it can't catch all of it.
 
 ## Speech models
 
-Choose a model under **Settings → Transcription**. It's downloaded once, and the time left
-shows next to the menu bar icon. **Cancel Download** in the menu (or **Cancel** in Settings) stops
+Choose a model under **Settings → Transcription**. It's downloaded once, from **Download
+Model** in the menu or in Settings, and the time left shows next to the menu bar icon. After
+switching models, download the new one before recording. **Cancel Download** in the menu (or **Cancel** in Settings) stops
 it; files already fetched are kept, so the next download picks up where it left off.
 
 | Model | Size | Good for |

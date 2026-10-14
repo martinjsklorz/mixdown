@@ -120,6 +120,7 @@ struct MockCaptureFactory: AudioCaptureFactory {
 
 actor MockEngine: TranscriptionEngine {
     nonisolated let info = TranscriptionEngineInfo(id: "mock", displayName: "Mock Engine")
+    nonisolated var isDownloaded: Bool { downloaded.current }
 
     private let transcript: Transcript
     /// Returned instead of `transcript` for a given sample count, to tell sources apart.
@@ -127,22 +128,27 @@ actor MockEngine: TranscriptionEngine {
     private let transcribeError: (any Error)?
     private let prepareError: (any Error)?
     private let preparesUntilCancelled: Bool
+    private nonisolated let downloaded: LockedValue<Bool>
     private(set) var receivedSampleCounts: [Int] = []
     private(set) var prepareCount = 0
     private(set) var cancelledPrepareCount = 0
 
-    /// - Parameter preparesUntilCancelled: `prepare` stalls halfway, like a slow download, until
-    ///   its task is cancelled.
+    /// - Parameters:
+    ///   - isDownloaded: Whether the model starts out on disk. A successful `prepare` downloads it.
+    ///   - preparesUntilCancelled: `prepare` stalls halfway, like a slow download, until its task
+    ///     is cancelled.
     init(
         transcript: Transcript = Transcript(segments: []),
         transcriptsBySampleCount: [Int: Transcript] = [:],
         transcribeError: (any Error)? = nil,
+        isDownloaded: Bool = true,
         prepareError: (any Error)? = nil,
         preparesUntilCancelled: Bool = false
     ) {
         self.transcript = transcript
         self.transcriptsBySampleCount = transcriptsBySampleCount
         self.transcribeError = transcribeError
+        self.downloaded = LockedValue(isDownloaded)
         self.prepareError = prepareError
         self.preparesUntilCancelled = preparesUntilCancelled
     }
@@ -159,6 +165,7 @@ actor MockEngine: TranscriptionEngine {
             }
         }
         if let prepareError { throw prepareError }
+        downloaded.update { $0 = true }
         progress?(1)
     }
 

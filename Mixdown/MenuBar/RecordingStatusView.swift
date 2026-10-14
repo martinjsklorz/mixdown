@@ -8,10 +8,14 @@ import SwiftUI
 struct RecordingStatusView: View {
     let phase: RecordingCoordinator.Phase
     let engineName: String
+    let isModelDownloaded: Bool
     let timeRemaining: TimeInterval?
 
     var body: some View {
         switch phase {
+        case .idle where !isModelDownloaded:
+            // Followed by a Download Model button.
+            Text("Download \(engineName) to start recording")
         case .idle:
             Text("Ready · \(engineName)")
         case .preparingModel(let progress):

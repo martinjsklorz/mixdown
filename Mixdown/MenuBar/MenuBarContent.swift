@@ -18,10 +18,15 @@ struct MenuBarContent: View {
         RecordingStatusView(
             phase: coordinator.phase,
             engineName: coordinator.engineInfo.displayName,
+            isModelDownloaded: coordinator.isModelDownloaded,
             timeRemaining: coordinator.preparationTimeRemaining
         )
         if case .preparingModel = coordinator.phase {
             Button("Cancel Download") { coordinator.cancelPreparation() }
+        } else if !coordinator.isModelDownloaded && coordinator.isIdle {
+            Button("Download Model") {
+                Task { await coordinator.prepareEngine() }
+            }
         }
 
         Divider()

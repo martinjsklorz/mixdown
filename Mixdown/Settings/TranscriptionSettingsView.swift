@@ -81,9 +81,8 @@ struct TranscriptionSettingsView: View {
         }
     }
 
-    /// "Downloaded" once the model is on disk, otherwise a button to fetch it ahead of the first recording.
+    /// "Downloaded" once the model is on disk, otherwise a button to fetch it; recording needs it.
     /// A Cancel button while preparing (files land on disk mid-download, so "Downloaded" would be premature).
-    /// Re-evaluated whenever `phase` changes, so it flips to "Downloaded" when a download finishes.
     @ViewBuilder
     private func downloadAccessory(for phase: RecordingCoordinator.Phase) -> some View {
         switch phase {
@@ -93,7 +92,7 @@ struct TranscriptionSettingsView: View {
         case .failed:
             downloadButton
         default:
-            if SpeechSwiftEngine.isDownloaded(environment.model) {
+            if environment.coordinator.isModelDownloaded {
                 Label {
                     Text("Downloaded")
                 } icon: {

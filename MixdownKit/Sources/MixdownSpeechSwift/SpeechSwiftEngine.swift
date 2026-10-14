@@ -18,8 +18,8 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
 
     public nonisolated let info: TranscriptionEngineInfo
 
-    private let model: SpeechSwiftModel
-    private let modelDirectory: URL?
+    private nonisolated let model: SpeechSwiftModel
+    private nonisolated let modelDirectory: URL?
     private var models: LoadedModels?
     private var loading: (task: Task<LoadedModels, any Error>, progress: ProgressRelay)?
     private var lastTranscription: Task<Void, Never>?
@@ -51,6 +51,10 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
         return try await oneAtATime {
             try await self.performTranscription(samples, options: options, language: language)
         }
+    }
+
+    public nonisolated var isDownloaded: Bool {
+        Self.isDownloaded(model, modelDirectory: modelDirectory)
     }
 
     /// Whether `model` (and the VAD) are already on disk, so `prepare` won't download anything.
