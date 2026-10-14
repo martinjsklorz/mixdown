@@ -4,7 +4,9 @@ import SwiftUI
 /// Contents of the menu-style `MenuBarExtra`. Each view here becomes a native `NSMenuItem`.
 struct MenuBarContent: View {
     @Environment(AppEnvironment.self) private var environment
+    @Environment(MainNavigation.self) private var navigation
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         let coordinator = environment.coordinator
@@ -41,14 +43,7 @@ struct MenuBarContent: View {
 
         Divider()
 
-        Button("Show Notes") {
-            NSApp.activate()
-            openWindow(id: NotesView.windowID)
-        }
-        Button("Open Notes Folder") { environment.openNotesFolder() }
-        if coordinator.lastNoteURL != nil {
-            Button("Reveal Last Note") { environment.revealLastNote() }
-        }
+        Button("Open Mixdown") { navigation.show(navigation.destination, using: openWindow) }
 
         if case .failed(let message) = coordinator.phase {
             Divider()
@@ -58,7 +53,7 @@ struct MenuBarContent: View {
 
         Divider()
 
-        SettingsLink { Text("Settings…") }
+        Button("Settings…") { navigation.showSettings(using: openSettings) }
             .keyboardShortcut(",")
         Button("Quit Mixdown") { NSApplication.shared.terminate(nil) }
             .keyboardShortcut("q")

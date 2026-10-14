@@ -1,0 +1,193 @@
+import MixdownCore
+import SwiftUI
+
+/// The Record section: one big button to start or stop, the state Mixdown is in, and a summary
+/// of what it records with. The inputs themselves are chosen in the Recording menu or Settings.
+struct RecorderView: View {
+    @Environment(AppEnvironment.self) private var environment
+    @Environment(MainNavigation.self) private var navigation
+    @Environment(\.openSettings) private var openSettings
+
+    var body: some View {
+        let coordinator = environment.coordinator
+
+        VStack(spacing: 0) {
+            Spacer(minLength: 24)
+            hero(for: coordinator)
+                .frame(maxWidth: 420)
+            Spacer(minLength: 24)
+            setup
+                .frame(maxWidth: 420)
+        }
+        .padding(32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .navigationTitle("Record")
+    }
+
+    // MARK: Hero
+
+    /// The headline, the main control and a line of detail, depending on the phase.
+    @ViewBuilder
+    private func hero(for coordinator: RecordingCoordinator) -> some View {
+        VStack(spacing: 20) {
+            switch coordinator.phase {
+            case .idle where !coordinator.isModelDownloaded:
+                headline(
+                    "Download the Speech Model",
+                    detail: "Recording starts once \(environment.model.displayName) is on this Mac."
+                )
+                Button("Download Model", systemImage: "arrow.down.circle") {
+                    Task { await coordinator.prepareEngine() }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+
+            case .preparingModel(let progress):
+                headline("Downloading Model…", detail: environment.model.displayName)
+                ProgressView(value: progress) {
+                    EmptyView()
+                } currentValueLabel: {
+                    Text(
+                        DownloadProgressText.detail(progress: progress, remaining: coordinator.preparationTimeRemaining)
+                    )
+                    .monospacedDigit()
+                }
+                .frame(maxWidth: 320)
+                Button("Cancel Download") { coordinator.cancelPreparation() }
+                    .controlSize(.large)
+
+            case .recording(let startedAt):
+                Text(startedAt, style: .timer)
+                    .font(.system(size: 48, weight: .light).monospacedDigit())
+                RecordButton(isRecording: true) {
+                    Task { await coordinator.stopRecording() }
+                }
+                caption("Recording · click to stop")
+
+            case .transcribing:
+                headline("Transcribing…", detail: "Your note appears in the sidebar in a moment.")
+                ProgressView()
+                    .controlSize(.large)
+
+            case .failed(let message):
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .symbolRenderingMode(.multicolor)
+                    .multilineTextAlignment(.center)
+                Button("Dismiss") { coordinator.dismissError() }
+                startButton(for: coordinator)
+
+            case .idle:
+                headline("Ready to Record", detail: nil)
+                startButton(for: coordinator)
+            }
+        }
+        .multilineTextAlignment(.center)
+        .animation(.default, value: coordinator.isRecording)
+    }
+
+    private func startButton(for coordinator: RecordingCoordinator) -> some View {
+        VStack(spacing: 12) {
+            RecordButton(isRecording: false) {
+                Task { await coordinator.startRecording() }
+            }
+            .disabled(!coordinator.canStartRecording)
+            caption(coordinator.selectedDevices.isEmpty ? "Choose an input to record" : "Click to record · ⌘R")
+        }
+    }
+
+    private func headline(_ title: String, detail: String?) -> some View {
+        VStack(spacing: 6) {
+            Text(title)
+                .font(.title2.weight(.semibold))
+            if let detail {
+                Text(detail)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func caption(_ text: String) -> some View {
+        Text(text)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+    }
+
+    // MARK: Setup
+
+    /// What the next recording uses, with a way into Settings to change it.
+    private var setup: some View {
+        GroupBox {
+            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 8) {
+                row("mic", "Microphone", environment.selectedMicrophone?.name ?? "Off")
+                row("speaker.wave.2", "System audio", environment.recordsSystemAudio ? "On" : "Off")
+                row("waveform", "Model", environment.model.displayName)
+                row("globe", "Language", languageName)
+                row(
+                    "folder",
+                    "Notes folder",
+                    environment.notesFolder.directory.lastPathComponent,
+                    help: environment.notesFolder.directory.path(percentEncoded: false)
+                )
+            }
+            .padding(6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } label: {
+            HStack {
+                Text("Setup")
+                Spacer()
+                Button("Change…") { navigation.showSettings(.recording, using: openSettings) }
+                    .buttonStyle(.link)
+                    .disabled(environment.coordinator.isRecording)
+            }
+        }
+    }
+
+    private func row(_ systemImage: String, _ label: String, _ value: String, help: String? = nil) -> some View {
+        GridRow {
+            Image(systemName: systemImage)
+                .foregroundStyle(.secondary)
+                .frame(width: 18)
+            Text(label)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help(help ?? value)
+                .gridColumnAlignment(.leading)
+        }
+    }
+
+    /// Models that detect the language themselves ignore the setting.
+    private var languageName: String {
+        guard environment.model.supportsLanguageSelection, let code = environment.language else {
+            return "Automatic"
+        }
+        return TranscriptionSettingsView.displayName(for: code)
+    }
+}
+
+/// A round record button in the style of Voice Memos: a red dot that becomes a stop square.
+private struct RecordButton: View {
+    let isRecording: Bool
+    let action: @MainActor () -> Void
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                Circle()
+                    .strokeBorder(.secondary.opacity(0.4), lineWidth: 4)
+                RoundedRectangle(cornerRadius: isRecording ? 6 : 28)
+                    .fill(.red)
+                    .frame(width: isRecording ? 28 : 56, height: isRecording ? 28 : 56)
+            }
+            .frame(width: 72, height: 72)
+            .contentShape(Circle())
+            .opacity(isEnabled ? 1 : 0.35)
+        }
+        .buttonStyle(.plain)
+        .animation(.snappy, value: isRecording)
+        .accessibilityLabel(isRecording ? "Stop Recording" : "Start Recording")
+        .help(isRecording ? "Stop Recording" : "Start Recording")
+    }
+}

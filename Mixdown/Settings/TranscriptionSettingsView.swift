@@ -147,7 +147,7 @@ struct TranscriptionSettingsView: View {
         return lines.joined(separator: " ")
     }
 
-    private static func displayName(for code: String) -> String {
+    static func displayName(for code: String) -> String {
         Locale.current.localizedString(forLanguageCode: code) ?? code
     }
 }

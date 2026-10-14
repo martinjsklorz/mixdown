@@ -2,7 +2,7 @@ import Foundation
 import MixdownNotes
 import Observation
 
-/// The notes shown in the Notes window, read from the notes folder off the main thread.
+/// The notes listed in the main window's sidebar, read from the notes folder off the main thread.
 @MainActor @Observable
 final class NoteLibraryModel {
     private(set) var notes: [NoteDocument] = []
