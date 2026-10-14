@@ -15,8 +15,15 @@ final class AppEnvironment {
     private(set) var model: SpeechSwiftModel
     let notesFolder: NotesFolderStore
 
+    /// Whole seconds since the current recording started, advanced every second; `nil` unless
+    /// recording. Ticked here because the menu bar label only redraws on observed changes; it
+    /// doesn't run `TimelineView` or `.task`.
+    private(set) var recordingElapsed: Int?
+
     private let settings: AppSettings
     @ObservationIgnored private var deviceMonitor: Task<Void, Never>?
+    @ObservationIgnored private var recordingClock: Task<Void, Never>?
+    @ObservationIgnored private var recordingClockStart: Date?
 
     init(settings: AppSettings = AppSettings()) {
         let notesFolder = NotesFolderStore(settings: settings)
@@ -30,6 +37,7 @@ final class AppEnvironment {
             settings: settings
         )
         startMonitoringDevices()
+        observeRecording()
     }
 
     // MARK: Composition
@@ -58,6 +66,34 @@ final class AppEnvironment {
         deviceMonitor?.cancel()
         deviceMonitor = Task { [coordinator] in
             await coordinator.monitorDevices()
+        }
+    }
+
+    /// Starts or stops `recordingClock` as the phase changes. Re-registers itself after every
+    /// change, including the coordinator being replaced.
+    private func observeRecording() {
+        let phase = withObservationTracking {
+            coordinator.phase
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.observeRecording() }
+        }
+        guard case .recording(let startedAt) = phase else {
+            recordingClock?.cancel()
+            recordingClock = nil
+            recordingClockStart = nil
+            recordingElapsed = nil
+            return
+        }
+        guard startedAt != recordingClockStart else { return }
+        recordingClock?.cancel()
+        recordingClockStart = startedAt
+        recordingClock = Task { [weak self] in
+            while !Task.isCancelled {
+                let elapsed = max(Date.now.timeIntervalSince(startedAt), 0)
+                self?.recordingElapsed = Int(elapsed)
+                // Wake on the next whole second since the start, so the display doesn't lag.
+                try? await Task.sleep(for: .seconds(1 - elapsed.truncatingRemainder(dividingBy: 1)))
+            }
         }
     }
 

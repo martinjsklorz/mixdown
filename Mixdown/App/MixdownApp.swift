@@ -9,7 +9,10 @@ struct MixdownApp: App {
             MenuBarContent()
                 .environment(environment)
         } label: {
-            MenuBarLabel(coordinator: environment.coordinator)
+            MenuBarLabel(
+                coordinator: environment.coordinator,
+                recordingElapsed: environment.recordingElapsed
+            )
         }
         .menuBarExtraStyle(.menu)
 
