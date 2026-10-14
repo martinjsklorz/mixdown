@@ -77,6 +77,7 @@ public protocol TranscriptionEngine: Sendable {
     var info: TranscriptionEngineInfo { get }
 
     /// Downloads (if needed) and loads the model. Safe to call repeatedly; later calls are no-ops.
+    /// Honors task cancellation, which is how a download is cancelled.
     /// - Parameter progress: Reports 0...1 while preparing. May be called from any thread.
     func prepare(progress: (@Sendable (Double) -> Void)?) async throws
 

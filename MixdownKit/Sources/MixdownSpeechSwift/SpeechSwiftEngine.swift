@@ -36,6 +36,9 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
 
     /// Loads the VAD and ASR models, downloading them on first use. Concurrent calls share one load;
     /// a failed load is retried by the next call. Throws `TranscriptionError.modelUnavailable`.
+    ///
+    /// Cancelling the calling task stops the download (for every caller sharing it) and throws
+    /// `CancellationError`. Files already on disk are kept, so the next call resumes from them.
     public func prepare(progress: (@Sendable (Double) -> Void)?) async throws {
         _ = try await loadedModels(progress: progress)
     }
@@ -68,35 +71,54 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
             progress?(1)
             return models
         }
-        if let loading {
-            if let progress { loading.progress.add(progress) }
-            do {
-                return try await loading.task.value
-            } catch {
-                throw Self.unavailable(error)
-            }
-        }
 
-        let relay = ProgressRelay()
-        if let progress { relay.add(progress) }
-        let model = self.model
-        let modelDirectory = self.modelDirectory
-        let task = Task { try await Self.load(model, modelDirectory: modelDirectory, progress: relay) }
-        loading = (task, relay)
+        let loading = self.loading ?? startLoading()
+        if let progress { loading.progress.add(progress) }
+        let task = loading.task
         do {
-            let loaded = try await task.value
-            models = loaded
-            loading = nil
-            transcriptionLogger.info("\(model.displayName, privacy: .public) ready")
+            let loaded = try await withTaskCancellationHandler {
+                try await task.value
+            } onCancel: {
+                task.cancel()
+            }
+            // A load that finished despite being cancelled is still good.
+            if models == nil { models = loaded }
+            if self.loading?.task == task { self.loading = nil }
             return loaded
         } catch {
             // Cleared so the next call retries.
-            loading = nil
-            transcriptionLogger.error(
-                "Loading \(model.displayName, privacy: .public) failed: \(String(describing: error), privacy: .public)"
-            )
+            if self.loading?.task == task { self.loading = nil }
+            try Task.checkCancellation()
+            // Another caller cancelled the load this one joined; start over rather than fail.
+            if task.isCancelled {
+                return try await loadedModels(progress: progress)
+            }
             throw Self.unavailable(error)
         }
+    }
+
+    private func startLoading() -> (task: Task<LoadedModels, any Error>, progress: ProgressRelay) {
+        let relay = ProgressRelay()
+        let model = self.model
+        let modelDirectory = self.modelDirectory
+        let task = Task {
+            do {
+                let loaded = try await Self.load(model, modelDirectory: modelDirectory, progress: relay)
+                transcriptionLogger.info("\(model.displayName, privacy: .public) ready")
+                return loaded
+            } catch {
+                if Task.isCancelled {
+                    transcriptionLogger.info("Loading \(model.displayName, privacy: .public) cancelled")
+                } else {
+                    transcriptionLogger.error(
+                        "Loading \(model.displayName, privacy: .public) failed: \(String(describing: error), privacy: .public)"
+                    )
+                }
+                throw error
+            }
+        }
+        loading = (task, relay)
+        return (task, relay)
     }
 
     private static func load(

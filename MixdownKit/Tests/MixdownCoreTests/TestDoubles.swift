@@ -121,22 +121,36 @@ actor MockEngine: TranscriptionEngine {
     private let transcript: Transcript
     private let transcribeError: (any Error)?
     private let prepareError: (any Error)?
+    private let preparesUntilCancelled: Bool
     private(set) var receivedSampleCounts: [Int] = []
     private(set) var prepareCount = 0
+    private(set) var cancelledPrepareCount = 0
 
+    /// - Parameter preparesUntilCancelled: `prepare` stalls halfway, like a slow download, until
+    ///   its task is cancelled.
     init(
         transcript: Transcript = Transcript(segments: []),
         transcribeError: (any Error)? = nil,
-        prepareError: (any Error)? = nil
+        prepareError: (any Error)? = nil,
+        preparesUntilCancelled: Bool = false
     ) {
         self.transcript = transcript
         self.transcribeError = transcribeError
         self.prepareError = prepareError
+        self.preparesUntilCancelled = preparesUntilCancelled
     }
 
     func prepare(progress: (@Sendable (Double) -> Void)?) async throws {
         prepareCount += 1
         progress?(0.5)
+        if preparesUntilCancelled {
+            do {
+                try await Task.sleep(for: .seconds(60))
+            } catch {
+                cancelledPrepareCount += 1
+                throw error
+            }
+        }
         if let prepareError { throw prepareError }
         progress?(1)
     }

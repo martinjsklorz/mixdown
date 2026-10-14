@@ -70,6 +70,8 @@ public final class RecordingCoordinator {
 
     @ObservationIgnored private var preferredDeviceID: String?
     @ObservationIgnored private var session: Session?
+    /// The in-flight `engine.prepare` call, kept so `cancelPreparation()` can stop it.
+    @ObservationIgnored private var preparation: Task<Void, any Error>?
     /// True while `capture.start()` is in flight; blocks a second start.
     private var isStartingCapture = false
     private var preparationEstimator = RemainingTimeEstimator()
@@ -169,6 +171,7 @@ public final class RecordingCoordinator {
     // MARK: - Engine
 
     /// Downloads/loads the model ahead of the first recording, reporting progress via `phase`.
+    /// Stopped by `cancelPreparation()` or by cancelling the calling task.
     public func prepareEngine() async {
         switch phase {
         case .idle, .failed: break
@@ -179,23 +182,44 @@ public final class RecordingCoordinator {
         preparationEstimator = RemainingTimeEstimator()
         preparationEstimator.add(progress: 0, at: now())
         phase = .preparingModel(progress: 0)
-        do {
+        let preparation = Task { [engine] in
             // Progress arrives on arbitrary threads; hop to the main actor before touching state.
             try await engine.prepare { [weak self] progress in
                 Task { @MainActor [weak self] in
                     self?.updatePreparationProgress(progress)
                 }
             }
-            if case .preparingModel = phase {
-                phase = .idle
-            }
-            logger.info("Transcription engine ready")
-        } catch {
-            logger.error("Preparing engine failed: \(error.localizedDescription, privacy: .public)")
-            if case .preparingModel = phase {
-                phase = .failed(message: error.localizedDescription)
-            }
         }
+        self.preparation = preparation
+        let result = await withTaskCancellationHandler {
+            await preparation.result
+        } onCancel: {
+            preparation.cancel()
+        }
+
+        // After a cancel, a newer preparation may own `phase` already.
+        guard self.preparation == preparation else { return }
+        self.preparation = nil
+        switch result {
+        case .success:
+            logger.info("Transcription engine ready")
+            phase = .idle
+        case .failure where preparation.isCancelled:
+            logger.info("Preparing engine cancelled")
+            phase = .idle
+        case .failure(let error):
+            logger.error("Preparing engine failed: \(error.localizedDescription, privacy: .public)")
+            phase = .failed(message: error.localizedDescription)
+        }
+    }
+
+    /// Stops an in-progress model download. Files already fetched are kept, so the next
+    /// `prepareEngine()` (or recording) resumes from them.
+    public func cancelPreparation() {
+        guard case .preparingModel = phase, let preparation else { return }
+        preparation.cancel()
+        self.preparation = nil
+        phase = .idle
     }
 
     private func updatePreparationProgress(_ progress: Double) {

@@ -272,4 +272,61 @@ struct RecordingCoordinatorTests {
 
         #expect(coordinator.phase == .failed(message: error.localizedDescription))
     }
+
+    @Test func cancelPreparationStopsEngineAndReturnsToIdle() async throws {
+        let engine = MockEngine(preparesUntilCancelled: true)
+        let coordinator = makeCoordinator(engine: engine)
+
+        let preparing = Task { await coordinator.prepareEngine() }
+        try await waitUntil { coordinator.phase == .preparingModel(progress: 0.5) }
+        coordinator.cancelPreparation()
+
+        #expect(coordinator.phase == .idle)
+        #expect(coordinator.preparationTimeRemaining == nil)
+        await preparing.value
+        #expect(coordinator.phase == .idle)
+        #expect(await engine.cancelledPrepareCount == 1)
+    }
+
+    @Test func cancelledPreparationDoesNotOverrideNextOne() async throws {
+        let engine = MockEngine(preparesUntilCancelled: true)
+        let coordinator = makeCoordinator(engine: engine)
+
+        let first = Task { await coordinator.prepareEngine() }
+        try await waitUntil { coordinator.phase == .preparingModel(progress: 0.5) }
+        coordinator.cancelPreparation()
+        let second = Task { await coordinator.prepareEngine() }
+        try await waitUntil { coordinator.isBusy }
+        await first.value
+
+        #expect(coordinator.isBusy)
+        coordinator.cancelPreparation()
+        await second.value
+        #expect(coordinator.phase == .idle)
+        #expect(await engine.prepareCount == 2)
+        #expect(await engine.cancelledPrepareCount == 2)
+    }
+
+    @Test func cancellingCallerCancelsPreparation() async throws {
+        let engine = MockEngine(preparesUntilCancelled: true)
+        let coordinator = makeCoordinator(engine: engine)
+
+        let preparing = Task { await coordinator.prepareEngine() }
+        try await waitUntil { coordinator.phase == .preparingModel(progress: 0.5) }
+        preparing.cancel()
+        await preparing.value
+
+        #expect(coordinator.phase == .idle)
+        #expect(await engine.cancelledPrepareCount == 1)
+    }
+
+    @Test func cancelPreparationIgnoresOtherPhases() async {
+        let error = TranscriptionError.modelUnavailable("offline")
+        let coordinator = makeCoordinator(engine: MockEngine(prepareError: error))
+        await coordinator.prepareEngine()
+
+        coordinator.cancelPreparation()
+
+        #expect(coordinator.phase == .failed(message: error.localizedDescription))
+    }
 }

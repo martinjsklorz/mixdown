@@ -21,7 +21,8 @@ System Audio Recording** to record system audio. Mixdown never records your scre
 ## Speech models
 
 Choose a model under **Settings → Transcription**. It's downloaded once, and the time left
-shows next to the menu bar icon.
+shows next to the menu bar icon. **Cancel Download** in the menu (or **Cancel** in Settings) stops
+it; files already fetched are kept, so the next download picks up where it left off.
 
 | Model | Size | Good for |
 | ----- | ---- | -------- |
