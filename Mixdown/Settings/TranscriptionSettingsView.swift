@@ -4,6 +4,7 @@ import SwiftUI
 
 struct TranscriptionSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
+    @State private var isConfirmingDelete = false
 
     /// ISO 639-1 codes offered besides "Automatic". The models support many more.
     private static let languages = ["en", "de", "fr", "es", "it", "pt", "nl", "pl", "ja", "zh"]
@@ -81,8 +82,9 @@ struct TranscriptionSettingsView: View {
         }
     }
 
-    /// "Downloaded" once the model is on disk, otherwise a button to fetch it; recording needs it.
-    /// A Cancel button while preparing (files land on disk mid-download, so "Downloaded" would be premature).
+    /// "Downloaded" and a Delete button once the model is on disk, otherwise a button to fetch it;
+    /// recording needs it. A Cancel button while preparing (files land on disk mid-download, so
+    /// "Downloaded" would be premature).
     @ViewBuilder
     private func downloadAccessory(for phase: RecordingCoordinator.Phase) -> some View {
         switch phase {
@@ -92,7 +94,10 @@ struct TranscriptionSettingsView: View {
         case .failed:
             downloadButton
         default:
-            if environment.coordinator.isModelDownloaded {
+            if environment.coordinator.isDeletingModel {
+                ProgressView()
+                    .controlSize(.small)
+            } else if environment.coordinator.isModelDownloaded {
                 Label {
                     Text("Downloaded")
                 } icon: {
@@ -100,10 +105,26 @@ struct TranscriptionSettingsView: View {
                         .foregroundStyle(.green)
                 }
                 .foregroundStyle(.secondary)
+                deleteButton
             } else {
                 downloadButton
             }
         }
+    }
+
+    private var deleteButton: some View {
+        Button("Delete…") { isConfirmingDelete = true }
+            .disabled(!environment.canChangeModel)
+            .confirmationDialog(
+                "Delete \(environment.model.displayName)?",
+                isPresented: $isConfirmingDelete
+            ) {
+                Button("Delete", role: .destructive) {
+                    Task { await environment.coordinator.deleteModel() }
+                }
+            } message: {
+                Text("This frees up disk space. You'll need to download the model again before recording.")
+            }
     }
 
     private var downloadButton: some View {

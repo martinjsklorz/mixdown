@@ -128,22 +128,26 @@ actor MockEngine: TranscriptionEngine {
     private let transcribeError: (any Error)?
     private let prepareError: (any Error)?
     private let preparesUntilCancelled: Bool
+    private let deleteError: (any Error)?
     private nonisolated let downloaded: LockedValue<Bool>
     private(set) var receivedSampleCounts: [Int] = []
     private(set) var prepareCount = 0
     private(set) var cancelledPrepareCount = 0
+    private(set) var deleteCount = 0
 
     /// - Parameters:
     ///   - isDownloaded: Whether the model starts out on disk. A successful `prepare` downloads it.
     ///   - preparesUntilCancelled: `prepare` stalls halfway, like a slow download, until its task
     ///     is cancelled.
+    ///   - deleteError: Thrown by `deleteModel`, which then leaves the model on disk.
     init(
         transcript: Transcript = Transcript(segments: []),
         transcriptsBySampleCount: [Int: Transcript] = [:],
         transcribeError: (any Error)? = nil,
         isDownloaded: Bool = true,
         prepareError: (any Error)? = nil,
-        preparesUntilCancelled: Bool = false
+        preparesUntilCancelled: Bool = false,
+        deleteError: (any Error)? = nil
     ) {
         self.transcript = transcript
         self.transcriptsBySampleCount = transcriptsBySampleCount
@@ -151,6 +155,7 @@ actor MockEngine: TranscriptionEngine {
         self.downloaded = LockedValue(isDownloaded)
         self.prepareError = prepareError
         self.preparesUntilCancelled = preparesUntilCancelled
+        self.deleteError = deleteError
     }
 
     func prepare(progress: (@Sendable (Double) -> Void)?) async throws {
@@ -167,6 +172,12 @@ actor MockEngine: TranscriptionEngine {
         if let prepareError { throw prepareError }
         downloaded.update { $0 = true }
         progress?(1)
+    }
+
+    func deleteModel() async throws {
+        deleteCount += 1
+        if let deleteError { throw deleteError }
+        downloaded.update { $0 = false }
     }
 
     func transcribe(_ samples: [Float], options: TranscriptionOptions) async throws -> Transcript {

@@ -43,6 +43,9 @@ public final class RecordingCoordinator {
     /// minutes; `prepareEngine()` downloads it.
     public private(set) var isModelDownloaded: Bool
 
+    /// True while `deleteModel()` removes the model's files.
+    public private(set) var isDeletingModel = false
+
     public var isRecording: Bool {
         switch phase {
         case .recording: true
@@ -65,9 +68,9 @@ public final class RecordingCoordinator {
         return preparationEstimator.remaining
     }
 
-    /// Nothing is downloading, recording or transcribing. An error may be showing.
+    /// Nothing is downloading, deleting, recording or transcribing. An error may be showing.
     public var isIdle: Bool {
-        guard !isCapturing else { return false }
+        guard !isCapturing, !isDeletingModel else { return false }
         switch phase {
         case .idle, .failed: return true
         default: return false
@@ -266,6 +269,24 @@ public final class RecordingCoordinator {
         self.preparation = nil
         isModelDownloaded = engine.isDownloaded
         phase = .idle
+    }
+
+    /// Deletes the downloaded model to free disk space. Recording is unavailable until it's
+    /// downloaded again. Ignored unless idle with the model on disk.
+    public func deleteModel() async {
+        guard isIdle, isModelDownloaded else { return }
+        isDeletingModel = true
+        do {
+            try await engine.deleteModel()
+            logger.info("Deleted transcription model")
+            phase = .idle
+        } catch {
+            logger.error("Deleting model failed: \(error.localizedDescription, privacy: .public)")
+            phase = .failed(message: error.localizedDescription)
+        }
+        // Checked either way: a failed delete may have removed some files.
+        isModelDownloaded = engine.isDownloaded
+        isDeletingModel = false
     }
 
     private func updatePreparationProgress(_ progress: Double) {

@@ -68,6 +68,18 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
             && model.recognizerType.cacheLooksComplete(in: modelCacheDirectory)
     }
 
+    /// Removes the ASR model's files and drops the loaded instance. The VAD (~2 MB) is kept, since
+    /// every model shares it.
+    public func deleteModel() async throws {
+        loading?.task.cancel()
+        loading = nil
+        models = nil
+        let base = try modelDirectory ?? Self.defaultModelDirectory()
+        let directory = try ModelCache.directory(for: model.repositoryID, base: base)
+        try FileManager.default.removeItem(at: directory)
+        transcriptionLogger.info("Deleted \(self.model.displayName, privacy: .public)")
+    }
+
     // MARK: - Loading
 
     private func loadedModels(progress: (@Sendable (Double) -> Void)?) async throws -> LoadedModels {
