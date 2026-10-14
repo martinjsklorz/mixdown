@@ -2,11 +2,9 @@ import Foundation
 
 /// Wording for model download progress, shared by the menu bar, the menu and Settings.
 enum DownloadProgressText {
-    /// "34% · about 6 min left", or just "34%" before there's an estimate.
+    /// "34% · about 6 min left", or "34% · estimating time left…" until there's an estimate.
     static func detail(progress: Double, remaining: TimeInterval?) -> String {
-        let percent = percentText(progress)
-        guard let remaining else { return percent }
-        return "\(percent) · \(remainingText(remaining))"
+        "\(percentText(progress)) · \(remaining.map(remainingText) ?? "estimating time left…")"
     }
 
     /// Short text next to the menu bar icon: "6 min" once estimated, "34%" before.
