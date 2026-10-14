@@ -85,6 +85,10 @@ public protocol TranscriptionEngine: Sendable {
     /// - Parameter progress: Reports 0...1 while preparing. May be called from any thread.
     func prepare(progress: (@Sendable (Double) -> Void)?) async throws
 
+    /// Unloads the model and removes its files from disk, so `isDownloaded` becomes false and the
+    /// next `prepare` downloads it again. Only called while nothing is preparing or transcribing.
+    func deleteModel() async throws
+
     /// Transcribes 16 kHz mono Float32 samples (see `AudioChunk.sampleRate`).
     /// Calls `prepare` implicitly if it hasn't completed yet. Honors task cancellation.
     func transcribe(_ samples: [Float], options: TranscriptionOptions) async throws -> Transcript

@@ -517,6 +517,52 @@ struct RecordingCoordinatorTests {
         #expect(!cancelled.canStartRecording)
     }
 
+    @Test func deletingModelDisablesRecordingUntilDownloadedAgain() async {
+        let engine = MockEngine()
+        let coordinator = makeCoordinator(engine: engine)
+        await coordinator.monitorDevices()
+        #expect(coordinator.canStartRecording)
+
+        await coordinator.deleteModel()
+
+        #expect(await engine.deleteCount == 1)
+        #expect(!coordinator.isModelDownloaded)
+        #expect(!coordinator.isDeletingModel)
+        #expect(coordinator.phase == .idle)
+        #expect(!coordinator.canStartRecording)
+
+        // Nothing left to delete.
+        await coordinator.deleteModel()
+        #expect(await engine.deleteCount == 1)
+
+        await coordinator.prepareEngine()
+        #expect(coordinator.canStartRecording)
+    }
+
+    @Test func failedDeleteShowsError() async {
+        let error = TranscriptionError.failed("permission denied")
+        let coordinator = makeCoordinator(engine: MockEngine(deleteError: error))
+
+        await coordinator.deleteModel()
+
+        #expect(coordinator.phase == .failed(message: error.localizedDescription))
+        #expect(coordinator.isModelDownloaded)
+    }
+
+    @Test func deleteModelIgnoredWhileRecording() async {
+        let engine = MockEngine()
+        let coordinator = makeCoordinator(engine: engine)
+        await coordinator.monitorDevices()
+        await coordinator.startRecording()
+        #expect(coordinator.isRecording)
+
+        await coordinator.deleteModel()
+
+        #expect(await engine.deleteCount == 0)
+        #expect(coordinator.isModelDownloaded)
+        await coordinator.stopRecording()
+    }
+
     @Test func cancelPreparationIgnoresOtherPhases() async {
         let error = TranscriptionError.modelUnavailable("offline")
         let coordinator = makeCoordinator(engine: MockEngine(prepareError: error))
