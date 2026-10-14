@@ -5,6 +5,8 @@ struct SettingsView: View {
         TabView {
             GeneralSettingsView()
                 .tabItem { Label("General", systemImage: "gearshape") }
+            RecordingSettingsView()
+                .tabItem { Label("Recording", systemImage: "mic") }
             TranscriptionSettingsView()
                 .tabItem { Label("Transcription", systemImage: "waveform") }
         }
