@@ -40,7 +40,7 @@ Choose a model under **Settings → Transcription**. It's downloaded once, from 
 Model** in the menu or in Settings, and the time left shows next to the menu bar icon. After
 switching models, download the new one before recording. **Cancel Download** in the menu (or **Cancel** in Settings) stops
 it; files already fetched are kept, so the next download picks up where it left off.
-To free up disk space, select a model under **Settings → Transcription** and choose **Delete…**;
+To free up disk space, select a model under **Settings → Transcription** and choose **Delete**;
 you'll need to download it again before recording with it.
 
 | Model | Size | Good for |

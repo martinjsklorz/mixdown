@@ -51,7 +51,9 @@ struct TranscriptionSettingsView: View {
                 HStack {
                     modelStatus(for: coordinator.phase)
                     Spacer()
+                    // macOS push buttons drop the icon unless asked to show it.
                     downloadAccessory(for: coordinator.phase)
+                        .labelStyle(.titleAndIcon)
                 }
             }
         }
@@ -89,7 +91,7 @@ struct TranscriptionSettingsView: View {
     private func downloadAccessory(for phase: RecordingCoordinator.Phase) -> some View {
         switch phase {
         case .preparingModel:
-            Button("Cancel") { environment.coordinator.cancelPreparation() }
+            Button("Cancel", systemImage: "xmark.circle") { environment.coordinator.cancelPreparation() }
         // A failed load may mean the cached files are broken; offer the button to retry.
         case .failed:
             downloadButton
@@ -113,7 +115,7 @@ struct TranscriptionSettingsView: View {
     }
 
     private var deleteButton: some View {
-        Button("Delete…") { isConfirmingDelete = true }
+        Button("Delete", systemImage: "trash") { isConfirmingDelete = true }
             .disabled(!environment.canChangeModel)
             .confirmationDialog(
                 "Delete \(environment.model.displayName)?",
@@ -128,7 +130,7 @@ struct TranscriptionSettingsView: View {
     }
 
     private var downloadButton: some View {
-        Button("Download Model Now") {
+        Button("Download", systemImage: "arrow.down.circle") {
             Task { await environment.coordinator.prepareEngine() }
         }
         .disabled(!environment.canChangeModel)
