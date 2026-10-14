@@ -1,0 +1,52 @@
+import SwiftUI
+
+struct GeneralSettingsView: View {
+    @Environment(AppEnvironment.self) private var environment
+    @State private var launchAtLogin = LaunchAtLogin()
+
+    var body: some View {
+        let notesFolder = environment.notesFolder
+
+        Form {
+            Section("Notes") {
+                LabeledContent("Folder") {
+                    Text(notesFolder.directory.path(percentEncoded: false))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                        .help(notesFolder.directory.path(percentEncoded: false))
+                }
+                HStack {
+                    Button("Choose…") { environment.chooseNotesFolder() }
+                    if notesFolder.isCustom {
+                        Button("Use Default") { environment.resetNotesFolder() }
+                    }
+                    Spacer()
+                    Button("Show in Finder") { environment.openNotesFolder() }
+                }
+            }
+
+            Section("Startup") {
+                Toggle(
+                    "Launch Mixdown at login",
+                    isOn: Binding(
+                        get: { launchAtLogin.isEnabled },
+                        set: { launchAtLogin.setEnabled($0) }
+                    )
+                )
+                if launchAtLogin.requiresApproval {
+                    Text("Allow Mixdown in System Settings › General › Login Items.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if let error = launchAtLogin.errorMessage {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .onAppear { launchAtLogin.refresh() }
+    }
+}
