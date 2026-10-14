@@ -174,7 +174,7 @@ actor MicrophoneCapture: AudioCapturing {
 
     /// Built outside actor isolation: the tap runs on an AVAudioEngine thread, not on the actor.
     private static func tapBlock(for sink: TapSink) -> AVAudioNodeTapBlock {
-        { buffer, _ in sink.consume(buffer) }
+        { buffer, time in sink.consume(buffer, at: time) }
     }
 }
 
@@ -190,8 +190,12 @@ private final class TapSink: @unchecked Sendable {
         self.continuation = continuation
     }
 
-    func consume(_ buffer: AVAudioPCMBuffer) {
-        guard let chunk = resampler.process(buffer) else { return }
+    func consume(_ buffer: AVAudioPCMBuffer, at time: AVAudioTime) {
+        let hostTime =
+            time.isHostTimeValid
+            ? AVAudioTime.seconds(forHostTime: time.hostTime)
+            : HostClock.now() - Double(buffer.frameLength) / buffer.format.sampleRate
+        guard let chunk = resampler.process(buffer, hostTime: hostTime) else { return }
         continuation.yield(chunk)
     }
 }

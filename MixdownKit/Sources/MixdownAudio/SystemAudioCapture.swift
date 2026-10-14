@@ -146,6 +146,15 @@ final class SystemAudioCapture: NSObject, AudioCapturing, @unchecked Sendable {
 
     // MARK: - Sample conversion
 
+    /// ScreenCaptureKit stamps buffers on the host clock. A timestamp that's far off "now" means
+    /// that assumption broke, so fall back to the arrival time.
+    private static func hostTime(of sampleBuffer: CMSampleBuffer, buffer: AVAudioPCMBuffer) -> TimeInterval {
+        let arrival = HostClock.now() - Double(buffer.frameLength) / buffer.format.sampleRate
+        let presentation = sampleBuffer.presentationTimeStamp
+        guard presentation.isNumeric, abs(presentation.seconds - arrival) < 2 else { return arrival }
+        return presentation.seconds
+    }
+
     private static func pcmBuffer(from sampleBuffer: CMSampleBuffer) -> AVAudioPCMBuffer? {
         guard let description = sampleBuffer.formatDescription,
               let streamDescription = CMAudioFormatDescriptionGetStreamBasicDescription(description),
@@ -176,7 +185,7 @@ extension SystemAudioCapture: SCStreamOutput {
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard type == .audio, sampleBuffer.isValid,
               let buffer = Self.pcmBuffer(from: sampleBuffer),
-              let chunk = resampler.process(buffer)
+              let chunk = resampler.process(buffer, hostTime: Self.hostTime(of: sampleBuffer, buffer: buffer))
         else { return }
         let continuation = state.withLockUnchecked { $0.continuation }
         continuation?.yield(chunk)

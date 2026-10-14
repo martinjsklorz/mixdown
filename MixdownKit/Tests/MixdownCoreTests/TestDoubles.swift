@@ -10,10 +10,11 @@ enum Fixtures {
     static let usbMic = AudioInputDevice(id: "usb", name: "USB Microphone", kind: .microphone)
     static let devices = [usbMic, builtInMic, AudioInputDevice.systemAudio]
 
-    static func chunk(seconds: Double, startTime: TimeInterval = 0) -> AudioChunk {
+    static func chunk(seconds: Double, startTime: TimeInterval = 0, hostTime: TimeInterval? = nil) -> AudioChunk {
         AudioChunk(
             samples: Array(repeating: 0.1, count: Int(seconds * AudioChunk.sampleRate)),
-            startTime: startTime
+            startTime: startTime,
+            hostTime: hostTime
         )
     }
 }
@@ -105,13 +106,15 @@ final class MockCapture: AudioCapturing {
     }
 }
 
+/// Hands out the capture registered for a device's ID, else `capture`.
 struct MockCaptureFactory: AudioCaptureFactory {
     let capture: MockCapture
+    var captures: [String: MockCapture] = [:]
     let requestedDevices = LockedValue<[AudioInputDevice]>([])
 
     func makeCapture(for device: AudioInputDevice) throws -> any AudioCapturing {
         requestedDevices.update { $0.append(device) }
-        return capture
+        return captures[device.id] ?? capture
     }
 }
 
@@ -120,6 +123,8 @@ actor MockEngine: TranscriptionEngine {
     nonisolated var isDownloaded: Bool { downloaded.current }
 
     private let transcript: Transcript
+    /// Returned instead of `transcript` for a given sample count, to tell sources apart.
+    private let transcriptsBySampleCount: [Int: Transcript]
     private let transcribeError: (any Error)?
     private let prepareError: (any Error)?
     private let preparesUntilCancelled: Bool
@@ -134,12 +139,14 @@ actor MockEngine: TranscriptionEngine {
     ///     is cancelled.
     init(
         transcript: Transcript = Transcript(segments: []),
+        transcriptsBySampleCount: [Int: Transcript] = [:],
         transcribeError: (any Error)? = nil,
         isDownloaded: Bool = true,
         prepareError: (any Error)? = nil,
         preparesUntilCancelled: Bool = false
     ) {
         self.transcript = transcript
+        self.transcriptsBySampleCount = transcriptsBySampleCount
         self.transcribeError = transcribeError
         self.downloaded = LockedValue(isDownloaded)
         self.prepareError = prepareError
@@ -165,7 +172,7 @@ actor MockEngine: TranscriptionEngine {
     func transcribe(_ samples: [Float], options: TranscriptionOptions) async throws -> Transcript {
         receivedSampleCounts.append(samples.count)
         if let transcribeError { throw transcribeError }
-        return transcript
+        return transcriptsBySampleCount[samples.count] ?? transcript
     }
 }
 

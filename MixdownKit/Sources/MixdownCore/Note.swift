@@ -5,7 +5,8 @@ public struct Note: Sendable, Equatable {
     public var title: String
     public var createdAt: Date
     public var duration: TimeInterval
-    public var source: AudioInputDevice
+    /// Every input that was recorded, in menu order. More than one for e.g. microphone + system audio.
+    public var sources: [AudioInputDevice]
     public var engine: TranscriptionEngineInfo
     public var transcript: Transcript
 
@@ -13,14 +14,14 @@ public struct Note: Sendable, Equatable {
         title: String,
         createdAt: Date,
         duration: TimeInterval,
-        source: AudioInputDevice,
+        sources: [AudioInputDevice],
         engine: TranscriptionEngineInfo,
         transcript: Transcript
     ) {
         self.title = title
         self.createdAt = createdAt
         self.duration = duration
-        self.source = source
+        self.sources = sources
         self.engine = engine
         self.transcript = transcript
     }

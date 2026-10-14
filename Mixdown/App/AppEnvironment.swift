@@ -47,7 +47,8 @@ final class AppEnvironment {
             engine: SpeechSwiftEngine(model: model),
             noteWriter: MarkdownNoteWriter(directory: notesDirectory),
             options: TranscriptionOptions(language: settings.language),
-            preferredDeviceID: settings.selectedDeviceID
+            sourceLabels: settings.sourceLabels,
+            preferredDeviceIDs: settings.selectedDeviceIDs
         )
     }
 
@@ -62,10 +63,46 @@ final class AppEnvironment {
 
     // MARK: Input
 
-    /// Selects a device and remembers it as the user's preference.
-    func selectDevice(_ device: AudioInputDevice) {
-        coordinator.selectDevice(device)
-        settings.selectedDeviceID = device.id
+    /// The selected microphone, if any. The menu and settings offer one microphone at a time, plus
+    /// system audio on top.
+    var selectedMicrophone: AudioInputDevice? {
+        coordinator.selectedDevices.first { $0.kind == .microphone }
+    }
+
+    var recordsSystemAudio: Bool {
+        coordinator.selectedDevices.contains { $0.kind == .systemAudio }
+    }
+
+    /// Switches to `device` (replacing the current microphone) or, with `nil`, records without a
+    /// microphone. Ignored if that would leave no input selected.
+    func selectMicrophone(_ device: AudioInputDevice?) {
+        var selection = coordinator.selectedDevices.filter { $0.kind != .microphone }
+        if let device { selection.insert(device, at: 0) }
+        applySelection(selection)
+    }
+
+    /// Adds or removes system audio. Ignored if that would leave no input selected.
+    func setRecordsSystemAudio(_ enabled: Bool) {
+        var selection = coordinator.selectedDevices.filter { $0.kind != .systemAudio }
+        if enabled, let systemAudio = coordinator.devices.first(where: { $0.kind == .systemAudio }) {
+            selection.append(systemAudio)
+        }
+        applySelection(selection)
+    }
+
+    /// Selects devices and remembers them as the user's preference.
+    private func applySelection(_ selection: [AudioInputDevice]) {
+        guard coordinator.selectDevices(selection) else { return }
+        settings.selectedDeviceIDs = selection.map(\.id)
+    }
+
+    /// Speaker names for multi-source recordings. Takes effect from the next transcription.
+    var sourceLabels: SourceLabels {
+        get { coordinator.sourceLabels }
+        set {
+            settings.sourceLabels = newValue
+            coordinator.sourceLabels = newValue
+        }
     }
 
     // MARK: Transcription

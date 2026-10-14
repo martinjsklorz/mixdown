@@ -1,4 +1,5 @@
 import Foundation
+import MixdownCore
 import MixdownSpeechSwift
 
 /// Typed access to Mixdown's preferences in `UserDefaults`.
@@ -7,7 +8,11 @@ import MixdownSpeechSwift
 /// with `@AppStorage`.
 struct AppSettings {
     enum Key {
-        static let selectedDeviceID = "selectedDeviceID"
+        /// Single-input selection from before multi-source recording; read once to migrate.
+        static let legacySelectedDeviceID = "selectedDeviceID"
+        static let selectedDeviceIDs = "selectedDeviceIDs"
+        static let microphoneLabel = "microphoneSpeakerLabel"
+        static let systemAudioLabel = "systemAudioSpeakerLabel"
         static let transcriptionModel = "transcriptionModel"
         static let notesFolderBookmark = "notesFolderBookmark"
         /// ISO 639-1 code; absent means auto-detect.
@@ -16,11 +21,33 @@ struct AppSettings {
 
     var defaults: UserDefaults = .standard
 
-    /// The input the user picked last. Kept even while that device is unplugged so it is
+    /// The inputs the user picked last. Kept even while a device is unplugged so it is
     /// re-selected when it comes back.
-    var selectedDeviceID: String? {
-        get { defaults.string(forKey: Key.selectedDeviceID) }
-        nonmutating set { defaults.set(newValue, forKey: Key.selectedDeviceID) }
+    var selectedDeviceIDs: [String] {
+        get {
+            defaults.stringArray(forKey: Key.selectedDeviceIDs)
+                ?? defaults.string(forKey: Key.legacySelectedDeviceID).map { [$0] }
+                ?? []
+        }
+        nonmutating set {
+            defaults.set(newValue, forKey: Key.selectedDeviceIDs)
+            defaults.removeObject(forKey: Key.legacySelectedDeviceID)
+        }
+    }
+
+    /// Speaker names for recordings with more than one input. Blank values fall back to the
+    /// defaults when the transcript is labeled.
+    var sourceLabels: SourceLabels {
+        get {
+            SourceLabels(
+                microphone: defaults.string(forKey: Key.microphoneLabel) ?? SourceLabels.defaultMicrophone,
+                systemAudio: defaults.string(forKey: Key.systemAudioLabel) ?? SourceLabels.defaultSystemAudio
+            )
+        }
+        nonmutating set {
+            defaults.set(newValue.microphone, forKey: Key.microphoneLabel)
+            defaults.set(newValue.systemAudio, forKey: Key.systemAudioLabel)
+        }
     }
 
     var transcriptionModel: SpeechSwiftModel {

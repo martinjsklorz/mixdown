@@ -1,13 +1,18 @@
 import MixdownCore
 import SwiftUI
 
-/// Input selection as checkmarked menu items, grouped into microphones and system audio.
+/// Input selection as checkmarked menu items: one microphone at a time, and system audio, which
+/// can be added on top to record both sides of a call.
+///
+/// Choosing a microphone replaces the current one; choosing the checked one again turns the
+/// microphone off. Either is ignored if it would leave nothing to record.
 struct DevicePicker: View {
     let devices: [AudioInputDevice]
-    let selectedID: String?
+    let selectedIDs: Set<String>
     /// Switching inputs mid-recording isn't supported.
     let isEnabled: Bool
-    let onSelect: @MainActor (AudioInputDevice) -> Void
+    let onSelectMicrophone: @MainActor (AudioInputDevice?) -> Void
+    let onSetSystemAudio: @MainActor (Bool) -> Void
 
     var body: some View {
         let microphones = devices.filter { $0.kind == .microphone }
@@ -19,34 +24,26 @@ struct DevicePicker: View {
             }
         }
         if !microphones.isEmpty {
-            Section("Microphones") { picker("Microphones", options: microphones) }
+            Section("Microphone") {
+                ForEach(microphones) { device in
+                    toggle(Self.title(for: device), isOn: selectedIDs.contains(device.id)) { isOn in
+                        onSelectMicrophone(isOn ? device : nil)
+                    }
+                }
+            }
         }
         if !system.isEmpty {
-            Section("System") { picker("System", options: system) }
+            Section("System") {
+                ForEach(system) { device in
+                    toggle(device.name, isOn: selectedIDs.contains(device.id), set: onSetSystemAudio)
+                }
+            }
         }
     }
 
-    // Two inline pickers share one selection so each group gets its own header while only one
-    // item is ever checked.
-    private func picker(_ title: String, options: [AudioInputDevice]) -> some View {
-        Picker(title, selection: selection) {
-            ForEach(options) { device in
-                Text(Self.title(for: device)).tag(Optional(device.id))
-            }
-        }
-        .pickerStyle(.inline)
-        .labelsHidden()
-        .disabled(!isEnabled)
-    }
-
-    private var selection: Binding<String?> {
-        Binding(
-            get: { selectedID },
-            set: { id in
-                guard let device = devices.first(where: { $0.id == id }) else { return }
-                onSelect(device)
-            }
-        )
+    private func toggle(_ title: String, isOn: Bool, set: @escaping @MainActor (Bool) -> Void) -> some View {
+        Toggle(title, isOn: Binding(get: { isOn }, set: { set($0) }))
+            .disabled(!isEnabled)
     }
 
     static func title(for device: AudioInputDevice) -> String {

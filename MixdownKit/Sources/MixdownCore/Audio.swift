@@ -8,7 +8,7 @@ public enum AudioSourceKind: String, Codable, Sendable, CaseIterable {
     case systemAudio
 }
 
-/// A selectable audio source shown in the menu bar device picker.
+/// A selectable audio source shown in the menu bar device picker. Several can record at once.
 public struct AudioInputDevice: Identifiable, Hashable, Sendable, Codable {
     /// Identifier for the system-audio pseudo device.
     public static let systemAudioID = "mixdown.system-audio"
@@ -42,10 +42,14 @@ public struct AudioChunk: Sendable, Equatable {
     public let samples: [Float]
     /// Offset of the first sample relative to the start of the capture session.
     public let startTime: TimeInterval
+    /// When the first sample was captured, in seconds on the host clock (`mach_absolute_time`).
+    /// Lines up chunks from different sources and reveals gaps. `nil` if the capture can't tell.
+    public let hostTime: TimeInterval?
 
-    public init(samples: [Float], startTime: TimeInterval) {
+    public init(samples: [Float], startTime: TimeInterval, hostTime: TimeInterval? = nil) {
         self.samples = samples
         self.startTime = startTime
+        self.hostTime = hostTime
     }
 
     public var duration: TimeInterval { Double(samples.count) / Self.sampleRate }
