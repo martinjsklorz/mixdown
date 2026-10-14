@@ -50,6 +50,17 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
         }
     }
 
+    /// Whether `model` (and the VAD) are already on disk, so `prepare` won't download anything.
+    /// Checks files only; it doesn't validate them.
+    public static func isDownloaded(_ model: SpeechSwiftModel, modelDirectory: URL? = nil) -> Bool {
+        guard let base = try? modelDirectory ?? defaultModelDirectory(),
+            let detectorDirectory = try? ModelCache.directory(for: VoiceActivityDetector.repositoryID, base: base),
+            let modelCacheDirectory = try? ModelCache.directory(for: model.repositoryID, base: base)
+        else { return false }
+        return VoiceActivityDetector.cacheLooksComplete(in: detectorDirectory)
+            && model.recognizerType.cacheLooksComplete(in: modelCacheDirectory)
+    }
+
     // MARK: - Loading
 
     private func loadedModels(progress: (@Sendable (Double) -> Void)?) async throws -> LoadedModels {
