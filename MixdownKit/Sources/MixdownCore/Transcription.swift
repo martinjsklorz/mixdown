@@ -76,6 +76,10 @@ public struct TranscriptionEngineInfo: Sendable, Equatable {
 public protocol TranscriptionEngine: Sendable {
     var info: TranscriptionEngineInfo { get }
 
+    /// Whether the model is on disk, so `prepare` won't download anything. Recording is only
+    /// offered once this is true. Read on the main actor; keep it cheap.
+    var isDownloaded: Bool { get }
+
     /// Downloads (if needed) and loads the model. Safe to call repeatedly; later calls are no-ops.
     /// Honors task cancellation, which is how a download is cancelled.
     /// - Parameter progress: Reports 0...1 while preparing. May be called from any thread.

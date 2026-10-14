@@ -31,6 +31,10 @@ public final class RecordingCoordinator {
 
     public var engineInfo: TranscriptionEngineInfo { engine.info }
 
+    /// Whether the model is on disk. Recording waits for it, since fetching it can take many
+    /// minutes; `prepareEngine()` downloads it.
+    public private(set) var isModelDownloaded: Bool
+
     public var isRecording: Bool {
         switch phase {
         case .recording: true
@@ -53,13 +57,18 @@ public final class RecordingCoordinator {
         return preparationEstimator.remaining
     }
 
-    /// Idle (or showing an error), not already starting, and a device is selected.
-    public var canStartRecording: Bool {
-        guard selectedDevice != nil, !isStartingCapture, session == nil else { return false }
+    /// Nothing is downloading, recording or transcribing. An error may be showing.
+    public var isIdle: Bool {
+        guard !isCapturing else { return false }
         switch phase {
         case .idle, .failed: return true
         default: return false
         }
+    }
+
+    /// Idle, a device is selected and the model is downloaded.
+    public var canStartRecording: Bool {
+        isIdle && selectedDevice != nil && isModelDownloaded
     }
 
     private let deviceProvider: any AudioDeviceProvider
@@ -107,6 +116,7 @@ public final class RecordingCoordinator {
         self.deviceProvider = deviceProvider
         self.captureFactory = captureFactory
         self.engine = engine
+        self.isModelDownloaded = engine.isDownloaded
         self.noteWriter = noteWriter
         self.options = options
         self.preferredDeviceID = preferredDeviceID
@@ -173,11 +183,7 @@ public final class RecordingCoordinator {
     /// Downloads/loads the model ahead of the first recording, reporting progress via `phase`.
     /// Stopped by `cancelPreparation()` or by cancelling the calling task.
     public func prepareEngine() async {
-        switch phase {
-        case .idle, .failed: break
-        default: return
-        }
-        guard !isCapturing else { return }
+        guard isIdle else { return }
 
         preparationEstimator = RemainingTimeEstimator()
         preparationEstimator.add(progress: 0, at: now())
@@ -200,6 +206,8 @@ public final class RecordingCoordinator {
         // After a cancel, a newer preparation may own `phase` already.
         guard self.preparation == preparation else { return }
         self.preparation = nil
+        // Checked on every outcome: a failed or cancelled download may still have finished.
+        isModelDownloaded = engine.isDownloaded
         switch result {
         case .success:
             logger.info("Transcription engine ready")
@@ -219,6 +227,7 @@ public final class RecordingCoordinator {
         guard case .preparingModel = phase, let preparation else { return }
         preparation.cancel()
         self.preparation = nil
+        isModelDownloaded = engine.isDownloaded
         phase = .idle
     }
 

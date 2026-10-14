@@ -320,6 +320,51 @@ struct RecordingCoordinatorTests {
         #expect(await engine.cancelledPrepareCount == 1)
     }
 
+    @Test func recordingWaitsForModelDownload() async {
+        let factory = MockCaptureFactory(capture: MockCapture())
+        let coordinator = RecordingCoordinator(
+            deviceProvider: MockDeviceProvider(devices: Fixtures.devices),
+            captureFactory: factory,
+            engine: MockEngine(isDownloaded: false),
+            noteWriter: InMemoryNoteWriter()
+        )
+        await coordinator.monitorDevices()
+
+        #expect(!coordinator.isModelDownloaded)
+        #expect(coordinator.isIdle)
+        #expect(!coordinator.canStartRecording)
+        await coordinator.startRecording()
+        #expect(coordinator.phase == .idle)
+        #expect(factory.requestedDevices.current.isEmpty)
+
+        await coordinator.prepareEngine()
+
+        #expect(coordinator.isModelDownloaded)
+        #expect(coordinator.canStartRecording)
+        await coordinator.startRecording()
+        #expect(coordinator.isRecording)
+    }
+
+    @Test func failedOrCancelledDownloadKeepsRecordingDisabled() async throws {
+        let failing = makeCoordinator(
+            engine: MockEngine(isDownloaded: false, prepareError: TranscriptionError.modelUnavailable("offline"))
+        )
+        await failing.monitorDevices()
+        await failing.prepareEngine()
+        #expect(!failing.isModelDownloaded)
+        #expect(!failing.canStartRecording)
+
+        let cancelled = makeCoordinator(engine: MockEngine(isDownloaded: false, preparesUntilCancelled: true))
+        await cancelled.monitorDevices()
+        let preparing = Task { await cancelled.prepareEngine() }
+        try await waitUntil { cancelled.isBusy }
+        #expect(!cancelled.isIdle)
+        cancelled.cancelPreparation()
+        await preparing.value
+        #expect(!cancelled.isModelDownloaded)
+        #expect(!cancelled.canStartRecording)
+    }
+
     @Test func cancelPreparationIgnoresOtherPhases() async {
         let error = TranscriptionError.modelUnavailable("offline")
         let coordinator = makeCoordinator(engine: MockEngine(prepareError: error))

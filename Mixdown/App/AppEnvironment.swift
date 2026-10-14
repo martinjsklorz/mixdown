@@ -79,12 +79,7 @@ final class AppEnvironment {
 
     /// Whether the coordinator can be replaced: nothing is recording, starting, downloading or
     /// transcribing.
-    var canChangeModel: Bool {
-        switch coordinator.phase {
-        case .idle, .failed: coordinator.canStartRecording || coordinator.selectedDevice == nil
-        default: false
-        }
-    }
+    var canChangeModel: Bool { coordinator.isIdle }
 
     /// Switches models by rebuilding the coordinator. Ignored unless `canChangeModel`; the
     /// settings UI disables the picker in that case.
