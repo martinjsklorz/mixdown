@@ -1,17 +1,28 @@
 import SwiftUI
 
+/// The Settings window. Its tab is shared so other views can open it at a particular one.
 struct SettingsView: View {
+    @Environment(MainNavigation.self) private var navigation
+
     var body: some View {
-        TabView {
+        @Bindable var navigation = navigation
+
+        TabView(selection: $navigation.settingsTab) {
             GeneralSettingsView()
-                .tabItem { Label("General", systemImage: "gearshape") }
+                .tabItem { tabLabel(.general) }
+                .tag(MainNavigation.SettingsTab.general)
             RecordingSettingsView()
-                .tabItem { Label("Recording", systemImage: "mic") }
+                .tabItem { tabLabel(.recording) }
+                .tag(MainNavigation.SettingsTab.recording)
             TranscriptionSettingsView()
-                .tabItem { Label("Transcription", systemImage: "waveform") }
+                .tabItem { tabLabel(.transcription) }
+                .tag(MainNavigation.SettingsTab.transcription)
         }
-        .frame(width: 480)
-        // Menu bar agents aren't active when the menu is used, so bring the window forward.
-        .onAppear { NSApp.activate() }
+        // Tall enough for the Recording tab, the longest, without scrolling.
+        .frame(width: 520, height: 390)
+    }
+
+    private func tabLabel(_ tab: MainNavigation.SettingsTab) -> some View {
+        Label(tab.rawValue, systemImage: tab.systemImage)
     }
 }

@@ -2,22 +2,33 @@
 
 # Mixdown
 
-Mixdown lives in your Mac's menu bar. It records your microphone, whatever your Mac is
-playing (such as a call or a video), or both at once, turns the speech into text, and saves it as
-a Markdown note.
+Mixdown records your microphone, whatever your Mac is playing (such as a call or a video), or
+both at once, turns the speech into text, and saves it as a Markdown note. It has a small main
+window and also lives in your Mac's menu bar.
 Everything happens on your Mac. Your audio never leaves it.
 
 ## Using Mixdown
 
-1. Click the waveform icon in the menu bar.
-2. The first time, choose **Download Model** and wait for it to finish (see
-   [Speech models](#speech-models)). Recording stays off until the model is on your Mac.
-3. Pick your inputs: a microphone, **System Audio**, or both.
-4. Choose **Start Recording**, and **Stop Recording** when you're done.
+Mixdown's window has a sidebar with **Record** at the top and your recordings below it, in
+collapsible sections by day. The cog above the sidebar, next to the sidebar button, opens Settings.
 
-A few seconds later the note appears in your notes folder. **Show Notes** in the menu lists
-your notes by date and previews the one you pick, much like Apple Notes. **Open Notes Folder**
-and **Reveal Last Note** take you to the files.
+1. Open Mixdown. **Record** shows the big record button and what the next recording uses:
+   microphone, system audio, speech model, language and notes folder.
+2. The first time, click **Download Model** and wait for it to finish (see
+   [Speech models](#speech-models)). Recording stays off until the model is on your Mac.
+3. Pick your inputs in the **Recording** menu (a microphone, **System Audio**, or both), or with
+   **Change…** next to the setup summary.
+4. Click the red button (or press ⌘R) to record, and again to stop.
+
+A few seconds later the note appears under **Today** in the sidebar and opens, rendered much like
+Apple Notes. Click a day to fold it away, and search the sidebar to find older recordings.
+**File → Open Notes Folder** and **Reveal Last Note in Finder** take you to the files.
+
+**View → Record / Notes** (⌘1, ⌘2) switch the window's section, and **Mixdown → Settings…** (⌘,)
+opens Settings. The waveform icon in the menu bar can start and stop recording and pick inputs
+without the window, and has **Settings…** too. Recording carries on there if
+you close the window; **Open Mixdown** in that menu, **Window → Mixdown** (⌘0) or the Dock icon
+brings it back.
 
 The first time, macOS asks for permission: **Microphone** to record your voice, or **System
 Audio Recording** to record what your Mac plays. If system audio comes out silent, check that
@@ -39,7 +50,7 @@ Mixdown drops lines it recognizes as that echo, it can't catch all of it.
 ## Speech models
 
 Choose a model under **Settings → Transcription**. It's downloaded once, from **Download
-Model** in the menu or in Settings, and the time left shows next to the menu bar icon. After
+Model** in the window, the Recording menu or Settings, and the time left shows next to the menu bar icon. After
 switching models, download the new one before recording. **Cancel Download** in the menu (or **Cancel** in Settings) stops
 it; files already fetched are kept, so the next download picks up where it left off.
 To free up disk space, select a model under **Settings → Transcription** and choose **Delete**;
@@ -104,6 +115,7 @@ You need a Mac with Apple Silicon running macOS 15 or later, Xcode, and
 make bootstrap   # one-time setup
 make run         # build and launch
 make test        # run the tests
+make clean       # quit Mixdown, delete all build output and refresh the Dock icon
 ```
 
 To sign the app with your Apple developer account, set `DEVELOPMENT_TEAM` in `project.yml`.
