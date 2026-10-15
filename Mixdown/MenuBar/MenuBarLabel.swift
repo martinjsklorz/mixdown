@@ -2,7 +2,7 @@ import MixdownCore
 import SwiftUI
 
 /// The status item: an icon reflecting the coordinator's phase, plus the time left while a
-/// model downloads or the time elapsed while recording.
+/// model downloads or a recording is transcribed, or the time elapsed while recording.
 struct MenuBarLabel: View {
     let coordinator: RecordingCoordinator
     /// Whole seconds recorded so far, while recording.
@@ -12,11 +12,14 @@ struct MenuBarLabel: View {
 
     var body: some View {
         let phase = coordinator.phase
-        let remaining = coordinator.preparationTimeRemaining
+        let remaining = coordinator.timeRemaining
         HStack(spacing: 4) {
             Self.icon(for: phase)
             if case .preparingModel(let progress) = phase {
-                Text(DownloadProgressText.compact(progress: progress, remaining: remaining))
+                Text(ProgressText.compact(progress: progress, remaining: remaining))
+                    .monospacedDigit()
+            } else if case .transcribing(let progress) = phase {
+                Text(ProgressText.compact(progress: progress, remaining: remaining))
                     .monospacedDigit()
             } else if case .recording = phase, let recordingElapsed {
                 Text(Self.elapsedText(recordingElapsed))
@@ -61,14 +64,15 @@ struct MenuBarLabel: View {
         switch phase {
         case .idle: "Mixdown"
         case .preparingModel(let progress):
-            "Mixdown, downloading model, \(DownloadProgressText.detail(progress: progress, remaining: remaining))"
+            "Mixdown, downloading model, \(ProgressText.detail(progress: progress, remaining: remaining))"
         case .recording:
             if let elapsed {
                 "Mixdown, recording, \(Duration.seconds(elapsed).formatted(.units(width: .wide)))"
             } else {
                 "Mixdown, recording"
             }
-        case .transcribing: "Mixdown, transcribing"
+        case .transcribing(let progress):
+            "Mixdown, transcribing, \(ProgressText.detail(progress: progress, remaining: remaining))"
         case .failed: "Mixdown, error"
         }
     }

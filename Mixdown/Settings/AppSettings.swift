@@ -19,6 +19,8 @@ struct AppSettings {
         static let language = "transcriptionLanguage"
         /// Whether to move notes to the Trash without asking first. Read with `@AppStorage`.
         static let suppressesTrashConfirmation = "suppressesTrashConfirmation"
+        /// Whether Mixdown posts notifications at all. Absent means yes.
+        static let showsNotifications = "showsNotifications"
     }
 
     var defaults: UserDefaults = .standard
@@ -61,6 +63,11 @@ struct AppSettings {
     var notesFolderBookmark: Data? {
         get { defaults.data(forKey: Key.notesFolderBookmark) }
         nonmutating set { defaults.set(newValue, forKey: Key.notesFolderBookmark) }
+    }
+
+    var showsNotifications: Bool {
+        get { defaults.object(forKey: Key.showsNotifications) as? Bool ?? true }
+        nonmutating set { defaults.set(newValue, forKey: Key.showsNotifications) }
     }
 
     /// `nil` means auto-detect.

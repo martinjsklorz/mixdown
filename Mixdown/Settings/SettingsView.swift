@@ -18,8 +18,15 @@ struct SettingsView: View {
                 .tabItem { tabLabel(.transcription) }
                 .tag(MainNavigation.SettingsTab.transcription)
         }
-        // Tall enough for the Recording tab, the longest, without scrolling.
-        .frame(width: 520, height: 390)
+        .frame(width: 520, height: height(for: navigation.settingsTab))
+    }
+
+    /// Tall enough for each tab without scrolling, including the warnings General can show.
+    private func height(for tab: MainNavigation.SettingsTab) -> CGFloat {
+        switch tab {
+        case .general: 520
+        case .recording, .transcription: 390
+        }
     }
 
     private func tabLabel(_ tab: MainNavigation.SettingsTab) -> some View {

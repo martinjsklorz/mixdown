@@ -35,8 +35,8 @@ final class NoteTrash {
         intentIdentifiers: []
     )
 
-    /// Moves the note to the Trash, then posts a notification offering to restore it. Asks for
-    /// permission to notify the first time.
+    /// Moves the note to the Trash, then posts a notification offering to restore it, unless
+    /// notifications are turned off. Asks for permission to notify the first time.
     func moveToTrash(_ note: NoteDocument) throws {
         let data = try? Data(contentsOf: note.url)
         var trashedURL: NSURL?

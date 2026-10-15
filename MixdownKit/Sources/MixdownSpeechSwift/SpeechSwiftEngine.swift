@@ -45,12 +45,18 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
 
     /// Transcribes a whole recording of 16 kHz mono samples. Segments follow the VAD's speech regions
     /// (or the model's own timestamps for MOSS). `translateToEnglish` is not supported and ignored.
-    public func transcribe(_ samples: [Float], options: TranscriptionOptions) async throws -> Transcript {
+    ///
+    /// `progress` counts recognized pieces against the total, so it starts once the VAD is done.
+    public func transcribe(
+        _ samples: [Float],
+        options: TranscriptionOptions,
+        progress: (@Sendable (Double) -> Void)?
+    ) async throws -> Transcript {
         // A model that detects the language itself ignores the setting, so the note mustn't claim it.
         let language = model.supportsLanguageSelection ? Self.languageCode(options.language) : nil
         guard !samples.isEmpty else { return Transcript(segments: [], language: language) }
         return try await oneAtATime {
-            try await self.performTranscription(samples, options: options, language: language)
+            try await self.performTranscription(samples, options: options, language: language, progress: progress)
         }
     }
 
@@ -191,7 +197,8 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
     private func performTranscription(
         _ samples: [Float],
         options: TranscriptionOptions,
-        language requestedLanguage: String?
+        language requestedLanguage: String?,
+        progress: (@Sendable (Double) -> Void)?
     ) async throws -> Transcript {
         let models = try await loadedModels(progress: nil)
         try Task.checkCancellation()
@@ -228,19 +235,21 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
         }
 
         var segments: [TranscriptSegment] = []
-        for piece in pieces {
+        for (index, piece) in pieces.enumerated() {
             try Task.checkCancellation()
             let audio = Self.slice(samples, to: piece.window)
-            guard !audio.isEmpty else { continue }
-            let recognized: [RecognizedSegment]
-            do {
-                recognized = try models.recognizer.recognize(audio, languageHint: hint)
-            } catch let error as CancellationError {
-                throw error
-            } catch {
-                throw TranscriptionError.failed(error.localizedDescription)
+            if !audio.isEmpty {
+                let recognized: [RecognizedSegment]
+                do {
+                    recognized = try models.recognizer.recognize(audio, languageHint: hint)
+                } catch let error as CancellationError {
+                    throw error
+                } catch {
+                    throw TranscriptionError.failed(error.localizedDescription)
+                }
+                segments.append(contentsOf: recognized.compactMap { piece.place($0) })
             }
-            segments.append(contentsOf: recognized.compactMap { piece.place($0) })
+            progress?(Double(index + 1) / Double(pieces.count))
             await Task.yield()
         }
 
