@@ -9,10 +9,10 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
     public var url: URL
     public var title: String
     public var createdAt: Date
-    /// In seconds. `nil` unless the frontmatter has a `duration`.
+    /// In seconds. `nil` unless the frontmatter has a usable `duration`.
     public var duration: TimeInterval?
-    /// Name of the recorded input, from the frontmatter.
-    public var source: String?
+    /// Names of the recorded inputs, from the frontmatter's `sources` list or single `source`.
+    public var sources: [String]
     /// The Markdown after the frontmatter.
     public var body: String
     /// The first text of the body as a single line of plain text. Empty if there is none.
@@ -21,17 +21,24 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
     public var id: URL { url }
 
     static let maxSnippetLength = 200
+    /// About 31 years. Larger values, like `inf` or `1e30`, would overflow `Duration`.
+    static let maxDuration: TimeInterval = 1_000_000_000
 
     public init(url: URL, contents: String, fileDate: Date) {
         let (fields, body) = Self.splitFrontmatter(contents)
+        let scalars = fields.mapValues(Self.yamlScalar)
         let blocks = MarkdownBlock.parse(body)
 
         self.url = url
         self.body = body
-        self.title = Self.title(fields: fields, blocks: blocks, url: url)
-        self.createdAt = fields["created"].flatMap(Self.date(fromYAML:)) ?? fileDate
-        self.duration = fields["duration"].flatMap(TimeInterval.init)
-        self.source = fields["source"].flatMap { $0.isEmpty ? nil : $0 }
+        self.title = Self.title(fields: scalars, blocks: blocks, url: url)
+        self.createdAt = scalars["created"].flatMap(Self.date(fromYAML:)) ?? fileDate
+        // `nan` fails the range check too.
+        self.duration = scalars["duration"].flatMap(TimeInterval.init).flatMap {
+            (0...Self.maxDuration).contains($0) ? $0 : nil
+        }
+        let sources = fields["sources"].flatMap(Self.yamlFlowSequence) ?? scalars["source"].map { [$0] } ?? []
+        self.sources = sources.filter { !$0.isEmpty }
         self.snippet = Self.snippet(from: blocks)
     }
 
@@ -167,7 +174,7 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
     // MARK: - Frontmatter
 
     /// Splits off a leading `---` … `---` block and reads its top-level `key: value` lines.
-    /// Values that aren't simple scalars (lists, nested maps) are kept as written.
+    /// Values are kept as written; decode them with `yamlScalar(_:)` or `yamlFlowSequence(_:)`.
     static func splitFrontmatter(_ contents: String) -> (fields: [String: String], body: String) {
         var text = contents.replacingOccurrences(of: "\r\n", with: "\n")
         if text.hasPrefix("\u{FEFF}") { text.removeFirst() }
@@ -178,7 +185,7 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
         for line in lines[1..<end] {
             guard let key = frontmatterKey(line), let colon = line.firstIndex(of: ":") else { continue }
             let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
-            fields[key] = yamlScalar(value)
+            fields[key] = value
         }
         return (fields, lines[(end + 1)...].joined(separator: "\n"))
     }
@@ -203,6 +210,47 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
     /// The value of a YAML scalar: quotes removed and escapes resolved, comments dropped.
     /// An unterminated quoted value is kept as written.
     static func yamlScalar(_ raw: String) -> String {
+        if raw.first == "\"" || raw.first == "'" {
+            return quotedScalar(raw[...])?.value ?? raw
+        }
+        guard let comment = raw.range(of: " #") else { return raw }
+        return raw[..<comment.lowerBound].trimmingCharacters(in: .whitespaces)
+    }
+
+    /// The items of a YAML flow sequence like `["a", 'b', c]`, or `nil` if `raw` isn't a
+    /// complete one. Empty items are dropped.
+    static func yamlFlowSequence(_ raw: String) -> [String]? {
+        guard raw.first == "[" else { return nil }
+        var items: [String] = []
+        var rest = raw.dropFirst()
+        while true {
+            rest = rest.drop(while: \.isWhitespace)
+            guard let first = rest.first else { return nil }
+            // Also ends `[]` and a trailing comma.
+            if first == "]" { return items }
+            let item: String
+            if first == "\"" || first == "'" {
+                guard let quoted = quotedScalar(rest) else { return nil }
+                item = quoted.value
+                rest = rest[quoted.end...]
+            } else {
+                let end = rest.firstIndex { $0 == "," || $0 == "]" } ?? rest.endIndex
+                item = rest[..<end].trimmingCharacters(in: .whitespaces)
+                rest = rest[end...]
+            }
+            if !item.isEmpty { items.append(item) }
+            rest = rest.drop(while: \.isWhitespace)
+            if rest.first == "," {
+                rest = rest.dropFirst()
+            } else if rest.first != "]" {
+                return nil
+            }
+        }
+    }
+
+    /// The value of the single- or double-quoted scalar `raw` starts with, and the index after
+    /// its closing quote. `nil` if `raw` doesn't start with a quote or it's unterminated.
+    private static func quotedScalar(_ raw: Substring) -> (value: String, end: Substring.Index)? {
         switch raw.first {
         case "\"":
             var isEscaped = false
@@ -212,10 +260,11 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
                 } else if raw[index] == "\\" {
                     isEscaped = true
                 } else if raw[index] == "\"" {
-                    return unescapeDoubleQuoted(raw[raw.index(after: raw.startIndex)..<index])
+                    let value = unescapeDoubleQuoted(raw[raw.index(after: raw.startIndex)..<index])
+                    return (value, raw.index(after: index))
                 }
             }
-            return raw
+            return nil
         case "'":
             // The only escape in single quotes is `''` for a quote.
             var value = ""
@@ -227,14 +276,13 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
                     value.append(character)
                     continue
                 }
-                guard index < raw.endIndex, raw[index] == "'" else { return value }
+                guard index < raw.endIndex, raw[index] == "'" else { return (value, index) }
                 value.append("'")
                 index = raw.index(after: index)
             }
-            return raw
+            return nil
         default:
-            guard let comment = raw.range(of: " #") else { return raw }
-            return raw[..<comment.lowerBound].trimmingCharacters(in: .whitespaces)
+            return nil
         }
     }
 

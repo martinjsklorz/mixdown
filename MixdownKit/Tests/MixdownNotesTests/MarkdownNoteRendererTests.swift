@@ -116,7 +116,25 @@ struct MarkdownNoteRendererTests {
     @Test func escapesTitleInYAML() {
         let markdown = MarkdownNoteRenderer.render(NoteFixtures.note(title: #"Say "hi" \ now"#))
         #expect(frontmatterLines(markdown).contains(#"title: "Say \"hi\" \\ now""#))
-        #expect(markdown.contains(#"# Say "hi" \ now"#))
+        #expect(markdown.contains(#"# Say "hi" \\ now"#))
+    }
+
+    @Test func escapesMarkdownInTranscript() {
+        let markdown = MarkdownNoteRenderer.render(
+            NoteFixtures.note(segments: [
+                TranscriptSegment(
+                    start: 0,
+                    end: 2,
+                    text: #"A *star*, <details> & [link](x) `code` ~~gone~~ \ _"#,
+                    speaker: "Bob_1*"
+                )
+            ])
+        )
+        #expect(
+            markdown.contains(
+                #"**[00:00:00] Bob\_1\*:** A \*star\*, \<details> \& \[link\](x) \`code\` \~\~gone\~\~ \\ \_"#
+            )
+        )
     }
 
     @Test func multilineTitleStaysOnOneLine() {
