@@ -46,7 +46,8 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
     /// Transcribes a whole recording of 16 kHz mono samples. Segments follow the VAD's speech regions
     /// (or the model's own timestamps for MOSS). `translateToEnglish` is not supported and ignored.
     public func transcribe(_ samples: [Float], options: TranscriptionOptions) async throws -> Transcript {
-        let language = Self.languageCode(options.language)
+        // A model that detects the language itself ignores the setting, so the note mustn't claim it.
+        let language = model.supportsLanguageSelection ? Self.languageCode(options.language) : nil
         guard !samples.isEmpty else { return Transcript(segments: [], language: language) }
         return try await oneAtATime {
             try await self.performTranscription(samples, options: options, language: language)
@@ -190,19 +191,21 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
     private func performTranscription(
         _ samples: [Float],
         options: TranscriptionOptions,
-        language: String?
+        language requestedLanguage: String?
     ) async throws -> Transcript {
         let models = try await loadedModels(progress: nil)
         try Task.checkCancellation()
         let started = ContinuousClock.now
         let audioDuration = Double(samples.count) / AudioChunk.sampleRate
 
-        let hint = language.flatMap { models.recognizer.languageHint(forISOCode: $0) }
-        if let language, hint == nil {
+        let hint = requestedLanguage.flatMap { models.recognizer.languageHint(forISOCode: $0) }
+        if let requestedLanguage, hint == nil {
             transcriptionLogger.info(
-                "\(self.model.displayName, privacy: .public) takes no language hint for '\(language, privacy: .public)'; detecting automatically"
+                "\(self.model.displayName, privacy: .public) takes no language hint for '\(requestedLanguage, privacy: .public)'; detecting automatically"
             )
         }
+        // Only a language the model was told to use is known; the detected one isn't reported.
+        let language = hint == nil ? nil : requestedLanguage
         if options.translateToEnglish, !hasLoggedTranslationNotice {
             hasLoggedTranslationNotice = true
             transcriptionLogger.debug("speech-swift models don't translate; transcribing verbatim")

@@ -26,7 +26,12 @@ public final class RecordingCoordinator {
     /// Recordings shorter than this are discarded without transcribing.
     nonisolated static let minimumRecordingDuration: TimeInterval = 0.5
 
-    public private(set) var phase: Phase = .idle
+    public private(set) var phase: Phase = .idle {
+        didSet { modelError = nil }
+    }
+    /// The message of a `.failed` phase caused by the model failing to download, load or delete,
+    /// as opposed to e.g. a capture error. `nil` once the phase changes.
+    public private(set) var modelError: String?
     public private(set) var devices: [AudioInputDevice] = []
     /// Inputs the next recording captures, in `devices` order.
     public private(set) var selectedDevices: [AudioInputDevice] = []
@@ -275,7 +280,7 @@ public final class RecordingCoordinator {
             phase = .idle
         case .failure(let error):
             logger.error("Preparing engine failed: \(error.localizedDescription, privacy: .public)")
-            phase = .failed(message: error.localizedDescription)
+            failWithModelError(error)
         }
     }
 
@@ -300,11 +305,16 @@ public final class RecordingCoordinator {
             phase = .idle
         } catch {
             logger.error("Deleting model failed: \(error.localizedDescription, privacy: .public)")
-            phase = .failed(message: error.localizedDescription)
+            failWithModelError(error)
         }
         // Checked either way: a failed delete may have removed some files.
         isModelDownloaded = engine.isDownloaded
         isDeletingModel = false
+    }
+
+    private func failWithModelError(_ error: any Error) {
+        phase = .failed(message: error.localizedDescription)
+        modelError = error.localizedDescription
     }
 
     private func updatePreparationProgress(_ progress: Double) {
@@ -502,7 +512,11 @@ public final class RecordingCoordinator {
             }
         } catch {
             logger.error("Finishing recording failed: \(error.localizedDescription, privacy: .public)")
-            phase = .failed(message: error.localizedDescription)
+            if case TranscriptionError.modelUnavailable = error {
+                failWithModelError(error)
+            } else {
+                phase = .failed(message: error.localizedDescription)
+            }
         }
     }
 

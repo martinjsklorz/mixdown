@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct GeneralSettingsView: View {
@@ -47,6 +48,12 @@ struct GeneralSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        // The user can change it in System Settings › General › Login Items, so re-read on switching
+        // to this tab, and whenever a window of ours comes back to the front: on reopening Settings
+        // (which keeps this view alive) and on returning from System Settings.
         .onAppear { launchAtLogin.refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            launchAtLogin.refresh()
+        }
     }
 }
