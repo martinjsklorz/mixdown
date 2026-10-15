@@ -25,7 +25,7 @@ public protocol AudioInputActivityMonitoring: Sendable {
 }
 
 /// An app people hold calls in, recognized by the bundle IDs of the processes it records with.
-public struct MeetingApp: Hashable, Sendable {
+public struct CallApp: Hashable, Sendable {
     public let name: String
     /// Bundle IDs of the app. Its helper processes count too: those whose bundle ID continues one
     /// of these, e.g. `com.google.Chrome.helper`, and those inside the app's bundle.
@@ -48,80 +48,80 @@ public struct MeetingApp: Hashable, Sendable {
 
     /// Call and voice chat apps, and browsers (for Google Meet and calls in the browser). Many
     /// record from helper processes; see `bundleIDs`.
-    public static let known: [MeetingApp] = [
-        MeetingApp(name: "Zoom", bundleIDs: ["us.zoom.xos"]),
-        MeetingApp(name: "Microsoft Teams", bundleIDs: ["com.microsoft.teams2", "com.microsoft.teams"]),
+    public static let known: [CallApp] = [
+        CallApp(name: "Zoom", bundleIDs: ["us.zoom.xos"]),
+        CallApp(name: "Microsoft Teams", bundleIDs: ["com.microsoft.teams2", "com.microsoft.teams"]),
         // Webex records in `Cisco-Systems.SparkHelper`, which the prefix match doesn't cover.
-        MeetingApp(
+        CallApp(
             name: "Webex",
             bundleIDs: ["Cisco-Systems.Spark", "Cisco-Systems.SparkHelper", "com.cisco.webexmeetingsapp"]
         ),
-        MeetingApp(name: "Slack", bundleIDs: ["com.tinyspeck.slackmacgap"]),
+        CallApp(name: "Slack", bundleIDs: ["com.tinyspeck.slackmacgap"]),
         // FaceTime records in `avconferenced`, the system's call daemon, not in the app.
-        MeetingApp(name: "FaceTime", bundleIDs: ["com.apple.FaceTime", "com.apple.avconferenced"]),
-        MeetingApp(name: "Discord", bundleIDs: ["com.hnc.Discord", "com.hnc.DiscordPTB", "com.hnc.DiscordCanary"]),
+        CallApp(name: "FaceTime", bundleIDs: ["com.apple.FaceTime", "com.apple.avconferenced"]),
+        CallApp(name: "Discord", bundleIDs: ["com.hnc.Discord", "com.hnc.DiscordPTB", "com.hnc.DiscordCanary"]),
         // Mumble 1.5 says `mumble-client`; older versions `net.sourceforge.mumble.Mumble`.
-        MeetingApp(
+        CallApp(
             name: "Mumble",
             bundleIDs: ["mumble-client", "info.mumble.Mumble", "net.sourceforge.mumble.Mumble"]
         ),
-        MeetingApp(name: "TeamSpeak", bundleIDs: ["com.teamspeak.TeamSpeak3", "com.teamspeak.TeamSpeak"]),
-        MeetingApp(name: "WhatsApp", bundleIDs: ["net.whatsapp.WhatsApp", "desktop.WhatsApp"]),
+        CallApp(name: "TeamSpeak", bundleIDs: ["com.teamspeak.TeamSpeak3", "com.teamspeak.TeamSpeak"]),
+        CallApp(name: "WhatsApp", bundleIDs: ["net.whatsapp.WhatsApp", "desktop.WhatsApp"]),
         // Telegram for macOS (App Store) and Telegram Desktop.
-        MeetingApp(name: "Telegram", bundleIDs: ["ru.keepcoder.Telegram", "com.tdesktop.Telegram"]),
-        MeetingApp(name: "Signal", bundleIDs: ["org.whispersystems.signal-desktop"]),
-        MeetingApp(name: "Element", bundleIDs: ["im.riot.app"]),
-        MeetingApp(name: "Viber", bundleIDs: ["com.viber.osx"]),
-        MeetingApp(name: "GoTo Meeting", bundleIDs: ["com.logmein.GoToMeeting"]),
-        MeetingApp(name: "Jitsi Meet", bundleIDs: ["org.jitsi.jitsi-meet"]),
+        CallApp(name: "Telegram", bundleIDs: ["ru.keepcoder.Telegram", "com.tdesktop.Telegram"]),
+        CallApp(name: "Signal", bundleIDs: ["org.whispersystems.signal-desktop"]),
+        CallApp(name: "Element", bundleIDs: ["im.riot.app"]),
+        CallApp(name: "Viber", bundleIDs: ["com.viber.osx"]),
+        CallApp(name: "GoTo Meeting", bundleIDs: ["com.logmein.GoToMeeting"]),
+        CallApp(name: "Jitsi Meet", bundleIDs: ["org.jitsi.jitsi-meet"]),
         // Safari records in WebKit's shared GPU process, which other WebKit apps use too.
-        MeetingApp(name: "Safari", bundleIDs: ["com.apple.Safari", "com.apple.WebKit.GPU"]),
-        MeetingApp(name: "Google Chrome", bundleIDs: ["com.google.Chrome"]),
-        MeetingApp(name: "Microsoft Edge", bundleIDs: ["com.microsoft.edgemac"]),
+        CallApp(name: "Safari", bundleIDs: ["com.apple.Safari", "com.apple.WebKit.GPU"]),
+        CallApp(name: "Google Chrome", bundleIDs: ["com.google.Chrome"]),
+        CallApp(name: "Microsoft Edge", bundleIDs: ["com.microsoft.edgemac"]),
         // Firefox records in its main process, not in its sandboxed content processes.
-        MeetingApp(
+        CallApp(
             name: "Firefox",
             bundleIDs: ["org.mozilla.firefox", "org.mozilla.firefoxdeveloperedition", "org.mozilla.nightly"]
         ),
-        MeetingApp(name: "Arc", bundleIDs: ["company.thebrowser.Browser"]),
-        MeetingApp(name: "Brave", bundleIDs: ["com.brave.Browser"]),
-        MeetingApp(name: "Vivaldi", bundleIDs: ["com.vivaldi.Vivaldi"]),
-        MeetingApp(name: "Opera", bundleIDs: ["com.operasoftware.Opera"]),
+        CallApp(name: "Arc", bundleIDs: ["company.thebrowser.Browser"]),
+        CallApp(name: "Brave", bundleIDs: ["com.brave.Browser"]),
+        CallApp(name: "Vivaldi", bundleIDs: ["com.vivaldi.Vivaldi"]),
+        CallApp(name: "Opera", bundleIDs: ["com.operasoftware.Opera"]),
     ]
 }
 
 /// Watches which apps record from an audio input and reports when a call app starts and stops
-/// doing so, so Mixdown can offer to record the meeting.
+/// doing so, so Mixdown can offer to record the call.
 ///
-/// An app has to keep its input running for `startDelay` before it counts as a meeting, which
+/// An app has to keep its input running for `startDelay` before it counts as a call, which
 /// skips the brief microphone checks browsers and call apps make. It has to stop for `endDelay`
-/// before the meeting counts as over, so switching microphones mid-call doesn't start a new one.
+/// before the call counts as over, so switching microphones mid-call doesn't start a new one.
 @MainActor
-public final class MeetingDetector {
+public final class CallDetector {
     public enum Event: Equatable, Sendable {
-        case started(MeetingApp)
-        case ended(MeetingApp)
+        case started(CallApp)
+        case ended(CallApp)
     }
 
-    /// Apps that are in a meeting, i.e. have been reported as started and not yet as ended.
-    public private(set) var activeMeetings: Set<MeetingApp> = []
+    /// Apps that are in a call, i.e. have been reported as started and not yet as ended.
+    public private(set) var activeCalls: Set<CallApp> = []
 
     private let monitor: any AudioInputActivityMonitoring
-    private let apps: [MeetingApp]
+    private let apps: [CallApp]
     private let ownProcessID: Int32
     private let startDelay: Duration
     private let endDelay: Duration
 
     /// Apps using an input in the latest list.
-    private var recordingApps: Set<MeetingApp> = []
+    private var recordingApps: Set<CallApp> = []
     /// Waits for `startDelay` or `endDelay` before reporting, by app.
-    private var pending: [MeetingApp: Task<Void, Never>] = [:]
+    private var pending: [CallApp: Task<Void, Never>] = [:]
 
     /// - Parameter ownProcessID: Mixdown's own process, which is ignored, so its own recordings
     ///   don't count.
     public init(
         monitor: any AudioInputActivityMonitoring,
-        apps: [MeetingApp] = MeetingApp.known,
+        apps: [CallApp] = CallApp.known,
         ownProcessID: Int32 = ProcessInfo.processInfo.processIdentifier,
         startDelay: Duration = .seconds(3),
         endDelay: Duration = .seconds(5)
@@ -133,8 +133,8 @@ public final class MeetingDetector {
         self.endDelay = endDelay
     }
 
-    /// Follows the monitor and calls `handle` for every meeting that starts or ends, until the
-    /// calling task is cancelled. Meetings still active then are dropped without an `.ended`.
+    /// Follows the monitor and calls `handle` for every call that starts or ends, until the
+    /// calling task is cancelled. Calls still active then are dropped without an `.ended`.
     public func run(_ handle: @escaping @MainActor (Event) -> Void) async {
         for await clients in monitor.inputClients() {
             update(recordingApps: apps(in: clients), handle: handle)
@@ -142,12 +142,12 @@ public final class MeetingDetector {
         for task in pending.values { task.cancel() }
         pending = [:]
         recordingApps = []
-        activeMeetings = []
+        activeCalls = []
     }
 
     /// The known apps among `clients`, other than Mixdown.
-    private func apps(in clients: [AudioInputClient]) -> Set<MeetingApp> {
-        var found = Set<MeetingApp>()
+    private func apps(in clients: [AudioInputClient]) -> Set<CallApp> {
+        var found = Set<CallApp>()
         for client in clients where client.processID != ownProcessID {
             let bundleIDs = [client.bundleID, client.appBundleID].compactMap { $0 }
             guard let app = apps.first(where: { app in bundleIDs.contains { app.matches(bundleID: $0) } })
@@ -157,13 +157,13 @@ public final class MeetingDetector {
         return found
     }
 
-    private func update(recordingApps newApps: Set<MeetingApp>, handle: @escaping @MainActor (Event) -> Void) {
+    private func update(recordingApps newApps: Set<CallApp>, handle: @escaping @MainActor (Event) -> Void) {
         let changed = newApps.symmetricDifference(recordingApps)
         recordingApps = newApps
         for app in changed {
             pending.removeValue(forKey: app)?.cancel()
             // Back to what's been reported already (a blip, or a short gap mid-call): nothing to do.
-            guard newApps.contains(app) != activeMeetings.contains(app) else { continue }
+            guard newApps.contains(app) != activeCalls.contains(app) else { continue }
 
             let isStarting = newApps.contains(app)
             let delay = isStarting ? startDelay : endDelay
@@ -172,10 +172,10 @@ public final class MeetingDetector {
                 guard !Task.isCancelled, let self else { return }
                 self.pending[app] = nil
                 if isStarting {
-                    self.activeMeetings.insert(app)
+                    self.activeCalls.insert(app)
                     handle(.started(app))
                 } else {
-                    self.activeMeetings.remove(app)
+                    self.activeCalls.remove(app)
                     handle(.ended(app))
                 }
             }

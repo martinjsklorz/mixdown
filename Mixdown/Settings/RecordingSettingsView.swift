@@ -51,19 +51,19 @@ struct RecordingSettingsView: View {
 
             Section {
                 Toggle(
-                    "Offer to record calls",
+                    "Offer to record calls and to stop when they end",
                     isOn: Binding(
-                        get: { environment.asksToRecordMeetings },
-                        set: { environment.setAsksToRecordMeetings($0) }
+                        get: { environment.asksToRecordCalls },
+                        set: { environment.setAsksToRecordCalls($0) }
                     )
                 )
             } header: {
-                Text("Meetings")
+                Text("Calls")
             } footer: {
                 Text(
                     "When a call app such as Zoom, Teams, FaceTime or Discord, or a browser, starts using a "
                         + "microphone, Mixdown asks in a notification whether to record. Recording turns on "
-                        + "system audio."
+                        + "system audio. When the call ends, it asks whether to stop."
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)

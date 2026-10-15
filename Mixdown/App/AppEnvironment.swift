@@ -25,14 +25,14 @@ final class AppEnvironment {
     /// doesn't run `TimelineView` or `.task`.
     private(set) var recordingElapsed: Int?
 
-    /// Whether to offer recording when a call starts. See `MeetingPrompt`.
-    private(set) var asksToRecordMeetings: Bool
+    /// Whether to offer recording when a call starts. See `CallPrompt`.
+    private(set) var asksToRecordCalls: Bool
 
     private let settings: AppSettings
     @ObservationIgnored private var deviceMonitor: Task<Void, Never>?
     @ObservationIgnored private var recordingClock: Task<Void, Never>?
     @ObservationIgnored private var recordingClockStart: Date?
-    @ObservationIgnored private var meetingPrompt: MeetingPrompt?
+    @ObservationIgnored private var callPrompt: CallPrompt?
 
     init(settings: AppSettings = AppSettings()) {
         let notesFolder = NotesFolderStore(settings: settings)
@@ -45,16 +45,17 @@ final class AppEnvironment {
             notesDirectory: notesFolder.directory,
             settings: settings
         )
-        self.asksToRecordMeetings = settings.asksToRecordMeetings
+        self.asksToRecordCalls = settings.asksToRecordCalls
         startMonitoringDevices()
         observeRecording()
         observeNotesFolder()
-        let meetingPrompt = MeetingPrompt(
+        let callPrompt = CallPrompt(
             isRecording: { [weak self] in self?.coordinator.isRecording ?? false },
-            onRecord: { [weak self] in self?.recordMeeting() }
+            onRecord: { [weak self] in self?.recordCall() },
+            onStop: { [weak self] in self?.stopRecordingCall() }
         )
-        meetingPrompt.isEnabled = asksToRecordMeetings
-        self.meetingPrompt = meetingPrompt
+        callPrompt.isEnabled = asksToRecordCalls
+        self.callPrompt = callPrompt
     }
 
     // MARK: Composition
@@ -95,6 +96,7 @@ final class AppEnvironment {
             Task { @MainActor in self?.observeRecording() }
         }
         guard case .recording(let startedAt) = phase else {
+            callPrompt?.recordingDidStop()
             recordingClock?.cancel()
             recordingClock = nil
             recordingClockStart = nil
@@ -102,7 +104,7 @@ final class AppEnvironment {
             return
         }
         guard startedAt != recordingClockStart else { return }
-        meetingPrompt?.withdrawPrompts()
+        callPrompt?.recordingDidStart()
         recordingClock?.cancel()
         recordingClockStart = startedAt
         recordingClock = Task { [weak self] in
@@ -170,18 +172,18 @@ final class AppEnvironment {
         }
     }
 
-    // MARK: Meetings
+    // MARK: Calls
 
-    func setAsksToRecordMeetings(_ enabled: Bool) {
-        settings.asksToRecordMeetings = enabled
-        asksToRecordMeetings = enabled
-        meetingPrompt?.isEnabled = enabled
+    func setAsksToRecordCalls(_ enabled: Bool) {
+        settings.asksToRecordCalls = enabled
+        asksToRecordCalls = enabled
+        callPrompt?.isEnabled = enabled
     }
 
-    /// Records a call from the meeting notification: with system audio on, so the other people
-    /// are recorded too, and the microphone if one is selected. When recording can't start, e.g.
-    /// as the model isn't downloaded, opens Record instead, which says why.
-    private func recordMeeting() {
+    /// Records a call from the “Record This Call?” notification: with system audio on, so the other
+    /// people are recorded too, and the microphone if one is selected. When recording can't start,
+    /// e.g. as the model isn't downloaded, opens Record instead, which says why.
+    private func recordCall() {
         guard !coordinator.isRecording else { return }
         setRecordsSystemAudio(true)
         guard coordinator.canStartRecording else {
@@ -189,6 +191,12 @@ final class AppEnvironment {
             return
         }
         Task { await coordinator.startRecording() }
+    }
+
+    /// Stops recording from the notification shown when a call ends.
+    private func stopRecordingCall() {
+        guard coordinator.isRecording else { return }
+        Task { await coordinator.stopRecording() }
     }
 
     // MARK: Transcription

@@ -60,12 +60,15 @@ Mixdown drops lines it recognizes as that echo, it can't catch all of it.
 Mixdown notices when a call starts. Once a call or voice chat app (Zoom, Microsoft Teams, Webex,
 Slack, FaceTime, Discord, Mumble, TeamSpeak, WhatsApp, Telegram, Signal, Element, Viber, GoTo
 Meeting, Jitsi Meet) or a browser (Safari, Chrome, Edge, Firefox, Arc, Brave, Vivaldi, Opera) has
-been using a microphone for a few seconds, a notification asks **Record This Meeting?** Click it (or
+been using a microphone for a few seconds, a notification asks **Record This Call?** Click it (or
 its **Record** button, which shows when you point at it) to start recording with System Audio turned
 on, plus your microphone if one is selected. If Mixdown can't record yet, for example because the
 model isn't downloaded, the window opens at **Record** to show why. The notification goes away when
-the call ends, and none appears while Mixdown is already recording. A browser counts as soon as any
-site uses the microphone. Turn this off under **Settings → Recording → Offer to record calls**.
+the call ends, and none appears while Mixdown is already recording. When the call ends while Mixdown
+is recording (and no other call is going on), a notification asks **Stop Recording?** Click it, or
+its **Stop Recording** button, to stop and transcribe. A browser counts as soon as any site uses the
+microphone. Turn both off under **Settings → Recording → Offer to record calls and to stop when they
+end**.
 
 ## Speech models
 

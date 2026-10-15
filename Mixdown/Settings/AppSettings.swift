@@ -19,7 +19,7 @@ struct AppSettings {
         static let language = "transcriptionLanguage"
         /// Whether to move notes to the Trash without asking first. Read with `@AppStorage`.
         static let suppressesTrashConfirmation = "suppressesTrashConfirmation"
-        static let asksToRecordMeetings = "asksToRecordMeetings"
+        static let asksToRecordCalls = "asksToRecordCalls"
     }
 
     var defaults: UserDefaults = .standard
@@ -72,8 +72,8 @@ struct AppSettings {
 
     /// Whether to offer recording, with a notification, when a call app starts using a microphone.
     /// On unless turned off.
-    var asksToRecordMeetings: Bool {
-        get { defaults.object(forKey: Key.asksToRecordMeetings) as? Bool ?? true }
-        nonmutating set { defaults.set(newValue, forKey: Key.asksToRecordMeetings) }
+    var asksToRecordCalls: Bool {
+        get { defaults.object(forKey: Key.asksToRecordCalls) as? Bool ?? true }
+        nonmutating set { defaults.set(newValue, forKey: Key.asksToRecordCalls) }
     }
 }

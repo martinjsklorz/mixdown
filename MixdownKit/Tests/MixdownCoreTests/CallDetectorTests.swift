@@ -3,23 +3,23 @@ import MixdownCore
 import Testing
 
 @MainActor
-struct MeetingDetectorTests {
+struct CallDetectorTests {
     private let zoom = AudioInputClient(processID: 100, bundleID: "us.zoom.xos")
     private let chromeHelper = AudioInputClient(processID: 200, bundleID: "com.google.Chrome.helper")
     private static let ownProcessID: Int32 = 1
-    private static let zoomApp = MeetingApp.known[0]
+    private static let zoomApp = CallApp.known[0]
 
     /// Runs a detector on a mock monitor and collects its events.
     @MainActor private final class Harness {
         let monitor = MockInputActivityMonitor()
-        var events: [MeetingDetector.Event] = []
-        let detector: MeetingDetector
+        var events: [CallDetector.Event] = []
+        let detector: CallDetector
         private var run: Task<Void, Never>?
 
         init(startDelay: Duration = .milliseconds(50), endDelay: Duration = .milliseconds(50)) {
-            detector = MeetingDetector(
+            detector = CallDetector(
                 monitor: monitor,
-                ownProcessID: MeetingDetectorTests.ownProcessID,
+                ownProcessID: CallDetectorTests.ownProcessID,
                 startDelay: startDelay,
                 endDelay: endDelay
             )
@@ -37,7 +37,7 @@ struct MeetingDetectorTests {
     }
 
     @Test func matchesAppsAndTheirHelpers() {
-        let chrome = MeetingApp(name: "Chrome", bundleIDs: ["com.google.Chrome"])
+        let chrome = CallApp(name: "Chrome", bundleIDs: ["com.google.Chrome"])
         #expect(chrome.matches(bundleID: "com.google.Chrome"))
         #expect(chrome.matches(bundleID: "com.google.Chrome.helper"))
         #expect(chrome.matches(bundleID: "com.google.chrome.helper"))
@@ -47,7 +47,7 @@ struct MeetingDetectorTests {
 
     @Test func knownAppsIncludeCallAppsAndBrowsers() {
         func name(of bundleID: String) -> String? {
-            MeetingApp.known.first { $0.matches(bundleID: bundleID) }?.name
+            CallApp.known.first { $0.matches(bundleID: bundleID) }?.name
         }
         #expect(name(of: "us.zoom.xos") == "Zoom")
         #expect(name(of: "com.microsoft.teams2") == "Microsoft Teams")
@@ -74,7 +74,7 @@ struct MeetingDetectorTests {
 
         try await waitUntil { !harness.events.isEmpty }
         #expect(harness.events == [.started(Self.zoomApp)])
-        #expect(harness.detector.activeMeetings == [Self.zoomApp])
+        #expect(harness.detector.activeCalls == [Self.zoomApp])
         await harness.stop()
     }
 
@@ -122,25 +122,25 @@ struct MeetingDetectorTests {
         harness.send([chromeHelper])
         try await waitUntil { harness.events.count == 3 }
         #expect(harness.events.last == .ended(Self.zoomApp))
-        #expect(harness.detector.activeMeetings.map(\.name) == ["Google Chrome"])
+        #expect(harness.detector.activeCalls.map(\.name) == ["Google Chrome"])
         await harness.stop()
     }
 
-    @Test func nextMeetingAfterAnEndedOneIsReportedAgain() async throws {
+    @Test func nextCallAfterAnEndedOneIsReportedAgain() async throws {
         let harness = Harness()
         harness.send([zoom])
         try await waitUntil { harness.events.count == 1 }
         harness.send([])
         try await waitUntil { harness.events.count == 2 }
 
-        // Call apps may record the next meeting from a new process.
+        // Call apps may record the next call from a new process.
         harness.send([AudioInputClient(processID: 101, bundleID: "us.zoom.xos")])
         try await waitUntil { harness.events.count == 3 }
         #expect(harness.events == [.started(Self.zoomApp), .ended(Self.zoomApp), .started(Self.zoomApp)])
         await harness.stop()
     }
 
-    @Test func shortGapMidCallIsTheSameMeeting() async throws {
+    @Test func shortGapMidCallIsTheSameCall() async throws {
         let harness = Harness(endDelay: .milliseconds(200))
         harness.send([zoom])
         try await waitUntil { harness.events == [.started(Self.zoomApp)] }
@@ -154,19 +154,19 @@ struct MeetingDetectorTests {
         await harness.stop()
     }
 
-    @Test func stoppingDropsActiveMeetings() async throws {
+    @Test func stoppingDropsActiveCalls() async throws {
         let harness = Harness()
         harness.send([zoom])
         try await waitUntil { !harness.events.isEmpty }
 
         await harness.stop()
-        #expect(harness.detector.activeMeetings.isEmpty)
+        #expect(harness.detector.activeCalls.isEmpty)
         #expect(harness.events == [.started(Self.zoomApp)])
     }
 }
 
-extension MeetingDetector.Event {
-    var app: MeetingApp {
+extension CallDetector.Event {
+    var app: CallApp {
         switch self {
         case .started(let app), .ended(let app): app
         }
