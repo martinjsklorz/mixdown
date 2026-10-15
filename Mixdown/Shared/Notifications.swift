@@ -1,9 +1,10 @@
-import Foundation
+import AppKit
 import UserNotifications
 import os
 
-/// Posts Mixdown's notifications, asking for permission the first time. Without it, nothing is
-/// shown. `NoteTrash`, the notification center's delegate, shows them while Mixdown is in front too.
+/// Posts Mixdown's notifications, asking for permission the first time. Without it, or with
+/// notifications turned off in Settings, nothing is shown. `NoteTrash`, the notification center's
+/// delegate, shows them while Mixdown is in front too.
 @MainActor
 enum Notifications {
     private static let logger = Logger(subsystem: "app.mixdown", category: "Notifications")
@@ -17,6 +18,8 @@ enum Notifications {
         userInfo: [AnyHashable: Any] = [:],
         id: String = UUID().uuidString
     ) async {
+        // Checked before asking, so turning them off in Settings also stops the permission prompt.
+        guard AppSettings().showsNotifications else { return }
         let center = UNUserNotificationCenter.current()
         do {
             guard try await center.requestAuthorization(options: [.alert]) else { return }
@@ -29,5 +32,19 @@ enum Notifications {
         } catch {
             logger.error("Couldn't post notification: \(error.localizedDescription)")
         }
+    }
+
+    /// Whether the user turned Mixdown's notifications off in System Settings, so none are shown
+    /// even with them on in Mixdown's Settings.
+    nonisolated static func isDeniedBySystem() async -> Bool {
+        await UNUserNotificationCenter.current().notificationSettings().authorizationStatus == .denied
+    }
+
+    /// Opens System Settings › Notifications at Mixdown.
+    static func openSystemSettings() {
+        guard let bundleID = Bundle.main.bundleIdentifier,
+            let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(bundleID)")
+        else { return }
+        NSWorkspace.shared.open(url)
     }
 }
