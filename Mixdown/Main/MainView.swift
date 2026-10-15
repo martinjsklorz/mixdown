@@ -5,7 +5,7 @@ import MixdownNotes
 import SwiftUI
 
 /// The main window: Record at the top of the sidebar, the notes folder by day below it, and the
-/// recorder or the selected note on the right. The cog above the sidebar opens Settings.
+/// recorder or the selected note on the right. Above the sidebar are the notes folder and Settings.
 struct MainView: View {
     static let windowID = "main"
 
@@ -14,6 +14,7 @@ struct MainView: View {
     @Environment(\.openSettings) private var openSettings
     @State private var library = NoteLibraryModel()
     @State private var searchText = ""
+    @State private var columnVisibility = NavigationSplitViewVisibility.automatic
     @State private var noteToRename: NoteDocument?
     @State private var noteToTrash: NoteDocument?
     @AppStorage(AppSettings.Key.suppressesTrashConfirmation) private var suppressesTrashConfirmation = false
@@ -27,11 +28,18 @@ struct MainView: View {
     }
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             sidebar
                 .navigationSplitViewColumnWidth(min: 220, ideal: 280, max: 420)
         } detail: {
             detail
+                // With the sidebar collapsed, macOS keeps only one of its toolbar items next to
+                // the sidebar toggle and moves the rest into the overflow menu, so they move here.
+                .toolbar {
+                    if isSidebarCollapsed {
+                        ToolbarItemGroup(placement: .navigation) { folderAndSettingsButtons }
+                    }
+                }
         }
         .searchable(text: $searchText, placement: .sidebar, prompt: "Search Recordings")
         .frame(minWidth: 720, minHeight: 480)
@@ -116,11 +124,21 @@ struct MainView: View {
         }
         // Toolbar items on the sidebar sit above it, next to the sidebar toggle.
         .toolbar {
-            ToolbarItem {
-                Button("Settings", systemImage: "gearshape") { navigation.showSettings(using: openSettings) }
-                    .help("Settings (⌘,)")
+            if !isSidebarCollapsed {
+                ToolbarItemGroup { folderAndSettingsButtons }
             }
         }
+    }
+
+    private var isSidebarCollapsed: Bool { columnVisibility == .detailOnly }
+
+    @ViewBuilder
+    private var folderAndSettingsButtons: some View {
+        Button("Open Notes Folder", systemImage: "folder") { environment.openNotesFolder() }
+            .help("Open Notes Folder (⇧⌘O)")
+            .disabled(environment.notesFolder.directory == nil)
+        Button("Settings", systemImage: "gearshape") { navigation.showSettings(using: openSettings) }
+            .help("Settings (⌘,)")
     }
 
     /// Shown under the section rows when there's no note to list.

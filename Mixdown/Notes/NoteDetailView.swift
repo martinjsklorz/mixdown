@@ -1,4 +1,3 @@
-import AppKit
 import MixdownNotes
 import SwiftUI
 
@@ -32,17 +31,17 @@ struct NoteDetailView: View {
         // Start each note at the top.
         .id(note.id)
         .navigationTitle(note.title)
+        // Editing and sharing in separate groups; macOS 26 would otherwise put them all on one
+        // glass background.
         .toolbar {
-            ToolbarItem {
-                Button("Show in Finder", systemImage: "folder") {
-                    NSWorkspace.shared.activateFileViewerSelecting([note.url])
-                }
-            }
             ToolbarItemGroup {
-                Button("Rename", systemImage: "pencil") { actions.rename(note) }
                 Button("Copy Transcript", systemImage: "doc.on.doc") { NoteActions.copyTranscript(of: note) }
-                ShareLink(item: note.url, preview: SharePreview(note.title))
+                Button("Rename", systemImage: "pencil") { actions.rename(note) }
                 Button("Move to Trash", systemImage: "trash") { actions.moveToTrash(note) }
+            }
+            if #available(macOS 26, *) { ToolbarSpacer(.fixed) }
+            ToolbarItem {
+                ShareLink(item: note.url, preview: SharePreview(note.title))
             }
         }
     }
