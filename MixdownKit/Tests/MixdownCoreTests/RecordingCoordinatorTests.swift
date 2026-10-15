@@ -407,6 +407,49 @@ struct RecordingCoordinatorTests {
         )
     }
 
+    @Test func reportsTranscriptionProgress() async throws {
+        let gate = Gate()
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            capture: MockCapture(chunks: [Fixtures.chunk(seconds: 1)]),
+            engine: MockEngine(progressBySampleCount: [16_000: 0.4], transcriptionGate: gate),
+            writer: writer
+        )
+        await coordinator.monitorDevices()
+        await coordinator.startRecording()
+
+        let stopping = Task { await coordinator.stopRecording() }
+        try await waitUntil { coordinator.phase == .transcribing(progress: 0.4) }
+        #expect(coordinator.isBusy)
+        await gate.open()
+        await stopping.value
+
+        #expect(coordinator.phase == .idle)
+        #expect(coordinator.timeRemaining == nil)
+        #expect(await writer.notes.count == 1)
+    }
+
+    @Test func weighsSourceProgressByLength() async throws {
+        let gate = Gate()
+        let microphone = MockCapture(chunks: [Fixtures.chunk(seconds: 3, hostTime: 100)])
+        let systemAudio = MockCapture(chunks: [Fixtures.chunk(seconds: 1, hostTime: 100)])
+        let coordinator = makeCoordinator(
+            captures: [Fixtures.builtInMic.id: microphone, AudioInputDevice.systemAudioID: systemAudio],
+            // The short source is done, the long one hasn't started.
+            engine: MockEngine(progressBySampleCount: [48_000: 0, 16_000: 1], transcriptionGate: gate),
+            preferredDeviceIDs: [Fixtures.builtInMic.id, AudioInputDevice.systemAudioID]
+        )
+        await coordinator.monitorDevices()
+        await coordinator.startRecording()
+
+        let stopping = Task { await coordinator.stopRecording() }
+        try await waitUntil { coordinator.phase == .transcribing(progress: 0.25) }
+        await gate.open()
+        await stopping.value
+
+        #expect(coordinator.phase == .idle)
+    }
+
     @Test func silentSourceIsNotTranscribed() async throws {
         let engine = MockEngine(
             transcript: Transcript(segments: [TranscriptSegment(start: 0, end: 1, text: "Just me.")])
@@ -593,7 +636,7 @@ struct RecordingCoordinatorTests {
         coordinator.cancelPreparation()
 
         #expect(coordinator.phase == .idle)
-        #expect(coordinator.preparationTimeRemaining == nil)
+        #expect(coordinator.timeRemaining == nil)
         await preparing.value
         #expect(coordinator.phase == .idle)
         #expect(await engine.cancelledPrepareCount == 1)

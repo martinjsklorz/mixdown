@@ -51,7 +51,7 @@ struct RecorderView: View {
                     EmptyView()
                 } currentValueLabel: {
                     Text(
-                        DownloadProgressText.detail(progress: progress, remaining: coordinator.preparationTimeRemaining)
+                        ProgressText.detail(progress: progress, remaining: coordinator.timeRemaining)
                     )
                     .monospacedDigit()
                 }
@@ -68,10 +68,15 @@ struct RecorderView: View {
                 caption("Recording · click to stop")
                 InputLevelsView(coordinator: coordinator)
 
-            case .transcribing:
-                headline("Transcribing…", detail: "Your note appears in the sidebar in a moment.")
-                ProgressView()
-                    .controlSize(.large)
+            case .transcribing(let progress):
+                headline("Transcribing…", detail: "Your note appears in the sidebar when it's done.")
+                ProgressView(value: progress) {
+                    EmptyView()
+                } currentValueLabel: {
+                    Text(ProgressText.detail(progress: progress, remaining: coordinator.timeRemaining))
+                        .monospacedDigit()
+                }
+                .frame(maxWidth: 320)
 
             case .summarizing:
                 headline(

@@ -41,6 +41,8 @@ struct TranscriptionSettingsView: View {
                     }
                 }
                 .disabled(!environment.model.supportsLanguageSelection)
+            } header: {
+                Text("Settings")
             } footer: {
                 Text(footer(for: environment.model))
                     .font(.caption)
@@ -84,9 +86,9 @@ struct TranscriptionSettingsView: View {
                 Text("Downloading \(environment.model.displayName)…")
             } currentValueLabel: {
                 Text(
-                    DownloadProgressText.detail(
+                    ProgressText.detail(
                         progress: progress,
-                        remaining: environment.coordinator.preparationTimeRemaining
+                        remaining: environment.coordinator.timeRemaining
                     )
                 )
                 .monospacedDigit()

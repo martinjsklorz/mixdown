@@ -1,4 +1,5 @@
 import AppKit
+import KeyboardShortcuts
 import MixdownAudio
 import MixdownCore
 import MixdownFoundationModels
@@ -17,29 +18,42 @@ final class AppEnvironment {
     /// Makes the summaries; `coordinator` only has it while summaries are on.
     let summarizer: any Summarizer
     let notesFolder: NotesFolderStore
-    /// Created at launch, as it handles Restore on notifications from an earlier run.
-    let noteTrash = NoteTrash()
+    let noteTrash: NoteTrash
+    private let noteReady: NoteReady
+    /// Created at launch, as it handles buttons on notifications from an earlier run.
+    private let notificationResponder: NotificationResponder
 
     /// Whole seconds since the current recording started, advanced every second; `nil` unless
     /// recording. Ticked here because the menu bar label only redraws on observed changes; it
     /// doesn't run `TimelineView` or `.task`.
     private(set) var recordingElapsed: Int?
 
+    /// Whether the global shortcut (`KeyboardShortcuts.Name.toggleRecording`) starts and stops
+    /// recording. Off, the shortcut is kept but released, so other apps get those keys.
+    private(set) var isRecordingShortcutEnabled: Bool
+
     private let settings: AppSettings
     @ObservationIgnored private var deviceMonitor: Task<Void, Never>?
     @ObservationIgnored private var recordingClock: Task<Void, Never>?
     @ObservationIgnored private var recordingClockStart: Date?
+    @ObservationIgnored private var notifiedNoteURL: URL?
 
-    init(settings: AppSettings = AppSettings()) {
+    init(navigation: MainNavigation, settings: AppSettings = AppSettings()) {
         let notesFolder = NotesFolderStore(settings: settings)
         let model = settings.transcriptionModel
         // This is the ONE place the summarizer is chosen. To use a different backend, construct
         // any other `Summarizer` here; nothing else changes.
         let summarizer: any Summarizer = AppleIntelligenceSummarizer()
+        let noteTrash = NoteTrash()
+        let noteReady = NoteReady(navigation: navigation)
         self.settings = settings
         self.summarizer = summarizer
         self.notesFolder = notesFolder
         self.model = model
+        self.noteTrash = noteTrash
+        self.noteReady = noteReady
+        self.isRecordingShortcutEnabled = settings.isRecordingShortcutEnabled
+        self.notificationResponder = NotificationResponder(noteTrash: noteTrash, noteReady: noteReady)
         self.coordinator = Self.makeCoordinator(
             model: model,
             summarizer: settings.summarizesNotes ? summarizer : nil,
@@ -49,6 +63,8 @@ final class AppEnvironment {
         startMonitoringDevices()
         observeRecording()
         observeNotesFolder()
+        observeNewNotes()
+        listenForRecordingShortcut(navigation: navigation)
     }
 
     // MARK: Composition
@@ -121,6 +137,19 @@ final class AppEnvironment {
         coordinator.noteWriter = directory.map { MarkdownNoteWriter(directory: $0) }
     }
 
+    /// Posts "Note Ready" for every note the coordinator writes. Re-registers itself after every
+    /// change, including the coordinator being replaced, which starts out without a note.
+    private func observeNewNotes() {
+        let url = withObservationTracking {
+            coordinator.lastNoteURL
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.observeNewNotes() }
+        }
+        guard let url, url != notifiedNoteURL else { return }
+        notifiedNoteURL = url
+        Task { await noteReady.notify(noteAt: url) }
+    }
+
     // MARK: Input
 
     /// The selected microphone, if any. The menu and settings offer one microphone at a time, plus
@@ -162,6 +191,35 @@ final class AppEnvironment {
         set {
             settings.sourceLabels = newValue
             coordinator.sourceLabels = newValue
+        }
+    }
+
+    // MARK: Global shortcut
+
+    /// Starts or stops recording on the global shortcut, from any app. When recording can't start
+    /// yet (no notes folder or model, or busy transcribing), it opens Record instead, which says why.
+    private func listenForRecordingShortcut(navigation: MainNavigation) {
+        KeyboardShortcuts.onKeyUp(for: .toggleRecording) { [weak self] in
+            guard let self else { return }
+            let coordinator = self.coordinator
+            if coordinator.isRecording || coordinator.canStartRecording {
+                Task { await coordinator.toggleRecording() }
+            } else if let openWindow = navigation.openWindow {
+                navigation.show(.recorder, using: openWindow)
+            }
+        }
+        if !isRecordingShortcutEnabled {
+            KeyboardShortcuts.disable(.toggleRecording)
+        }
+    }
+
+    func setRecordingShortcutEnabled(_ enabled: Bool) {
+        settings.isRecordingShortcutEnabled = enabled
+        isRecordingShortcutEnabled = enabled
+        if enabled {
+            KeyboardShortcuts.enable(.toggleRecording)
+        } else {
+            KeyboardShortcuts.disable(.toggleRecording)
         }
     }
 

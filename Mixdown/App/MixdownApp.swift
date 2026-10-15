@@ -3,8 +3,14 @@ import SwiftUI
 @main
 struct MixdownApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @State private var environment = AppEnvironment()
-    @State private var navigation = MainNavigation()
+    @State private var environment: AppEnvironment
+    @State private var navigation: MainNavigation
+
+    init() {
+        let navigation = MainNavigation()
+        _navigation = State(initialValue: navigation)
+        _environment = State(initialValue: AppEnvironment(navigation: navigation))
+    }
 
     var body: some Scene {
         // Recording and notes. Opens at launch; `AppDelegate` reopens it when the Dock icon is
@@ -13,7 +19,7 @@ struct MixdownApp: App {
             MainView()
                 .environment(environment)
                 .environment(navigation)
-                .capturesOpenWindow(for: appDelegate)
+                .capturesOpenWindow(for: appDelegate, navigation: navigation)
         }
         .defaultSize(width: 960, height: 620)
         .defaultPosition(.center)
@@ -28,7 +34,7 @@ struct MixdownApp: App {
             MenuBarContent()
                 .environment(environment)
                 .environment(navigation)
-                .capturesOpenWindow(for: appDelegate)
+                .capturesOpenWindow(for: appDelegate, navigation: navigation)
         } label: {
             MenuBarLabel(
                 coordinator: environment.coordinator,

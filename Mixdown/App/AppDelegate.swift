@@ -5,28 +5,32 @@ import SwiftUI
 /// `WindowGroup`, but not for a `Window` that has been closed.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    /// SwiftUI only hands `openWindow` to views, so `capturesOpenWindow(for:)` stores it here.
-    fileprivate var openWindow: OpenWindowAction?
+    /// Set by `capturesOpenWindow(for:navigation:)`, which also gives it SwiftUI's `openWindow`.
+    fileprivate weak var navigation: MainNavigation?
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         // Regardless of `flag`: the menu bar extra's window can count as visible.
-        openWindow?(id: MainView.windowID)
+        navigation?.openWindow?(id: MainView.windowID)
         return false
     }
 }
 
 extension View {
-    /// Lets `delegate` open windows once this view has appeared.
-    func capturesOpenWindow(for delegate: AppDelegate) -> some View {
-        modifier(OpenWindowCapture(delegate: delegate))
+    /// Lets `delegate` and `navigation` open windows once this view has appeared.
+    func capturesOpenWindow(for delegate: AppDelegate, navigation: MainNavigation) -> some View {
+        modifier(OpenWindowCapture(delegate: delegate, navigation: navigation))
     }
 }
 
 private struct OpenWindowCapture: ViewModifier {
     let delegate: AppDelegate
+    let navigation: MainNavigation
     @Environment(\.openWindow) private var openWindow
 
     func body(content: Content) -> some View {
-        content.onAppear { delegate.openWindow = openWindow }
+        content.onAppear {
+            navigation.openWindow = openWindow
+            delegate.navigation = navigation
+        }
     }
 }

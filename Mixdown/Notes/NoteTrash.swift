@@ -7,11 +7,9 @@ import os
 /// Moves notes to the Trash and puts them back. Each note moved to the Trash gets a notification
 /// with a Restore button, shown even while Mixdown is in front so it works like an undo.
 ///
-/// Also the delegate of the app's `UNUserNotificationCenter`, so it is set up at launch and
-/// handles Restore on notifications from an earlier run, too. As the delegate, it has all of
-/// Mixdown's notifications shown while Mixdown is in front.
+/// `NotificationResponder` hands it Restore, on notifications from an earlier run, too.
 @MainActor @Observable
-final class NoteTrash: NSObject {
+final class NoteTrash {
     /// A note put back from the Trash, for the main window to show. A new value per restore, so
     /// putting the same note back twice still counts as a change.
     struct Restored: Equatable {
@@ -26,22 +24,16 @@ final class NoteTrash: NSObject {
     @ObservationIgnored private var contents: [(notificationID: String, data: Data)] = []
 
     private static let maxKeptContents = 20
-    private static let trashedCategory = "noteTrashed"
+    nonisolated static let categoryIdentifier = "noteTrashed"
     private nonisolated static let restoreAction = "restore"
     private static let logger = Logger(subsystem: "app.mixdown", category: "NoteTrash")
 
-    override init() {
-        super.init()
-        let center = UNUserNotificationCenter.current()
-        center.delegate = self
-        center.setNotificationCategories([
-            UNNotificationCategory(
-                identifier: Self.trashedCategory,
-                actions: [UNNotificationAction(identifier: Self.restoreAction, title: "Restore")],
-                intentIdentifiers: []
-            )
-        ])
-    }
+    /// The Restore button, registered by `NotificationResponder`.
+    static let category = UNNotificationCategory(
+        identifier: categoryIdentifier,
+        actions: [UNNotificationAction(identifier: restoreAction, title: "Restore")],
+        intentIdentifiers: []
+    )
 
     /// Moves the note to the Trash, then posts a notification offering to restore it, unless
     /// notifications are turned off. Asks for permission to notify the first time.
@@ -61,7 +53,7 @@ final class NoteTrash: NSObject {
             await Notifications.post(
                 title: "Note Moved to Trash",
                 body: trashed.title,
-                categoryIdentifier: Self.trashedCategory,
+                categoryIdentifier: Self.categoryIdentifier,
                 userInfo: trashed.userInfo,
                 id: notificationID
             )
@@ -96,20 +88,9 @@ final class NoteTrash: NSObject {
     }
 }
 
-extension NoteTrash: UNUserNotificationCenterDelegate {
-    nonisolated func userNotificationCenter(
-        _ center: UNUserNotificationCenter,
-        willPresent notification: UNNotification
-    ) async -> UNNotificationPresentationOptions {
-        // Shown while Mixdown is in front too: that's when Restore is most useful, and when
-        // Copy Transcript happens.
-        [.banner, .list]
-    }
-
-    nonisolated func userNotificationCenter(
-        _ center: UNUserNotificationCenter,
-        didReceive response: UNNotificationResponse
-    ) async {
+extension NoteTrash {
+    /// Handles a button on a notification of `category`.
+    nonisolated func respond(to response: UNNotificationResponse) async {
         let request = response.notification.request
         guard response.actionIdentifier == Self.restoreAction,
             let trashed = TrashedNote(userInfo: request.content.userInfo)
