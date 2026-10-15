@@ -21,6 +21,22 @@ struct NoteDocumentTests {
         #expect(document.id == url)
     }
 
+    @Test func displayBlocksDropLeadingTitleHeading() {
+        let note = NoteFixtures.note()
+
+        let document = NoteDocument(url: url, contents: MarkdownNoteRenderer.render(note), fileDate: fileDate)
+
+        #expect(document.displayBlocks().first == .heading(level: 2, text: "Transcript"))
+    }
+
+    @Test func displayBlocksKeepHeadingThatDiffersFromTitle() {
+        let contents = "---\ntitle: Renamed\n---\n# Original\n\nBody text."
+
+        let document = NoteDocument(url: url, contents: contents, fileDate: fileDate)
+
+        #expect(document.displayBlocks() == [.heading(level: 1, text: "Original"), .paragraph("Body text.")])
+    }
+
     @Test func unescapesQuotedFrontmatter() {
         let note = NoteFixtures.note(title: #"Say "hi" \ wave"#)
 

@@ -7,7 +7,7 @@ struct NoteDetailView: View {
     let note: NoteDocument
 
     var body: some View {
-        let blocks = MarkdownBlock.parse(note.body)
+        let blocks = note.displayBlocks()
 
         ScrollView {
             // Lazy, because a long meeting transcript has hundreds of paragraphs.

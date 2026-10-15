@@ -35,6 +35,16 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
         self.snippet = Self.snippet(from: blocks)
     }
 
+    /// The body's blocks without a leading `# Title` that repeats `title`, which the window
+    /// already shows. A first heading with different text is kept.
+    public func displayBlocks() -> [MarkdownBlock] {
+        let blocks = MarkdownBlock.parse(body)
+        guard case .heading(1, let text) = blocks.first, MarkdownBlock.plainText(text) == title else {
+            return blocks
+        }
+        return Array(blocks.dropFirst())
+    }
+
     private static func title(fields: [String: String], blocks: [MarkdownBlock], url: URL) -> String {
         if let title = fields["title"]?.trimmingCharacters(in: .whitespaces), !title.isEmpty { return title }
         let heading = blocks.lazy.compactMap { block -> String? in
