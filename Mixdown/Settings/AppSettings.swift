@@ -19,7 +19,7 @@ struct AppSettings {
         static let language = "transcriptionLanguage"
         /// Whether to move notes to the Trash without asking first. Read with `@AppStorage`.
         static let suppressesTrashConfirmation = "suppressesTrashConfirmation"
-        static let asksToRecordCalls = "asksToRecordCalls"
+        static let callRecording = "callRecording"
     }
 
     var defaults: UserDefaults = .standard
@@ -70,10 +70,29 @@ struct AppSettings {
         nonmutating set { defaults.set(newValue, forKey: Key.language) }
     }
 
-    /// Whether to offer recording, with a notification, when a call app starts using a microphone.
-    /// On unless turned off.
-    var asksToRecordCalls: Bool {
-        get { defaults.object(forKey: Key.asksToRecordCalls) as? Bool ?? true }
-        nonmutating set { defaults.set(newValue, forKey: Key.asksToRecordCalls) }
+    /// What to do when a call app starts using a microphone. Asks unless changed.
+    var callRecording: CallRecording {
+        get { defaults.string(forKey: Key.callRecording).flatMap(CallRecording.init(rawValue:)) ?? .ask }
+        nonmutating set { defaults.set(newValue.rawValue, forKey: Key.callRecording) }
+    }
+}
+
+/// What Mixdown does when a call starts and ends. See `CallPrompt`.
+enum CallRecording: String, CaseIterable, Identifiable {
+    /// Calls aren't watched.
+    case off
+    /// A notification offers to record when a call starts, and to stop when it ends.
+    case ask
+    /// Recording starts and stops with the call, and a notification says so.
+    case automatic
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .off: "Do Nothing"
+        case .ask: "Ask to Record"
+        case .automatic: "Record Automatically"
+        }
     }
 }

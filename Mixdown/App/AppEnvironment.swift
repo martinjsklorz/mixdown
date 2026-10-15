@@ -25,8 +25,8 @@ final class AppEnvironment {
     /// doesn't run `TimelineView` or `.task`.
     private(set) var recordingElapsed: Int?
 
-    /// Whether to offer recording when a call starts. See `CallPrompt`.
-    private(set) var asksToRecordCalls: Bool
+    /// What to do when a call starts and ends. See `CallPrompt`.
+    private(set) var callRecording: CallRecording
 
     private let settings: AppSettings
     @ObservationIgnored private var deviceMonitor: Task<Void, Never>?
@@ -45,16 +45,17 @@ final class AppEnvironment {
             notesDirectory: notesFolder.directory,
             settings: settings
         )
-        self.asksToRecordCalls = settings.asksToRecordCalls
+        self.callRecording = settings.callRecording
         startMonitoringDevices()
         observeRecording()
         observeNotesFolder()
         let callPrompt = CallPrompt(
             isRecording: { [weak self] in self?.coordinator.isRecording ?? false },
-            onRecord: { [weak self] in self?.recordCall() },
-            onStop: { [weak self] in self?.stopRecordingCall() }
+            startRecording: { [weak self] in self?.startRecordingCall() ?? false },
+            stopRecording: { [weak self] in self?.stopRecordingCall() },
+            showRecorder: { [weak self] in self?.showRecorder?() }
         )
-        callPrompt.isEnabled = asksToRecordCalls
+        callPrompt.mode = callRecording
         self.callPrompt = callPrompt
     }
 
@@ -174,26 +175,24 @@ final class AppEnvironment {
 
     // MARK: Calls
 
-    func setAsksToRecordCalls(_ enabled: Bool) {
-        settings.asksToRecordCalls = enabled
-        asksToRecordCalls = enabled
-        callPrompt?.isEnabled = enabled
+    func setCallRecording(_ callRecording: CallRecording) {
+        settings.callRecording = callRecording
+        self.callRecording = callRecording
+        callPrompt?.mode = callRecording
     }
 
-    /// Records a call from the “Record This Call?” notification: with system audio on, so the other
-    /// people are recorded too, and the microphone if one is selected. When recording can't start,
-    /// e.g. as the model isn't downloaded, opens Record instead, which says why.
-    private func recordCall() {
-        guard !coordinator.isRecording else { return }
+    /// Starts recording a call: with system audio on, so the other people are recorded too, and the
+    /// microphone if one is selected. Returns `false` if recording can't start, e.g. as the model
+    /// isn't downloaded; Record in the main window says why.
+    private func startRecordingCall() -> Bool {
+        guard !coordinator.isRecording else { return true }
         setRecordsSystemAudio(true)
-        guard coordinator.canStartRecording else {
-            showRecorder?()
-            return
-        }
+        guard coordinator.canStartRecording else { return false }
         Task { await coordinator.startRecording() }
+        return true
     }
 
-    /// Stops recording from the notification shown when a call ends.
+    /// Stops recording, as the call has ended.
     private func stopRecordingCall() {
         guard coordinator.isRecording else { return }
         Task { await coordinator.stopRecording() }
