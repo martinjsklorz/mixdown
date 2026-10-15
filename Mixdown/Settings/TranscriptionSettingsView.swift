@@ -41,6 +41,8 @@ struct TranscriptionSettingsView: View {
                     }
                 }
                 .disabled(!environment.model.supportsLanguageSelection)
+            } header: {
+                Text("Settings")
             } footer: {
                 Text(footer(for: environment.model))
                     .font(.caption)
