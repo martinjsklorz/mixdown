@@ -51,7 +51,7 @@ struct NoteDetailView: View {
                     .formatted(.units(allowed: [.hours, .minutes, .seconds], width: .abbreviated))
             )
         }
-        if let source = note.source { parts.append(source) }
+        if !note.sources.isEmpty { parts.append(note.sources.formatted(.list(type: .and))) }
         return parts.joined(separator: " · ")
     }
 

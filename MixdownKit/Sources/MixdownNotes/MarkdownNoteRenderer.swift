@@ -11,7 +11,7 @@ public enum MarkdownNoteRenderer {
 
     public static func render(_ note: Note) -> String {
         let title = singleLine(note.title)
-        let blocks = [frontmatter(for: note), "# \(title.isEmpty ? "Untitled" : title)"]
+        let blocks = [frontmatter(for: note), "# \(title.isEmpty ? "Untitled" : escapedMarkdown(title))"]
             + bodySections(for: note)
         return blocks.joined(separator: "\n\n") + "\n"
     }
@@ -55,9 +55,9 @@ public enum MarkdownNoteRenderer {
 
     static func transcriptBody(_ transcript: Transcript) -> String {
         let paragraphs = transcript.segments.compactMap { segment -> String? in
-            let text = singleLine(segment.text)
+            let text = escapedMarkdown(singleLine(segment.text))
             guard !text.isEmpty else { return nil }
-            if let speaker = segment.speaker.map(singleLine), !speaker.isEmpty {
+            if let speaker = segment.speaker.map({ escapedMarkdown(singleLine($0)) }), !speaker.isEmpty {
                 return "**[\(timestamp(segment.start))] \(speaker):** \(text)"
             }
             return "**[\(timestamp(segment.start))]** \(text)"
@@ -106,6 +106,17 @@ public enum MarkdownNoteRenderer {
             }
         }
         return "\"\(escaped)\""
+    }
+
+    /// Backslash-escapes the characters that start inline Markdown, inline HTML or entities, so
+    /// text shows as written. Block syntax needs no escaping: the text never starts a line.
+    static func escapedMarkdown(_ text: String) -> String {
+        var escaped = ""
+        for character in text {
+            if "\\`*_[]<&~".contains(character) { escaped.append("\\") }
+            escaped.append(character)
+        }
+        return escaped
     }
 
     /// Collapses line breaks so multi-line text stays a single Markdown line or paragraph.

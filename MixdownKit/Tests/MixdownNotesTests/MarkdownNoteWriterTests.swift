@@ -79,6 +79,24 @@ struct MarkdownNoteWriterTests {
         #expect(title.count == 80)
     }
 
+    /// 80 characters, but 240 bytes in UTF-8, and Hangul triples again when decomposed (as
+    /// macOS file names are).
+    @Test(arguments: ["会議", "회의"])
+    func capsTitlesToFileNameByteLimit(_ word: String) async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory.deletingLastPathComponent()) }
+        let note = NoteFixtures.note(title: String(repeating: word, count: 40))
+
+        let first = try await MarkdownNoteWriter(directory: directory).write(note)
+        let second = try await MarkdownNoteWriter(directory: directory).write(note)
+
+        #expect(first.lastPathComponent.hasPrefix("\(datePrefix(note.createdAt)) \(word)\(word)"))
+        #expect(second.lastPathComponent.hasSuffix(" 2.md"))
+        for url in [first, second] {
+            #expect(url.lastPathComponent.decomposedStringWithCanonicalMapping.utf8.count <= 255)
+        }
+    }
+
     @Test func emptyTitleFallsBackToUntitled() async throws {
         let directory = makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory.deletingLastPathComponent()) }
