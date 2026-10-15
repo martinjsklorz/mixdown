@@ -58,6 +58,8 @@ struct MeetingDetectorTests {
         #expect(name(of: "com.hnc.Discord.helper") == "Discord")
         #expect(name(of: "com.apple.FaceTime") == "FaceTime")
         #expect(name(of: "mumble-client") == "Mumble")
+        #expect(name(of: "ru.keepcoder.Telegram") == "Telegram")
+        #expect(name(of: "com.tdesktop.Telegram") == "Telegram")
         #expect(name(of: "org.mozilla.firefox") == "Firefox")
         #expect(name(of: "org.mozilla.firefoxdeveloperedition") == "Firefox")
         #expect(name(of: "org.mozilla.plugincontainer") == nil)

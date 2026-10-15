@@ -67,7 +67,8 @@ public struct MeetingApp: Hashable, Sendable {
         ),
         MeetingApp(name: "TeamSpeak", bundleIDs: ["com.teamspeak.TeamSpeak3", "com.teamspeak.TeamSpeak"]),
         MeetingApp(name: "WhatsApp", bundleIDs: ["net.whatsapp.WhatsApp", "desktop.WhatsApp"]),
-        MeetingApp(name: "Telegram", bundleIDs: ["ru.keepcoder.Telegram", "org.telegram.desktop"]),
+        // Telegram for macOS (App Store) and Telegram Desktop.
+        MeetingApp(name: "Telegram", bundleIDs: ["ru.keepcoder.Telegram", "com.tdesktop.Telegram"]),
         MeetingApp(name: "Signal", bundleIDs: ["org.whispersystems.signal-desktop"]),
         MeetingApp(name: "Element", bundleIDs: ["im.riot.app"]),
         MeetingApp(name: "Viber", bundleIDs: ["com.viber.osx"]),
