@@ -14,7 +14,7 @@ struct MenuBarLabel: View {
         let phase = coordinator.phase
         let remaining = coordinator.preparationTimeRemaining
         HStack(spacing: 4) {
-            Image(systemName: Self.symbolName(for: phase))
+            Self.icon(for: phase)
             if case .preparingModel(let progress) = phase {
                 Text(DownloadProgressText.compact(progress: progress, remaining: remaining))
                     .monospacedDigit()
@@ -34,13 +34,14 @@ struct MenuBarLabel: View {
         )
     }
 
-    static func symbolName(for phase: RecordingCoordinator.Phase) -> String {
+    /// The app's mark while idle; a status symbol otherwise.
+    static func icon(for phase: RecordingCoordinator.Phase) -> Image {
         switch phase {
-        case .idle: "waveform"
-        case .preparingModel: "arrow.down.circle"
-        case .recording: "record.circle.fill"
-        case .transcribing: "ellipsis.circle"
-        case .failed: "exclamationmark.triangle"
+        case .idle: Image("MenuBarIcon").renderingMode(.template)
+        case .preparingModel: Image(systemName: "arrow.down.circle")
+        case .recording: Image(systemName: "record.circle.fill")
+        case .transcribing: Image(systemName: "ellipsis.circle")
+        case .failed: Image(systemName: "exclamationmark.triangle")
         }
     }
 
