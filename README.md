@@ -57,6 +57,16 @@ Each input is recorded and transcribed on its own, then the lines are merged by 
 Wear headphones if you can. Without them your microphone also hears the other people, and while
 Mixdown drops lines it recognizes as that echo, it can't catch all of it.
 
+Mixdown notices when a call starts. Once a call or voice chat app (Zoom, Microsoft Teams, Webex,
+Slack, FaceTime, Discord, Mumble, TeamSpeak, WhatsApp, Telegram, Signal, Element, Viber, GoTo
+Meeting, Jitsi Meet) or a browser (Safari, Chrome, Edge, Firefox, Arc, Brave, Vivaldi, Opera) has
+been using a microphone for a few seconds, a notification asks **Record This Meeting?** Click it (or
+its **Record** button, which shows when you point at it) to start recording with System Audio turned
+on, plus your microphone if one is selected. If Mixdown can't record yet, for example because the
+model isn't downloaded, the window opens at **Record** to show why. The notification goes away when
+the call ends, and none appears while Mixdown is already recording. A browser counts as soon as any
+site uses the microphone. Turn this off under **Settings → Recording → Offer to record calls**.
+
 ## Speech models
 
 Choose a model under **Settings → Transcription**. It's downloaded once, from **Download

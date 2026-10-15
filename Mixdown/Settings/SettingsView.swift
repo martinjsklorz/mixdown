@@ -19,7 +19,7 @@ struct SettingsView: View {
                 .tag(MainNavigation.SettingsTab.transcription)
         }
         // Tall enough for the Recording tab, the longest, without scrolling.
-        .frame(width: 520, height: 390)
+        .frame(width: 520, height: 500)
     }
 
     private func tabLabel(_ tab: MainNavigation.SettingsTab) -> some View {

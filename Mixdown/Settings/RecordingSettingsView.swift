@@ -2,7 +2,8 @@ import MixdownCore
 import SwiftUI
 
 /// Which inputs to record and how to label them. The same choice is in the menu bar; this tab adds
-/// the speaker names and explains how multi-source recordings are transcribed.
+/// the speaker names, explains how multi-source recordings are transcribed, and turns the offer
+/// to record calls on or off.
 struct RecordingSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
 
@@ -47,6 +48,26 @@ struct RecordingSettingsView: View {
                 .foregroundStyle(.secondary)
             }
             .disabled(coordinator.isRecording)
+
+            Section {
+                Toggle(
+                    "Offer to record calls",
+                    isOn: Binding(
+                        get: { environment.asksToRecordMeetings },
+                        set: { environment.setAsksToRecordMeetings($0) }
+                    )
+                )
+            } header: {
+                Text("Meetings")
+            } footer: {
+                Text(
+                    "When a call app such as Zoom, Teams, FaceTime or Discord, or a browser, starts using a "
+                        + "microphone, Mixdown asks in a notification whether to record. Recording turns on "
+                        + "system audio."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
 
             Section {
                 TextField(

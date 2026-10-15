@@ -12,6 +12,7 @@ struct MainView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(MainNavigation.self) private var navigation
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.openWindow) private var openWindow
     @State private var library = NoteLibraryModel()
     @State private var searchText = ""
     @State private var noteToRename: NoteDocument?
@@ -36,6 +37,9 @@ struct MainView: View {
         .searchable(text: $searchText, placement: .sidebar, prompt: "Search Recordings")
         .frame(minWidth: 720, minHeight: 480)
         .task(id: environment.notesFolder.directory) { await reload() }
+        .onAppear {
+            environment.showRecorder = { [navigation, openWindow] in navigation.show(.recorder, using: openWindow) }
+        }
         .onChange(of: environment.coordinator.lastNoteURL) { _, url in
             Task {
                 await reload(selecting: url)

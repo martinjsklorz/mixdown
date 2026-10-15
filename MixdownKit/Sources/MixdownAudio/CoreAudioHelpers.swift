@@ -26,15 +26,25 @@ enum CoreAudioHAL {
 
     /// Every audio device known to the HAL, inputs and outputs alike.
     static func allDeviceIDs() throws -> [AudioDeviceID] {
-        var address = propertyAddress(kAudioHardwarePropertyDevices)
-        var size: UInt32 = 0
-        try check(AudioObjectGetPropertyDataSize(systemObject, &address, 0, nil, &size), "list audio devices")
+        try objectIDs(kAudioHardwarePropertyDevices, "list audio devices")
+    }
 
-        let stride = MemoryLayout<AudioDeviceID>.stride
-        var ids = [AudioDeviceID](repeating: 0, count: Int(size) / stride)
+    /// Every process the HAL knows as an audio client, whether it plays, records or neither.
+    static func allProcessObjectIDs() throws -> [AudioObjectID] {
+        try objectIDs(kAudioHardwarePropertyProcessObjectList, "list audio processes")
+    }
+
+    /// A list of objects from the system object, e.g. its devices.
+    private static func objectIDs(_ selector: AudioObjectPropertySelector, _ action: String) throws -> [AudioObjectID] {
+        var address = propertyAddress(selector)
+        var size: UInt32 = 0
+        try check(AudioObjectGetPropertyDataSize(systemObject, &address, 0, nil, &size), action)
+
+        let stride = MemoryLayout<AudioObjectID>.stride
+        var ids = [AudioObjectID](repeating: 0, count: Int(size) / stride)
         guard !ids.isEmpty else { return [] }
-        try check(AudioObjectGetPropertyData(systemObject, &address, 0, nil, &size, &ids), "list audio devices")
-        // The list can shrink between the two calls if a device is unplugged.
+        try check(AudioObjectGetPropertyData(systemObject, &address, 0, nil, &size, &ids), action)
+        // The list can shrink between the two calls if a device is unplugged or a process exits.
         return Array(ids.prefix(Int(size) / stride))
     }
 
@@ -107,7 +117,7 @@ enum CoreAudioHAL {
         try allDeviceIDs().first { self.uid(of: $0) == uid }
     }
 
-    private static func stringProperty(_ selector: AudioObjectPropertySelector, of objectID: AudioObjectID) -> String? {
+    static func stringProperty(_ selector: AudioObjectPropertySelector, of objectID: AudioObjectID) -> String? {
         var address = propertyAddress(selector)
         var value: Unmanaged<CFString>?
         var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
@@ -159,14 +169,16 @@ final class HALPropertyListener: @unchecked Sendable {
         }
     }
 
-    func remove() {
+    /// - Parameter logsFailures: Pass `false` when the object may be gone already, e.g. a process
+    ///   that has exited, which makes removing fail.
+    func remove(logsFailures: Bool = true) {
         isInstalled.withLockUnchecked { installed in
             guard installed else { return }
             installed = false
             for selector in selectors {
                 var address = CoreAudioHAL.propertyAddress(selector, scope: scope)
                 let status = AudioObjectRemovePropertyListenerBlock(objectID, &address, queue, block)
-                if status != noErr {
+                if status != noErr, logsFailures {
                     audioLogger.error("AudioObjectRemovePropertyListenerBlock failed: \(status, privacy: .public)")
                 }
             }

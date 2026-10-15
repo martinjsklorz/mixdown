@@ -16,16 +16,23 @@ final class AppEnvironment {
     let notesFolder: NotesFolderStore
     /// Created at launch, as it handles Restore on notifications from an earlier run.
     let noteTrash = NoteTrash()
+    /// Opens the main window at Record. Set by `MainView`, which opens at launch, as only views
+    /// can open windows.
+    @ObservationIgnored var showRecorder: (() -> Void)?
 
     /// Whole seconds since the current recording started, advanced every second; `nil` unless
     /// recording. Ticked here because the menu bar label only redraws on observed changes; it
     /// doesn't run `TimelineView` or `.task`.
     private(set) var recordingElapsed: Int?
 
+    /// Whether to offer recording when a call starts. See `MeetingPrompt`.
+    private(set) var asksToRecordMeetings: Bool
+
     private let settings: AppSettings
     @ObservationIgnored private var deviceMonitor: Task<Void, Never>?
     @ObservationIgnored private var recordingClock: Task<Void, Never>?
     @ObservationIgnored private var recordingClockStart: Date?
+    @ObservationIgnored private var meetingPrompt: MeetingPrompt?
 
     init(settings: AppSettings = AppSettings()) {
         let notesFolder = NotesFolderStore(settings: settings)
@@ -38,9 +45,16 @@ final class AppEnvironment {
             notesDirectory: notesFolder.directory,
             settings: settings
         )
+        self.asksToRecordMeetings = settings.asksToRecordMeetings
         startMonitoringDevices()
         observeRecording()
         observeNotesFolder()
+        let meetingPrompt = MeetingPrompt(
+            isRecording: { [weak self] in self?.coordinator.isRecording ?? false },
+            onRecord: { [weak self] in self?.recordMeeting() }
+        )
+        meetingPrompt.isEnabled = asksToRecordMeetings
+        self.meetingPrompt = meetingPrompt
     }
 
     // MARK: Composition
@@ -88,6 +102,7 @@ final class AppEnvironment {
             return
         }
         guard startedAt != recordingClockStart else { return }
+        meetingPrompt?.withdrawPrompts()
         recordingClock?.cancel()
         recordingClockStart = startedAt
         recordingClock = Task { [weak self] in
@@ -153,6 +168,27 @@ final class AppEnvironment {
             settings.sourceLabels = newValue
             coordinator.sourceLabels = newValue
         }
+    }
+
+    // MARK: Meetings
+
+    func setAsksToRecordMeetings(_ enabled: Bool) {
+        settings.asksToRecordMeetings = enabled
+        asksToRecordMeetings = enabled
+        meetingPrompt?.isEnabled = enabled
+    }
+
+    /// Records a call from the meeting notification: with system audio on, so the other people
+    /// are recorded too, and the microphone if one is selected. When recording can't start, e.g.
+    /// as the model isn't downloaded, opens Record instead, which says why.
+    private func recordMeeting() {
+        guard !coordinator.isRecording else { return }
+        setRecordsSystemAudio(true)
+        guard coordinator.canStartRecording else {
+            showRecorder?()
+            return
+        }
+        Task { await coordinator.startRecording() }
     }
 
     // MARK: Transcription

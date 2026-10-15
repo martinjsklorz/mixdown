@@ -7,11 +7,9 @@ import os
 /// Moves notes to the Trash and puts them back. Each note moved to the Trash gets a notification
 /// with a Restore button, shown even while Mixdown is in front so it works like an undo.
 ///
-/// Also the delegate of the app's `UNUserNotificationCenter`, so it is set up at launch and
-/// handles Restore on notifications from an earlier run, too. As the delegate, it has all of
-/// Mixdown's notifications shown while Mixdown is in front.
+/// Set up at launch, so it handles Restore on notifications from an earlier run, too.
 @MainActor @Observable
-final class NoteTrash: NSObject {
+final class NoteTrash {
     /// A note put back from the Trash, for the main window to show. A new value per restore, so
     /// putting the same note back twice still counts as a change.
     struct Restored: Equatable {
@@ -27,20 +25,22 @@ final class NoteTrash: NSObject {
 
     private static let maxKeptContents = 20
     private static let trashedCategory = "noteTrashed"
-    private nonisolated static let restoreAction = "restore"
+    private static let restoreAction = "restore"
     private static let logger = Logger(subsystem: "app.mixdown", category: "NoteTrash")
 
-    override init() {
-        super.init()
-        let center = UNUserNotificationCenter.current()
-        center.delegate = self
-        center.setNotificationCategories([
+    init() {
+        NotificationRouter.shared.register(
             UNNotificationCategory(
                 identifier: Self.trashedCategory,
                 actions: [UNNotificationAction(identifier: Self.restoreAction, title: "Restore")],
                 intentIdentifiers: []
             )
-        ])
+        ) { [weak self] response in
+            guard response.actionIdentifier == Self.restoreAction,
+                let trashed = TrashedNote(userInfo: response.userInfo)
+            else { return }
+            self?.restore(trashed, notificationID: response.notificationID)
+        }
     }
 
     /// Moves the note to the Trash, then posts a notification offering to restore it. Asks for
@@ -96,28 +96,6 @@ final class NoteTrash: NSObject {
     }
 }
 
-extension NoteTrash: UNUserNotificationCenterDelegate {
-    nonisolated func userNotificationCenter(
-        _ center: UNUserNotificationCenter,
-        willPresent notification: UNNotification
-    ) async -> UNNotificationPresentationOptions {
-        // Shown while Mixdown is in front too: that's when Restore is most useful, and when
-        // Copy Transcript happens.
-        [.banner, .list]
-    }
-
-    nonisolated func userNotificationCenter(
-        _ center: UNUserNotificationCenter,
-        didReceive response: UNNotificationResponse
-    ) async {
-        let request = response.notification.request
-        guard response.actionIdentifier == Self.restoreAction,
-            let trashed = TrashedNote(userInfo: request.content.userInfo)
-        else { return }
-        await restore(trashed, notificationID: request.identifier)
-    }
-}
-
 /// Where a trashed note came from and went, kept in its notification's `userInfo`.
 private struct TrashedNote: Sendable {
     let title: String
@@ -130,17 +108,17 @@ private struct TrashedNote: Sendable {
         self.trashedURL = trashedURL
     }
 
-    init?(userInfo: [AnyHashable: Any]) {
-        guard let title = userInfo["title"] as? String,
-            let originalPath = userInfo["originalPath"] as? String,
-            let trashedPath = userInfo["trashedPath"] as? String
+    init?(userInfo: [String: String]) {
+        guard let title = userInfo["title"],
+            let originalPath = userInfo["originalPath"],
+            let trashedPath = userInfo["trashedPath"]
         else { return nil }
         self.title = title
         originalURL = URL(filePath: originalPath)
         trashedURL = URL(filePath: trashedPath)
     }
 
-    var userInfo: [AnyHashable: Any] {
+    var userInfo: [String: String] {
         [
             "title": title,
             "originalPath": originalURL.path(percentEncoded: false),
