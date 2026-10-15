@@ -101,15 +101,35 @@ enum CoreAudioHAL {
         var streams = [AudioStreamID](repeating: 0, count: Int(size) / MemoryLayout<AudioStreamID>.stride)
         guard !streams.isEmpty,
               AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &streams) == noErr
-        else { return nil }
+        else {
+            audioLogger.error("Device \(deviceID, privacy: .public) has no input streams")
+            return nil
+        }
 
         var formatAddress = propertyAddress(kAudioStreamPropertyVirtualFormat)
         var description = AudioStreamBasicDescription()
         var formatSize = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
-        guard AudioObjectGetPropertyData(streams[0], &formatAddress, 0, nil, &formatSize, &description) == noErr,
-              description.mSampleRate > 0, description.mChannelsPerFrame > 0
-        else { return nil }
-        return AVAudioFormat(streamDescription: &description)
+        let status = AudioObjectGetPropertyData(streams[0], &formatAddress, 0, nil, &formatSize, &description)
+        guard status == noErr, description.mSampleRate > 0, description.mChannelsPerFrame > 0 else {
+            audioLogger.error(
+                "Device \(deviceID, privacy: .public) input format unreadable (OSStatus \(status, privacy: .public)): \(description.mSampleRate, privacy: .public) Hz, \(description.mChannelsPerFrame, privacy: .public) channels"
+            )
+            return nil
+        }
+        if let format = AVAudioFormat(streamDescription: &description) { return format }
+
+        // AVAudioFormat needs a channel layout for more than two channels, e.g. a microphone array
+        // exposing each microphone. The resampler mixes any number of channels down, so their
+        // order doesn't matter.
+        let discreteLayout = kAudioChannelLayoutTag_DiscreteInOrder | description.mChannelsPerFrame
+        if let layout = AVAudioChannelLayout(layoutTag: discreteLayout),
+           let format = AVAudioFormat(streamDescription: &description, channelLayout: layout) {
+            return format
+        }
+        audioLogger.error(
+            "Device \(deviceID, privacy: .public) input format unsupported: \(description.mSampleRate, privacy: .public) Hz, \(description.mChannelsPerFrame, privacy: .public) channels, format \(description.mFormatID, privacy: .public), flags \(description.mFormatFlags, privacy: .public), \(description.mBitsPerChannel, privacy: .public) bits"
+        )
+        return nil
     }
 
     /// Resolves a device UID to its current `AudioDeviceID`, or `nil` if it isn't connected.
