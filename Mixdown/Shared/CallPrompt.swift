@@ -4,28 +4,35 @@ import MixdownCore
 import UserNotifications
 import os
 
-/// Records calls, asking first or not, depending on `mode`.
+/// Notifies about calls and records them, as `notifies` and `recordsAutomatically` say.
 ///
 /// A call starts once Zoom, Discord, a browser or another call app has been using a microphone for
 /// a few seconds, and ends once the last one has stopped for a few seconds.
-/// - `.ask`: When a call starts, posts a notification that records when clicked; it goes away again
-///   when the call ends. When the call ends while Mixdown is recording, posts one that stops the
-///   recording when clicked; it goes away when the recording stops or a call starts again. Both
-///   have a button too, but macOS only shows that while the pointer is over the banner.
-/// - `.automatic`: Starts and stops recording by itself, and posts a notification saying so. If it
-///   can't record, e.g. as the model isn't downloaded, it falls back to asking, and clicking that
-///   opens Record, which says why.
+/// - Notifying, not recording automatically: When a call starts, posts a notification that records
+///   when clicked; it goes away again when the call ends. When the call ends while Mixdown is
+///   recording, posts one that stops the recording when clicked; it goes away when the recording
+///   stops or a call starts again. Both have a button too, but macOS only shows that while the
+///   pointer is over the banner.
+/// - Recording automatically: Starts and stops recording by itself, and, if notifying, posts a
+///   notification saying so. If it can't record, e.g. as the model isn't downloaded, it asks
+///   instead (if notifying), and clicking that opens Record, which says why.
 ///
 /// Call `recordingDidStart()` and `recordingDidStop()` as recordings come and go. Set up at
 /// launch, so the buttons also work on notifications from an earlier run.
 @MainActor
 final class CallPrompt {
-    /// `.off` stops watching and takes away any open prompt.
-    var mode = CallRecording.off {
+    /// Whether to post notifications. Turning it off takes away any that are open.
+    var notifies = false {
         didSet {
-            guard mode != oldValue else { return }
-            if oldValue == .off { start() } else if mode == .off { stop() }
+            guard notifies != oldValue else { return }
+            if !notifies { withdrawNotifications() }
+            updateWatching()
         }
+    }
+
+    /// Whether to start and stop recording with calls, without asking.
+    var recordsAutomatically = false {
+        didSet { updateWatching() }
     }
 
     private let isRecording: () -> Bool
@@ -92,6 +99,16 @@ final class CallPrompt {
         }
     }
 
+    /// Watches calls while there's something to do about them.
+    private func updateWatching() {
+        let watches = notifies || recordsAutomatically
+        if watches, detection == nil {
+            start()
+        } else if !watches, detection != nil {
+            stop()
+        }
+    }
+
     private func start() {
         Self.logger.info("Watching for calls")
         let detector = CallDetector(monitor: CoreAudioInputActivityMonitor())
@@ -106,8 +123,7 @@ final class CallPrompt {
         detection = nil
         detector = nil
         startingFor = nil
-        withdrawRecordPrompts()
-        withdrawStopPrompt()
+        withdrawNotifications()
     }
 
     /// Takes away the record prompts, as there's nothing left to start, and says so if the
@@ -116,6 +132,7 @@ final class CallPrompt {
         withdrawRecordPrompts()
         guard let app = startingFor else { return }
         startingFor = nil
+        guard notifies else { return }
         let id = "call-recording-\(UUID().uuidString)"
         recordingNoticeID = id
         post(title: "Recording Call", body: "Mixdown is recording the \(app.name) call.", id: id)
@@ -125,10 +142,19 @@ final class CallPrompt {
     func recordingDidStop() {
         withdrawStopPrompt()
         startingFor = nil
-        if let recordingNoticeID {
-            Notifications.remove(id: recordingNoticeID)
-            self.recordingNoticeID = nil
-        }
+        withdrawRecordingNotice()
+    }
+
+    private func withdrawNotifications() {
+        withdrawRecordPrompts()
+        withdrawStopPrompt()
+        withdrawRecordingNotice()
+    }
+
+    private func withdrawRecordingNotice() {
+        guard let recordingNoticeID else { return }
+        Notifications.remove(id: recordingNoticeID)
+        self.recordingNoticeID = nil
     }
 
     private func withdrawRecordPrompts() {
@@ -156,17 +182,20 @@ final class CallPrompt {
             Self.logger.info("\(app.name, privacy: .public) started a call; already recording")
             return
         }
-        if mode == .automatic {
+        if recordsAutomatically {
             startingFor = app
             if startRecording() {
                 Self.logger.info("\(app.name, privacy: .public) started a call; recording it")
                 return
             }
             startingFor = nil
-            Self.logger.info("\(app.name, privacy: .public) started a call; can't record, asking instead")
-        } else {
-            Self.logger.info("\(app.name, privacy: .public) started a call; asking to record")
+            Self.logger.info("\(app.name, privacy: .public) started a call; can't record it")
         }
+        guard notifies else {
+            Self.logger.info("\(app.name, privacy: .public) started a call; not notifying")
+            return
+        }
+        Self.logger.info("\(app.name, privacy: .public) started a call; asking to record")
         let id = "call-started-\(UUID().uuidString)"
         recordPromptIDs[app.name] = id
         post(
@@ -184,10 +213,14 @@ final class CallPrompt {
             Self.logger.info("\(app.name, privacy: .public) ended its call")
             return
         }
-        if mode == .automatic {
+        if recordsAutomatically {
             Self.logger.info("\(app.name, privacy: .public) ended its call; stopping the recording")
             stopRecording()
-            post(title: "Call Recording Stopped", body: "The \(app.name) call has ended.")
+            if notifies { post(title: "Call Recording Stopped", body: "The \(app.name) call has ended.") }
+            return
+        }
+        guard notifies else {
+            Self.logger.info("\(app.name, privacy: .public) ended its call; not notifying")
             return
         }
         Self.logger.info("\(app.name, privacy: .public) ended its call; asking to stop recording")

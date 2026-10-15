@@ -25,8 +25,10 @@ final class AppEnvironment {
     /// doesn't run `TimelineView` or `.task`.
     private(set) var recordingElapsed: Int?
 
-    /// What to do when a call starts and ends. See `CallPrompt`.
-    private(set) var callRecording: CallRecording
+    /// Whether to post notifications when calls start and end. See `CallPrompt`.
+    private(set) var notifiesAboutCalls: Bool
+    /// Whether to start and stop recording with calls, without asking. See `CallPrompt`.
+    private(set) var recordsCallsAutomatically: Bool
 
     private let settings: AppSettings
     @ObservationIgnored private var deviceMonitor: Task<Void, Never>?
@@ -45,7 +47,8 @@ final class AppEnvironment {
             notesDirectory: notesFolder.directory,
             settings: settings
         )
-        self.callRecording = settings.callRecording
+        self.notifiesAboutCalls = settings.notifiesAboutCalls
+        self.recordsCallsAutomatically = settings.recordsCallsAutomatically
         startMonitoringDevices()
         observeRecording()
         observeNotesFolder()
@@ -55,7 +58,8 @@ final class AppEnvironment {
             stopRecording: { [weak self] in self?.stopRecordingCall() },
             showRecorder: { [weak self] in self?.showRecorder?() }
         )
-        callPrompt.mode = callRecording
+        callPrompt.notifies = notifiesAboutCalls
+        callPrompt.recordsAutomatically = recordsCallsAutomatically
         self.callPrompt = callPrompt
     }
 
@@ -175,10 +179,16 @@ final class AppEnvironment {
 
     // MARK: Calls
 
-    func setCallRecording(_ callRecording: CallRecording) {
-        settings.callRecording = callRecording
-        self.callRecording = callRecording
-        callPrompt?.mode = callRecording
+    func setNotifiesAboutCalls(_ enabled: Bool) {
+        settings.notifiesAboutCalls = enabled
+        notifiesAboutCalls = enabled
+        callPrompt?.notifies = enabled
+    }
+
+    func setRecordsCallsAutomatically(_ enabled: Bool) {
+        settings.recordsCallsAutomatically = enabled
+        recordsCallsAutomatically = enabled
+        callPrompt?.recordsAutomatically = enabled
     }
 
     /// Starts recording a call: with system audio on, so the other people are recorded too, and the

@@ -61,19 +61,21 @@ Mixdown notices when a call starts: when a call or voice chat app (Zoom, Microso
 Slack, FaceTime, Discord, Mumble, TeamSpeak, WhatsApp, Telegram, Signal, Element, Viber, GoTo
 Meeting, Jitsi Meet) or a browser (Safari, Chrome, Edge, Firefox, Arc, Brave, Vivaldi, Opera) has
 been using a microphone for a few seconds. A browser counts as soon as any site uses the microphone.
-Choose what happens under **Settings → Recording → When a call starts**:
+Two switches under **Settings → Recording → Calls** decide what happens:
 
-- **Ask to Record** (the default): a notification asks **Record This Call?** Click it (or its
-  **Record** button, which shows when you point at it) to start recording with System Audio turned
-  on, plus your microphone if one is selected. If Mixdown can't record yet, for example because the
-  model isn't downloaded, the window opens at **Record** to show why. The notification goes away
-  when the call ends, and none appears while Mixdown is already recording. When the call ends while
-  Mixdown is recording (and no other call is going on), a notification asks **Stop Recording?**
-  Click it, or its **Stop Recording** button, to stop and transcribe.
-- **Record Automatically**: recording starts by itself, the same way, and a **Recording Call**
-  notification says so. When the call ends, recording stops and a **Call Recording Stopped**
-  notification says so. If Mixdown can't record yet, it asks with **Record This Call?** instead.
-- **Do Nothing**: calls aren't watched.
+- **Notify when calls start and end** (on by default): a notification asks **Record This Call?**
+  Click it (or its **Record** button, which shows when you point at it) to start recording with
+  System Audio turned on, plus your microphone if one is selected. If Mixdown can't record yet, for
+  example because the model isn't downloaded, the window opens at **Record** to show why. The
+  notification goes away when the call ends, and none appears while Mixdown is already recording.
+  When the call ends while Mixdown is recording (and no other call is going on), a notification asks
+  **Stop Recording?** Click it, or its **Stop Recording** button, to stop and transcribe.
+- **Record calls automatically** (off by default): recording starts by itself when a call starts,
+  the same way, and stops when the call ends. With notifications on, **Recording Call** and **Call
+  Recording Stopped** say so instead of asking, and if Mixdown can't record yet, it asks with
+  **Record This Call?** after all. With notifications off, the menu bar icon is the only sign.
+
+With both off, calls aren't watched.
 
 ## Speech models
 

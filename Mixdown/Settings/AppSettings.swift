@@ -19,7 +19,8 @@ struct AppSettings {
         static let language = "transcriptionLanguage"
         /// Whether to move notes to the Trash without asking first. Read with `@AppStorage`.
         static let suppressesTrashConfirmation = "suppressesTrashConfirmation"
-        static let callRecording = "callRecording"
+        static let notifiesAboutCalls = "notifiesAboutCalls"
+        static let recordsCallsAutomatically = "recordsCallsAutomatically"
     }
 
     var defaults: UserDefaults = .standard
@@ -70,29 +71,16 @@ struct AppSettings {
         nonmutating set { defaults.set(newValue, forKey: Key.language) }
     }
 
-    /// What to do when a call app starts using a microphone. Asks unless changed.
-    var callRecording: CallRecording {
-        get { defaults.string(forKey: Key.callRecording).flatMap(CallRecording.init(rawValue:)) ?? .ask }
-        nonmutating set { defaults.set(newValue.rawValue, forKey: Key.callRecording) }
+    /// Whether to post notifications when calls start and end. On unless turned off.
+    var notifiesAboutCalls: Bool {
+        get { defaults.object(forKey: Key.notifiesAboutCalls) as? Bool ?? true }
+        nonmutating set { defaults.set(newValue, forKey: Key.notifiesAboutCalls) }
+    }
+
+    /// Whether to start and stop recording with calls, without asking. Off unless turned on.
+    var recordsCallsAutomatically: Bool {
+        get { defaults.bool(forKey: Key.recordsCallsAutomatically) }
+        nonmutating set { defaults.set(newValue, forKey: Key.recordsCallsAutomatically) }
     }
 }
 
-/// What Mixdown does when a call starts and ends. See `CallPrompt`.
-enum CallRecording: String, CaseIterable, Identifiable {
-    /// Calls aren't watched.
-    case off
-    /// A notification offers to record when a call starts, and to stop when it ends.
-    case ask
-    /// Recording starts and stops with the call, and a notification says so.
-    case automatic
-
-    var id: Self { self }
-
-    var title: String {
-        switch self {
-        case .off: "Do Nothing"
-        case .ask: "Ask to Record"
-        case .automatic: "Record Automatically"
-        }
-    }
-}

@@ -50,24 +50,28 @@ struct RecordingSettingsView: View {
             .disabled(coordinator.isRecording)
 
             Section {
-                Picker(
-                    "When a call starts",
-                    selection: Binding(
-                        get: { environment.callRecording },
-                        set: { environment.setCallRecording($0) }
+                Toggle(
+                    "Notify when calls start and end",
+                    isOn: Binding(
+                        get: { environment.notifiesAboutCalls },
+                        set: { environment.setNotifiesAboutCalls($0) }
                     )
-                ) {
-                    ForEach(CallRecording.allCases) { option in
-                        Text(option.title).tag(option)
-                    }
-                }
+                )
+                Toggle(
+                    "Record calls automatically",
+                    isOn: Binding(
+                        get: { environment.recordsCallsAutomatically },
+                        set: { environment.setRecordsCallsAutomatically($0) }
+                    )
+                )
             } header: {
                 Text("Calls")
             } footer: {
                 Text(
                     "A call is a call app such as Zoom, Teams, FaceTime or Discord, or a browser, using a "
-                        + "microphone. Mixdown either asks in a notification whether to record, and to stop when "
-                        + "the call ends, or does both by itself and notifies you. Recording turns on system audio."
+                        + "microphone. Without automatic recording, the notifications ask whether to record and "
+                        + "whether to stop; with it, they say that recording started and stopped. Recording "
+                        + "turns on system audio."
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)
