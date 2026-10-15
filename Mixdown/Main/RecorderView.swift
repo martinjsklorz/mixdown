@@ -43,6 +43,9 @@ struct RecorderView: View {
     private func hero(for coordinator: RecordingCoordinator) -> some View {
         VStack(spacing: 20) {
             switch coordinator.phase {
+            case .idle where environment.notesFolder.directory == nil:
+                notesFolderPrompt
+
             case .idle where !coordinator.isModelDownloaded:
                 headline(
                     "Download the Speech Model",
@@ -60,7 +63,7 @@ struct RecorderView: View {
                     EmptyView()
                 } currentValueLabel: {
                     Text(
-                        DownloadProgressText.detail(progress: progress, remaining: coordinator.preparationTimeRemaining)
+                        ProgressText.detail(progress: progress, remaining: coordinator.timeRemaining)
                     )
                     .monospacedDigit()
                 }
@@ -75,11 +78,28 @@ struct RecorderView: View {
                     Task { await coordinator.stopRecording() }
                 }
                 caption("Recording · click to stop")
+                InputLevelsView(coordinator: coordinator)
 
-            case .transcribing:
+            // The live model only finishes its last fraction of a second, too quick to track.
+            case .transcribing where environment.model.isLive:
+                headline("Finishing…", detail: "Your note appears in the sidebar in a moment.")
+                ProgressView()
+                    .controlSize(.large)
+
+            case .transcribing(let progress):
+                headline("Transcribing…", detail: "Your note appears in the sidebar when it's done.")
+                ProgressView(value: progress) {
+                    EmptyView()
+                } currentValueLabel: {
+                    Text(ProgressText.detail(progress: progress, remaining: coordinator.timeRemaining))
+                        .monospacedDigit()
+                }
+                .frame(maxWidth: 320)
+
+            case .summarizing:
                 headline(
-                    environment.model.isLive ? "Finishing…" : "Transcribing…",
-                    detail: "Your note appears in the sidebar in a moment."
+                    "Summarizing…",
+                    detail: "\(environment.summarizer.info.displayName) is summarizing the transcript."
                 )
                 ProgressView()
                     .controlSize(.large)
@@ -106,8 +126,40 @@ struct RecorderView: View {
                 Task { await coordinator.startRecording() }
             }
             .disabled(!coordinator.canStartRecording)
-            caption(coordinator.selectedDevices.isEmpty ? "Choose an input to record" : "Click to record · ⌘R")
+            caption(startCaption(for: coordinator))
         }
+    }
+
+    private func startCaption(for coordinator: RecordingCoordinator) -> String {
+        if coordinator.selectedDevices.isEmpty {
+            "Choose an input to record"
+        } else if environment.notesFolder.directory == nil {
+            "Choose a notes folder to record"
+        } else {
+            "Click to record · ⌘R"
+        }
+    }
+
+    /// Asks for a notes folder on first run, or for another one when it can't be reached.
+    @ViewBuilder
+    private var notesFolderPrompt: some View {
+        let notesFolder = environment.notesFolder
+        let isUnavailable = notesFolder.status != .notChosen
+
+        headline(
+            NotesFolderWarning.title(for: notesFolder.status) ?? "",
+            detail: NotesFolderWarning.message(for: notesFolder.status, hasLegacyNotes: notesFolder.hasLegacyNotes)
+        )
+        HStack {
+            Button(isUnavailable ? "Choose Another Folder…" : "Choose Folder…", systemImage: "folder") {
+                environment.chooseNotesFolder()
+            }
+            .buttonStyle(.borderedProminent)
+            if isUnavailable {
+                Button("Try Again") { notesFolder.refresh() }
+            }
+        }
+        .controlSize(.large)
     }
 
     private func headline(_ title: String, detail: String?) -> some View {
@@ -137,12 +189,8 @@ struct RecorderView: View {
                 row("speaker.wave.2", "System audio", environment.recordsSystemAudio ? "On" : "Off")
                 row("waveform", "Model", TranscriptionSettingsView.label(for: environment.model))
                 row("globe", "Language", languageName)
-                row(
-                    "folder",
-                    "Notes folder",
-                    environment.notesFolder.directory.lastPathComponent,
-                    help: environment.notesFolder.directory.path(percentEncoded: false)
-                )
+                row("sparkles", "Summary", summaryName)
+                row("folder", "Notes folder", notesFolderName, help: environment.notesFolder.status.path)
             }
             .padding(6)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -170,6 +218,22 @@ struct RecorderView: View {
                 .help(help ?? value)
                 .gridColumnAlignment(.leading)
         }
+    }
+
+    private var notesFolderName: String {
+        let status = environment.notesFolder.status
+        switch status {
+        case .notChosen: return "Not chosen"
+        case .available: return status.name ?? ""
+        case .unavailable: return status.name.map { "\($0) (not available)" } ?? "Not available"
+        }
+    }
+
+    private var summaryName: String {
+        guard environment.summarizesNotes else { return "Off" }
+        let name = environment.summarizer.info.displayName
+        guard case .available = environment.summarizer.availability else { return "\(name) (not available)" }
+        return name
     }
 
     /// Models that detect the language themselves ignore the setting.

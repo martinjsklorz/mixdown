@@ -10,9 +10,14 @@ enum Fixtures {
     static let usbMic = AudioInputDevice(id: "usb", name: "USB Microphone", kind: .microphone)
     static let devices = [usbMic, builtInMic, AudioInputDevice.systemAudio]
 
-    static func chunk(seconds: Double, startTime: TimeInterval = 0, hostTime: TimeInterval? = nil) -> AudioChunk {
+    static func chunk(
+        seconds: Double,
+        startTime: TimeInterval = 0,
+        hostTime: TimeInterval? = nil,
+        amplitude: Float = 0.1
+    ) -> AudioChunk {
         AudioChunk(
-            samples: Array(repeating: 0.1, count: Int(seconds * AudioChunk.sampleRate)),
+            samples: Array(repeating: amplitude, count: Int(seconds * AudioChunk.sampleRate)),
             startTime: startTime,
             hostTime: hostTime
         )
@@ -100,6 +105,11 @@ final class MockCapture: AudioCapturing {
         return stream
     }
 
+    /// Delivers another chunk while recording.
+    func yield(_ chunk: AudioChunk) {
+        continuation.yield(chunk)
+    }
+
     func stop() async {
         stopCalls.update { $0 += 1 }
         continuation.finish()
@@ -126,6 +136,8 @@ actor MockEngine: TranscriptionEngine {
     /// Returned instead of `transcript` for a given sample count, to tell sources apart.
     private let transcriptsBySampleCount: [Int: Transcript]
     private let transcribeError: (any Error)?
+    private let progressBySampleCount: [Int: Double]
+    private let transcriptionGate: Gate?
     private let prepareError: (any Error)?
     private let preparesUntilCancelled: Bool
     private let deleteError: (any Error)?
@@ -145,10 +157,15 @@ actor MockEngine: TranscriptionEngine {
     ///   - liveSession: Handed out by `makeLiveSession` for every input; `nil` if the engine
     ///     doesn't transcribe live.
     ///   - liveError: Thrown by `makeLiveSession` instead.
+    ///   - progressBySampleCount: Progress `transcribe` reports for a given sample count before
+    ///     waiting for `transcriptionGate`.
+    ///   - transcriptionGate: `transcribe` returns once it opens.
     init(
         transcript: Transcript = Transcript(segments: []),
         transcriptsBySampleCount: [Int: Transcript] = [:],
         transcribeError: (any Error)? = nil,
+        progressBySampleCount: [Int: Double] = [:],
+        transcriptionGate: Gate? = nil,
         isDownloaded: Bool = true,
         prepareError: (any Error)? = nil,
         preparesUntilCancelled: Bool = false,
@@ -159,6 +176,8 @@ actor MockEngine: TranscriptionEngine {
         self.transcript = transcript
         self.transcriptsBySampleCount = transcriptsBySampleCount
         self.transcribeError = transcribeError
+        self.progressBySampleCount = progressBySampleCount
+        self.transcriptionGate = transcriptionGate
         self.downloaded = LockedValue(isDownloaded)
         self.prepareError = prepareError
         self.preparesUntilCancelled = preparesUntilCancelled
@@ -198,8 +217,14 @@ actor MockEngine: TranscriptionEngine {
         downloaded.update { $0 = false }
     }
 
-    func transcribe(_ samples: [Float], options: TranscriptionOptions) async throws -> Transcript {
+    func transcribe(
+        _ samples: [Float],
+        options: TranscriptionOptions,
+        progress: (@Sendable (Double) -> Void)?
+    ) async throws -> Transcript {
         receivedSampleCounts.append(samples.count)
+        if let fraction = progressBySampleCount[samples.count] { progress?(fraction) }
+        await transcriptionGate?.wait()
         if let transcribeError { throw transcribeError }
         return transcriptsBySampleCount[samples.count] ?? transcript
     }
@@ -241,6 +266,23 @@ actor MockLiveSession: LiveTranscriptionSession {
     }
 }
 
+/// Holds callers of `wait()` until `open()`.
+actor Gate {
+    private var isOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        guard !isOpen else { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func open() {
+        isOpen = true
+        waiters.forEach { $0.resume() }
+        waiters = []
+    }
+}
+
 actor InMemoryNoteWriter: NoteWriting {
     private(set) var notes: [Note] = []
 
@@ -264,5 +306,32 @@ func waitUntil(
             return
         }
         try await Task.sleep(for: .milliseconds(5))
+    }
+}
+
+/// Returns `summary`, or throws `error`, and records the transcripts it was given.
+final class MockSummarizer: Summarizer {
+    let info = SummarizerInfo(id: "mock", displayName: "Mock Summarizer")
+    let availability: SummarizerAvailability
+    private let summary: NoteSummary
+    private let error: (any Error)?
+    private let received = LockedValue<[Transcript]>([])
+
+    init(
+        summary: NoteSummary = NoteSummary(overview: "A test."),
+        error: (any Error)? = nil,
+        availability: SummarizerAvailability = .available
+    ) {
+        self.summary = summary
+        self.error = error
+        self.availability = availability
+    }
+
+    var receivedTranscripts: [Transcript] { received.current }
+
+    func summarize(_ transcript: Transcript) async throws -> NoteSummary {
+        received.update { $0.append(transcript) }
+        if let error { throw error }
+        return summary
     }
 }

@@ -11,6 +11,7 @@ struct RecordingCoordinatorTests {
         captures: [String: MockCapture] = [:],
         engine: MockEngine = MockEngine(),
         writer: InMemoryNoteWriter = InMemoryNoteWriter(),
+        summarizer: MockSummarizer? = nil,
         preferredDeviceIDs: [String] = []
     ) -> RecordingCoordinator {
         RecordingCoordinator(
@@ -18,6 +19,7 @@ struct RecordingCoordinatorTests {
             captureFactory: MockCaptureFactory(capture: capture, captures: captures),
             engine: engine,
             noteWriter: writer,
+            summarizer: summarizer,
             preferredDeviceIDs: preferredDeviceIDs,
             now: { Fixtures.startDate }
         )
@@ -204,8 +206,24 @@ struct RecordingCoordinatorTests {
         await coordinator.stopRecording()
 
         #expect(coordinator.phase == .failed(message: error.localizedDescription))
+        #expect(coordinator.modelError == nil)
         #expect(coordinator.lastNoteURL == nil)
         #expect(await writer.notes.isEmpty)
+    }
+
+    @Test func modelLoadErrorWhileTranscribingIsAModelError() async {
+        let error = TranscriptionError.modelUnavailable("corrupt weights")
+        let coordinator = makeCoordinator(
+            capture: MockCapture(chunks: [Fixtures.chunk(seconds: 1)]),
+            engine: MockEngine(transcribeError: error)
+        )
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        await coordinator.stopRecording()
+
+        #expect(coordinator.phase == .failed(message: error.localizedDescription))
+        #expect(coordinator.modelError == error.localizedDescription)
     }
 
     @Test func startErrorFailsAndDismissReturnsToIdle() async {
@@ -216,6 +234,7 @@ struct RecordingCoordinatorTests {
         await coordinator.startRecording()
 
         #expect(coordinator.phase == .failed(message: error.localizedDescription))
+        #expect(coordinator.modelError == nil)
         #expect(!coordinator.isRecording)
         #expect(coordinator.canStartRecording)
 
@@ -276,6 +295,75 @@ struct RecordingCoordinatorTests {
         #expect(coordinator.phase == .idle)
     }
 
+    // MARK: - Summary
+
+    /// Records a second of audio that `MockEngine` turns into `transcript`, and returns the note.
+    private func recordNote(
+        transcript: Transcript = Transcript(segments: [TranscriptSegment(start: 0, end: 1, text: "Hello.")]),
+        summarizer: MockSummarizer?
+    ) async throws -> (RecordingCoordinator, Note) {
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            capture: MockCapture(chunks: [Fixtures.chunk(seconds: 1)]),
+            engine: MockEngine(transcript: transcript),
+            writer: writer,
+            summarizer: summarizer
+        )
+        await coordinator.monitorDevices()
+        await coordinator.startRecording()
+        await coordinator.stopRecording()
+        return (coordinator, try #require(await writer.notes.first))
+    }
+
+    @Test func summarizesTranscriptIntoNote() async throws {
+        let summary = NoteSummary(overview: "A greeting.", keyPoints: ["Someone said hello."])
+        let summarizer = MockSummarizer(summary: summary)
+
+        let (coordinator, note) = try await recordNote(summarizer: summarizer)
+
+        #expect(coordinator.phase == .idle)
+        #expect(note.summary == summary)
+        #expect(summarizer.receivedTranscripts == [note.transcript])
+    }
+
+    @Test func noteIsSavedWithoutSummaryWhenSummarizingFails() async throws {
+        let summarizer = MockSummarizer(error: SummarizationError.failed("guardrail"))
+
+        let (coordinator, note) = try await recordNote(summarizer: summarizer)
+
+        #expect(coordinator.phase == .idle)
+        #expect(coordinator.lastNoteURL != nil)
+        #expect(note.summary == nil)
+        #expect(summarizer.receivedTranscripts.count == 1)
+    }
+
+    @Test func unavailableSummarizerIsSkipped() async throws {
+        let summarizer = MockSummarizer(availability: .unavailable(reason: "Turn it on."))
+
+        let (coordinator, note) = try await recordNote(summarizer: summarizer)
+
+        #expect(coordinator.phase == .idle)
+        #expect(note.summary == nil)
+        #expect(summarizer.receivedTranscripts.isEmpty)
+    }
+
+    @Test func emptyTranscriptOrSummaryLeavesNoSummary() async throws {
+        let silent = MockSummarizer()
+        let (_, silentNote) = try await recordNote(transcript: Transcript(segments: []), summarizer: silent)
+        #expect(silentNote.summary == nil)
+        #expect(silent.receivedTranscripts.isEmpty)
+
+        let empty = MockSummarizer(summary: NoteSummary(overview: " ", keyPoints: [""]))
+        let (_, emptyNote) = try await recordNote(summarizer: empty)
+        #expect(emptyNote.summary == nil)
+        #expect(empty.receivedTranscripts.count == 1)
+    }
+
+    @Test func noSummarizerMeansNoSummary() async throws {
+        let (_, note) = try await recordNote(summarizer: nil)
+        #expect(note.summary == nil)
+    }
+
     // MARK: - Multiple sources
 
     @Test func recordsSourcesSeparatelyAndMergesByTime() async throws {
@@ -319,6 +407,49 @@ struct RecordingCoordinatorTests {
         )
     }
 
+    @Test func reportsTranscriptionProgress() async throws {
+        let gate = Gate()
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            capture: MockCapture(chunks: [Fixtures.chunk(seconds: 1)]),
+            engine: MockEngine(progressBySampleCount: [16_000: 0.4], transcriptionGate: gate),
+            writer: writer
+        )
+        await coordinator.monitorDevices()
+        await coordinator.startRecording()
+
+        let stopping = Task { await coordinator.stopRecording() }
+        try await waitUntil { coordinator.phase == .transcribing(progress: 0.4) }
+        #expect(coordinator.isBusy)
+        await gate.open()
+        await stopping.value
+
+        #expect(coordinator.phase == .idle)
+        #expect(coordinator.timeRemaining == nil)
+        #expect(await writer.notes.count == 1)
+    }
+
+    @Test func weighsSourceProgressByLength() async throws {
+        let gate = Gate()
+        let microphone = MockCapture(chunks: [Fixtures.chunk(seconds: 3, hostTime: 100)])
+        let systemAudio = MockCapture(chunks: [Fixtures.chunk(seconds: 1, hostTime: 100)])
+        let coordinator = makeCoordinator(
+            captures: [Fixtures.builtInMic.id: microphone, AudioInputDevice.systemAudioID: systemAudio],
+            // The short source is done, the long one hasn't started.
+            engine: MockEngine(progressBySampleCount: [48_000: 0, 16_000: 1], transcriptionGate: gate),
+            preferredDeviceIDs: [Fixtures.builtInMic.id, AudioInputDevice.systemAudioID]
+        )
+        await coordinator.monitorDevices()
+        await coordinator.startRecording()
+
+        let stopping = Task { await coordinator.stopRecording() }
+        try await waitUntil { coordinator.phase == .transcribing(progress: 0.25) }
+        await gate.open()
+        await stopping.value
+
+        #expect(coordinator.phase == .idle)
+    }
+
     @Test func silentSourceIsNotTranscribed() async throws {
         let engine = MockEngine(
             transcript: Transcript(segments: [TranscriptSegment(start: 0, end: 1, text: "Just me.")])
@@ -340,6 +471,49 @@ struct RecordingCoordinatorTests {
         let note = try #require(await writer.notes.first)
         #expect(note.sources == [Fixtures.builtInMic, .systemAudio])
         #expect(note.transcript.speakers == ["Me"])
+    }
+
+    // MARK: - Levels
+
+    @Test func flagsSourcesThatStaySilent() async throws {
+        let microphone = MockCapture(chunks: [Fixtures.chunk(seconds: 1)])
+        // A tap without permission keeps delivering zeros.
+        let systemAudio = MockCapture(chunks: [Fixtures.chunk(seconds: 1, amplitude: 0)])
+        let coordinator = makeCoordinator(
+            captures: [Fixtures.builtInMic.id: microphone, AudioInputDevice.systemAudioID: systemAudio],
+            preferredDeviceIDs: [Fixtures.builtInMic.id, AudioInputDevice.systemAudioID]
+        )
+        coordinator.silenceWarningDelay = .milliseconds(50)
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        try await waitUntil { coordinator.inputLevels.count == 2 }
+        #expect(coordinator.inputLevels[Fixtures.builtInMic.id] == InputLevel(peak: 0.1))
+        #expect(coordinator.inputLevels[AudioInputDevice.systemAudioID] == InputLevel(peak: 0))
+        #expect(coordinator.silentDevices.isEmpty)
+
+        try await waitUntil { !coordinator.silentDevices.isEmpty }
+        #expect(coordinator.silentDevices == [.systemAudio])
+
+        await coordinator.stopRecording()
+        #expect(coordinator.inputLevels.isEmpty)
+        #expect(coordinator.silentDevices.isEmpty)
+    }
+
+    @Test func sourceThatIsHeardLeavesSilentList() async throws {
+        let capture = MockCapture(chunks: [Fixtures.chunk(seconds: 1, amplitude: 0)])
+        let coordinator = makeCoordinator(capture: capture)
+        coordinator.silenceWarningDelay = .milliseconds(50)
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        try await waitUntil { coordinator.silentDevices == [Fixtures.builtInMic] }
+
+        capture.yield(Fixtures.chunk(seconds: 0.1, startTime: 1))
+        try await waitUntil { coordinator.silentDevices.isEmpty }
+        #expect(coordinator.inputLevels[Fixtures.builtInMic.id] == InputLevel(peak: 0.1))
+
+        await coordinator.stopRecording()
     }
 
     @Test func sourceFailingToStartStopsTheOthers() async {
@@ -540,8 +714,25 @@ struct RecordingCoordinatorTests {
         try await waitUntil { coordinator.lastNoteURL != nil }
 
         #expect(coordinator.phase == .failed(message: RecordingCoordinator.interruptedMessage(for: error)))
+        // Settings offers to download the model again.
+        #expect(coordinator.modelError == error.localizedDescription)
         #expect(capture.stopCount == 1)
         #expect(await writer.notes.first?.transcript.isEmpty == true)
+    }
+
+    @Test func liveSessionsGetAudioInBatches() async throws {
+        let live = MockLiveSession()
+        // A tenth of a second at a time, like a capture's buffers.
+        let chunks = (0..<10).map { Fixtures.chunk(seconds: 0.1, hostTime: 100 + Double($0) / 10) }
+        let coordinator = makeCoordinator(capture: MockCapture(chunks: chunks), engine: MockEngine(liveSession: live))
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        await coordinator.stopRecording()
+
+        // The rest is fed when the input ends.
+        #expect(await live.pushedSampleCounts == [6_400, 6_400, 3_200])
+        #expect(await live.finishCount == 1)
     }
 
     @Test func liveTranscriptionErrorKeepsTheTextSoFar() async throws {
@@ -593,6 +784,34 @@ struct RecordingCoordinatorTests {
         await coordinator.prepareEngine()
 
         #expect(coordinator.phase == .failed(message: error.localizedDescription))
+        #expect(coordinator.modelError == error.localizedDescription)
+    }
+
+    @Test func laterFailureReplacesModelError() async {
+        let startError = AudioCaptureError.microphonePermissionDenied
+        let coordinator = makeCoordinator(
+            capture: MockCapture(startError: startError),
+            engine: MockEngine(prepareError: TranscriptionError.modelUnavailable("offline"))
+        )
+        await coordinator.monitorDevices()
+        await coordinator.prepareEngine()
+        #expect(coordinator.modelError != nil)
+
+        await coordinator.startRecording()
+
+        #expect(coordinator.phase == .failed(message: startError.localizedDescription))
+        #expect(coordinator.modelError == nil)
+    }
+
+    @Test func dismissErrorClearsModelError() async {
+        let coordinator = makeCoordinator(
+            engine: MockEngine(prepareError: TranscriptionError.modelUnavailable("offline"))
+        )
+        await coordinator.prepareEngine()
+
+        coordinator.dismissError()
+
+        #expect(coordinator.modelError == nil)
     }
 
     @Test func cancelPreparationStopsEngineAndReturnsToIdle() async throws {
@@ -604,7 +823,7 @@ struct RecordingCoordinatorTests {
         coordinator.cancelPreparation()
 
         #expect(coordinator.phase == .idle)
-        #expect(coordinator.preparationTimeRemaining == nil)
+        #expect(coordinator.timeRemaining == nil)
         await preparing.value
         #expect(coordinator.phase == .idle)
         #expect(await engine.cancelledPrepareCount == 1)
@@ -667,6 +886,31 @@ struct RecordingCoordinatorTests {
         #expect(coordinator.isRecording)
     }
 
+    @Test func recordingWaitsForNotesFolder() async {
+        let coordinator = makeCoordinator()
+        coordinator.noteWriter = nil
+        await coordinator.monitorDevices()
+
+        #expect(!coordinator.canStartRecording)
+        await coordinator.startRecording()
+        #expect(coordinator.phase == .idle)
+
+        coordinator.noteWriter = InMemoryNoteWriter()
+        #expect(coordinator.canStartRecording)
+    }
+
+    @Test func notesFolderGoingAwayMidRecordingFails() async {
+        let coordinator = makeCoordinator(capture: MockCapture(chunks: [Fixtures.chunk(seconds: 1)]))
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        coordinator.noteWriter = nil
+        await coordinator.stopRecording()
+
+        #expect(coordinator.phase == .failed(message: NoteWritingError.noFolder.localizedDescription))
+        #expect(coordinator.lastNoteURL == nil)
+    }
+
     @Test func failedOrCancelledDownloadKeepsRecordingDisabled() async throws {
         let failing = makeCoordinator(
             engine: MockEngine(isDownloaded: false, prepareError: TranscriptionError.modelUnavailable("offline"))
@@ -716,6 +960,7 @@ struct RecordingCoordinatorTests {
         await coordinator.deleteModel()
 
         #expect(coordinator.phase == .failed(message: error.localizedDescription))
+        #expect(coordinator.modelError == error.localizedDescription)
         #expect(coordinator.isModelDownloaded)
     }
 

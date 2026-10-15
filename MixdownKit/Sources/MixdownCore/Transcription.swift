@@ -96,7 +96,13 @@ public protocol TranscriptionEngine: Sendable {
     /// Transcribes 16 kHz mono Float32 samples (see `AudioChunk.sampleRate`).
     /// Calls `prepare` implicitly if it hasn't completed yet. Honors task cancellation.
     /// Only called when `transcribesLive` is false.
-    func transcribe(_ samples: [Float], options: TranscriptionOptions) async throws -> Transcript
+    /// - Parameter progress: Reports 0...1 as the work gets done, never moving backwards. An engine
+    ///   that can't tell may never call it. May be called from any thread.
+    func transcribe(
+        _ samples: [Float],
+        options: TranscriptionOptions,
+        progress: (@Sendable (Double) -> Void)?
+    ) async throws -> Transcript
 
     /// Starts transcribing one input as it's recorded. Calls `prepare` implicitly if it hasn't
     /// completed yet. Only called when `transcribesLive` is true.

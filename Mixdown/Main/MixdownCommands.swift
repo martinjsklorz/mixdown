@@ -1,18 +1,27 @@
+import AppKit
 import MixdownCore
+import MixdownNotes
 import SwiftUI
 
 /// The main menu. The View menu's sections switch what the main window shows; the File menu has
-/// the notes files, the Recording menu recording and inputs. Settings… comes with the `Settings`
-/// scene.
+/// the notes files and the shown note, the Recording menu recording and inputs. Settings… comes
+/// with the `Settings` scene.
 struct MixdownCommands: Commands {
     let environment: AppEnvironment
     let navigation: MainNavigation
+    @FocusedValue(\.shownNote) private var shownNote
 
     var body: some Commands {
         // Replaces New Window, which a single-instance window doesn't offer anyway.
         CommandGroup(replacing: .newItem) {
-            NotesFileMenuItems()
+            NotesFileMenuItems(shownNote: shownNote)
                 .environment(environment)
+        }
+        CommandGroup(after: .pasteboard) {
+            Button("Copy Transcript") {
+                if let shownNote { NoteActions.copyTranscript(of: shownNote.note) }
+            }
+            .disabled(shownNote == nil)
         }
         CommandGroup(before: .sidebar) {
             SectionMenuItem("Record", destination: .recorder)
@@ -49,12 +58,43 @@ private struct SectionMenuItem: View {
 
 private struct NotesFileMenuItems: View {
     @Environment(AppEnvironment.self) private var environment
+    let shownNote: ShownNote?
 
     var body: some View {
         Button("Open Notes Folder") { environment.openNotesFolder() }
             .keyboardShortcut("o", modifiers: [.command, .shift])
+            .disabled(environment.notesFolder.directory == nil)
         Button("Reveal Last Note in Finder") { environment.revealLastNote() }
             .disabled(environment.coordinator.lastNoteURL == nil)
+
+        Divider()
+
+        Button("Rename Note…") {
+            if let shownNote { shownNote.actions.rename(shownNote.note) }
+        }
+        .disabled(shownNote == nil)
+        if let note = shownNote?.note {
+            ShareLink(item: note.url, preview: SharePreview(note.title))
+        } else {
+            Menu("Share") {}
+                .disabled(true)
+        }
+
+        Divider()
+
+        Button("Move to Trash", action: moveToTrash)
+            .keyboardShortcut(.delete, modifiers: .command)
+            .disabled(shownNote == nil)
+    }
+
+    /// ⌘⌫ also deletes to the start of the line in text fields, such as the sidebar's search, and
+    /// the menu would get it first. So while typing, it's handed back to the text.
+    private func moveToTrash() {
+        if let textView = NSApp.keyWindow?.firstResponder as? NSTextView, textView.isEditable {
+            textView.deleteToBeginningOfLine(nil)
+        } else if let shownNote {
+            shownNote.actions.moveToTrash(shownNote.note)
+        }
     }
 }
 

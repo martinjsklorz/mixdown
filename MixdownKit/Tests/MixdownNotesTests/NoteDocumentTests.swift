@@ -15,10 +15,53 @@ struct NoteDocumentTests {
         #expect(document.title == "Weekly Sync")
         #expect(document.createdAt == note.createdAt)
         #expect(document.duration == 65)
-        #expect(document.source == "MacBook Pro Microphone")
+        #expect(document.sources == ["MacBook Pro Microphone"])
         #expect(document.snippet == "[00:00:00] Hello everyone.")
         #expect(document.body.hasPrefix("\n# Weekly Sync\n\n## Transcript\n"))
         #expect(document.id == url)
+    }
+
+    @Test func displayBlocksDropLeadingTitleHeading() {
+        let note = NoteFixtures.note()
+
+        let document = NoteDocument(url: url, contents: MarkdownNoteRenderer.render(note), fileDate: fileDate)
+
+        #expect(document.displayBlocks().first == .heading(level: 2, text: "Transcript"))
+    }
+
+    @Test func displayBlocksKeepHeadingThatDiffersFromTitle() {
+        let contents = "---\ntitle: Renamed\n---\n# Original\n\nBody text."
+
+        let document = NoteDocument(url: url, contents: contents, fileDate: fileDate)
+
+        #expect(document.displayBlocks() == [.heading(level: 1, text: "Original"), .paragraph("Body text.")])
+    }
+
+    @Test func readsBackMultipleSources() {
+        let note = NoteFixtures.note(sources: [
+            AudioInputDevice(id: "builtin", name: "MacBook Pro Microphone", kind: .microphone),
+            AudioInputDevice(id: "usb", name: #"Mic "B", 2"#, kind: .microphone),
+            .systemAudio,
+        ])
+
+        let document = NoteDocument(url: url, contents: MarkdownNoteRenderer.render(note), fileDate: fileDate)
+
+        #expect(document.sources == ["MacBook Pro Microphone", #"Mic "B", 2"#, "System Audio"])
+    }
+
+    @Test func readsHandWrittenSourceLists() {
+        let contents = "---\nsources: [Plain, 'It''s quoted', \"\", \"Last\"] # comment\n---\n"
+
+        let document = NoteDocument(url: url, contents: contents, fileDate: fileDate)
+
+        #expect(document.sources == ["Plain", "It's quoted", "Last"])
+    }
+
+    @Test(arguments: ["inf", "-inf", ".inf", "nan", "1e30", "-5"])
+    func ignoresUnusableDuration(_ value: String) {
+        let document = NoteDocument(url: url, contents: "---\nduration: \(value)\n---\n", fileDate: fileDate)
+
+        #expect(document.duration == nil)
     }
 
     @Test func unescapesQuotedFrontmatter() {
@@ -45,7 +88,7 @@ struct NoteDocumentTests {
         #expect(document.title == "Hand Written")
         #expect(document.createdAt == fileDate)
         #expect(document.duration == nil)
-        #expect(document.source == nil)
+        #expect(document.sources.isEmpty)
         #expect(document.snippet == "Intro line")
         #expect(document.body == contents)
     }
@@ -93,5 +136,21 @@ struct NoteDocumentTests {
         let document = NoteDocument(url: url, contents: String(repeating: "word ", count: 100), fileDate: fileDate)
 
         #expect(document.snippet.count == 200)
+    }
+
+    @Test func transcriptTextIsTranscriptSectionAsPlainText() {
+        let contents = MarkdownNoteRenderer.render(NoteFixtures.note()) + "\n## Summary\n\nLater."
+
+        let document = NoteDocument(url: url, contents: contents, fileDate: fileDate)
+
+        #expect(document.transcriptText == "[00:00:00] Hello everyone.\n\n[00:01:05] Next topic.")
+    }
+
+    @Test func transcriptTextWithoutTranscriptSectionIsWholeBody() {
+        let contents = "# Title\n\nSome **bold** text.\n\n- One\n  - Two\n1. Three\n\n---\n\n```\ncode  here\n```"
+
+        let document = NoteDocument(url: url, contents: contents, fileDate: fileDate)
+
+        #expect(document.transcriptText == "Title\n\nSome bold text.\n\n• One\n  • Two\n1. Three\n\ncode  here")
     }
 }

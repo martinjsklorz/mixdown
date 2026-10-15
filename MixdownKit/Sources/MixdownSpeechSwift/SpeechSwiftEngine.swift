@@ -51,11 +51,18 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
     /// Transcribes a whole recording of 16 kHz mono samples. Segments follow the VAD's speech regions
     /// (or the model's own timestamps for MOSS). `translateToEnglish` is not supported and ignored.
     /// Throws for the live model, which transcribes while recording instead.
-    public func transcribe(_ samples: [Float], options: TranscriptionOptions) async throws -> Transcript {
-        let language = Self.languageCode(options.language)
+    ///
+    /// `progress` counts recognized pieces against the total, so it starts once the VAD is done.
+    public func transcribe(
+        _ samples: [Float],
+        options: TranscriptionOptions,
+        progress: (@Sendable (Double) -> Void)?
+    ) async throws -> Transcript {
+        // A model that detects the language itself ignores the setting, so the note mustn't claim it.
+        let language = model.supportsLanguageSelection ? Self.languageCode(options.language) : nil
         guard !samples.isEmpty else { return Transcript(segments: [], language: language) }
         return try await oneAtATime {
-            try await self.performTranscription(samples, options: options, language: language)
+            try await self.performTranscription(samples, options: options, language: language, progress: progress)
         }
     }
 
@@ -237,7 +244,8 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
     private func performTranscription(
         _ samples: [Float],
         options: TranscriptionOptions,
-        language: String?
+        language requestedLanguage: String?,
+        progress: (@Sendable (Double) -> Void)?
     ) async throws -> Transcript {
         guard case .offline(let detector, let recognizer) = try await loadedModels(progress: nil) else {
             throw TranscriptionError.failed("\(model.displayName) transcribes while recording")
@@ -246,12 +254,14 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
         let started = ContinuousClock.now
         let audioDuration = Double(samples.count) / AudioChunk.sampleRate
 
-        let hint = language.flatMap { recognizer.languageHint(forISOCode: $0) }
-        if let language, hint == nil {
+        let hint = requestedLanguage.flatMap { recognizer.languageHint(forISOCode: $0) }
+        if let requestedLanguage, hint == nil {
             transcriptionLogger.info(
-                "\(self.model.displayName, privacy: .public) takes no language hint for '\(language, privacy: .public)'; detecting automatically"
+                "\(self.model.displayName, privacy: .public) takes no language hint for '\(requestedLanguage, privacy: .public)'; detecting automatically"
             )
         }
+        // Only a language the model was told to use is known; the detected one isn't reported.
+        let language = hint == nil ? nil : requestedLanguage
         if options.translateToEnglish, !hasLoggedTranslationNotice {
             hasLoggedTranslationNotice = true
             transcriptionLogger.debug("speech-swift models don't translate; transcribing verbatim")
@@ -274,19 +284,21 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
         }
 
         var segments: [TranscriptSegment] = []
-        for piece in pieces {
+        for (index, piece) in pieces.enumerated() {
             try Task.checkCancellation()
             let audio = Self.slice(samples, to: piece.window)
-            guard !audio.isEmpty else { continue }
-            let recognized: [RecognizedSegment]
-            do {
-                recognized = try recognizer.recognize(audio, languageHint: hint)
-            } catch let error as CancellationError {
-                throw error
-            } catch {
-                throw TranscriptionError.failed(error.localizedDescription)
+            if !audio.isEmpty {
+                let recognized: [RecognizedSegment]
+                do {
+                    recognized = try recognizer.recognize(audio, languageHint: hint)
+                } catch let error as CancellationError {
+                    throw error
+                } catch {
+                    throw TranscriptionError.failed(error.localizedDescription)
+                }
+                segments.append(contentsOf: recognized.compactMap { piece.place($0) })
             }
-            segments.append(contentsOf: recognized.compactMap { piece.place($0) })
+            progress?(Double(index + 1) / Double(pieces.count))
             await Task.yield()
         }
 

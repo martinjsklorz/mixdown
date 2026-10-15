@@ -46,8 +46,9 @@ public enum MarkdownBlock: Sendable, Equatable {
 // MARK: - Parser
 
 /// Line-based parser for a CommonMark subset. Lists don't nest other blocks, and a blank line
-/// always ends the current block.
-private struct Parser {
+/// always ends the current block. Its line classification is internal so renaming can find a
+/// note's title heading.
+struct Parser {
     private enum OpenBlock {
         case paragraph([String])
         case listItem(number: Int?, depth: Int, lines: [String])
@@ -158,7 +159,7 @@ private struct Parser {
     // MARK: Line classification
 
     /// `## Title ##` → (2, "Title"). A `#` must be followed by a space, so `#tag` is not a heading.
-    private static func atxHeading(_ trimmed: String) -> (Int, String)? {
+    static func atxHeading(_ trimmed: String) -> (Int, String)? {
         let level = trimmed.prefix(while: { $0 == "#" }).count
         guard (1...6).contains(level) else { return nil }
         let rest = trimmed.dropFirst(level)
@@ -211,7 +212,7 @@ private struct Parser {
     }
 
     /// ```` ```swift ```` → ("```", "swift").
-    private static func openingFence(_ trimmed: String) -> (Substring, String?)? {
+    static func openingFence(_ trimmed: String) -> (Substring, String?)? {
         guard let first = trimmed.first, first == "`" || first == "~" else { return nil }
         let fence = trimmed.prefix(while: { $0 == first })
         guard fence.count >= 3 else { return nil }
@@ -222,7 +223,7 @@ private struct Parser {
         return (fence, language)
     }
 
-    private static func isClosingFence(_ line: String, for fence: Substring) -> Bool {
+    static func isClosingFence(_ line: String, for fence: Substring) -> Bool {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         guard let mark = fence.first else { return false }
         return trimmed.count >= fence.count && trimmed.allSatisfy { $0 == mark }

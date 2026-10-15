@@ -28,7 +28,7 @@ final class LaunchAtLogin {
         refresh()
     }
 
-    /// The user can change this in System Settings at any time, so re-read when shown.
+    /// The user can change this in System Settings at any time, so re-read when it may have.
     func refresh() {
         status = SMAppService.mainApp.status
     }

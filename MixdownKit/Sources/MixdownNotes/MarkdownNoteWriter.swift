@@ -6,13 +6,11 @@ import MixdownCore
 /// The file appears atomically and an existing note is never overwritten: on a name
 /// collision the writer appends ` 2`, ` 3`, … to the file name.
 public struct MarkdownNoteWriter: NoteWriting {
-    /// `~/Documents/Mixdown` (inside the container for sandboxed apps).
-    public static var defaultDirectory: URL {
-        URL.documentsDirectory.appending(path: "Mixdown", directoryHint: .isDirectory)
-    }
-
     static let maxTitleLength = 80
     static let maxCollisionSuffix = 999
+    /// File names may have 255 bytes, which APFS counts in decomposed UTF-8. The rest goes to
+    /// the date, a collision suffix and the extension.
+    static let maxTitleBytes = 255 - "yyyy-MM-dd HHmm ".utf8.count - " \(maxCollisionSuffix).md".utf8.count
 
     public let directory: URL
 
@@ -62,7 +60,7 @@ public struct MarkdownNoteWriter: NoteWriting {
     }
 
     /// Replaces path separators and `:` with `-`, turns control characters into spaces,
-    /// collapses whitespace and caps the length.
+    /// collapses whitespace and caps the length in characters and bytes.
     static func sanitizedTitle(_ title: String) -> String {
         var scalars = String.UnicodeScalarView()
         for scalar in title.unicodeScalars {
@@ -77,8 +75,13 @@ public struct MarkdownNoteWriter: NoteWriting {
             .split(whereSeparator: \.isWhitespace)
             .joined(separator: " ")
         if result.count > maxTitleLength {
-            result = String(result.prefix(maxTitleLength)).trimmingCharacters(in: .whitespaces)
+            result = String(result.prefix(maxTitleLength))
         }
+        // Drops whole characters, so no cluster or scalar is cut in half.
+        while result.decomposedStringWithCanonicalMapping.utf8.count > maxTitleBytes {
+            result.removeLast()
+        }
+        result = result.trimmingCharacters(in: .whitespaces)
         return result.isEmpty ? "Untitled" : result
     }
 }

@@ -9,6 +9,7 @@ let package = Package(
         .library(name: "MixdownCore", targets: ["MixdownCore"]),
         .library(name: "MixdownAudio", targets: ["MixdownAudio"]),
         .library(name: "MixdownSpeechSwift", targets: ["MixdownSpeechSwift"]),
+        .library(name: "MixdownFoundationModels", targets: ["MixdownFoundationModels"]),
         .library(name: "MixdownNotes", targets: ["MixdownNotes"]),
     ],
     dependencies: [
@@ -20,7 +21,8 @@ let package = Package(
         // beyond Foundation/Observation, so every other module can depend on it.
         .target(name: "MixdownCore"),
 
-        // Microphone (CoreAudio/AVAudioEngine) and system audio (Core Audio process tap) capture.
+        // Microphone (Core Audio IO proc) and system audio (Core Audio process tap) capture, and
+        // which other apps are recording (for call detection).
         .target(name: "MixdownAudio", dependencies: ["MixdownCore"]),
 
         // speech-swift (MLX) implementation of `TranscriptionEngine`. The only module that
@@ -35,6 +37,16 @@ let package = Package(
                 .product(name: "Qwen3ASR", package: "speech-swift"),
                 .product(name: "SpeechVAD", package: "speech-swift"),
             ]
+        ),
+
+        // Foundation Models (Apple Intelligence) implementation of `Summarizer`. The only module
+        // that knows about FoundationModels, so summaries can come from elsewhere too.
+        .target(
+            name: "MixdownFoundationModels",
+            dependencies: ["MixdownCore"],
+            // FoundationModels ships with macOS 26. Weak linking lets the app still launch on
+            // macOS 15, where the summarizer reports itself unavailable instead.
+            linkerSettings: [.unsafeFlags(["-Xlinker", "-weak_framework", "-Xlinker", "FoundationModels"])]
         ),
 
         // Markdown rendering and persistence of notes.

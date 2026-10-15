@@ -8,6 +8,10 @@ DESTINATION   := 'platform=macOS,arch=arm64'
 # mlx-swift's CudaBuild plugin), so skip validation for command-line builds.
 XCODEBUILD_FLAGS := -skipPackagePluginValidation -skipMacroValidation
 BUNDLE_ID     := app.mixdown.Mixdown
+# The full output of the last `make build`, which ends with a summary of its errors when it fails.
+BUILD_LOG     := build/xcodebuild.log
+# Bash for `pipefail`, so a failing xcodebuild isn't hidden by the `tee` after it.
+SHELL         := /bin/bash
 LSREGISTER    := /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 
 # Shell snippet printing one of the scheme's build settings, e.g. $(call setting,BUILD_DIR).
@@ -29,8 +33,18 @@ project:
 open: $(PBXPROJ)
 	open $(PROJECT)
 
+## On failure, lists each compiler error once with the source lines around it. xcodebuild's own
+## summary only names the failed steps, and the errors are buried far above it (often twice).
 build: $(PBXPROJ)
-	xcodebuild -project $(PROJECT) -scheme $(SCHEME) -destination $(DESTINATION) $(XCODEBUILD_FLAGS) build
+	@mkdir -p $(dir $(BUILD_LOG))
+	@set -o pipefail; \
+	xcodebuild -project $(PROJECT) -scheme $(SCHEME) -destination $(DESTINATION) $(XCODEBUILD_FLAGS) build \
+		2>&1 | tee $(BUILD_LOG) || { \
+		echo; echo "=== Errors ==="; \
+		awk '/: error:/ { skip = ($$0 in seen); seen[$$0] = 1; left = 8 } left > 0 { if (!skip) print; left-- }' $(BUILD_LOG); \
+		echo; echo "Full log: $(BUILD_LOG)"; \
+		exit 1; \
+	}
 
 ## Build, then launch the app.
 run: build
@@ -62,7 +76,7 @@ clean: $(PBXPROJ)
 		for app in "$$build_dir"/*/Mixdown.app; do [ -e "$$app" ] && $(LSREGISTER) -u "$$app"; done; \
 		echo "rm -rf $$derived"; rm -rf "$$derived";; \
 	esac
-	rm -rf $(PROJECT) DerivedData MixdownKit/.build
+	rm -rf $(PROJECT) DerivedData MixdownKit/.build build
 	killall Dock
 
 # Regenerate when the spec changes or app files are added, removed or edited (XcodeGen

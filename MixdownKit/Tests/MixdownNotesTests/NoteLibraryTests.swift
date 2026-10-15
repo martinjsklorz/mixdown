@@ -45,4 +45,173 @@ struct NoteLibraryTests {
 
         #expect(try NoteLibrary.loadNotes(in: directory).isEmpty)
     }
+
+    // MARK: Renaming
+
+    private func contents(of url: URL) throws -> String {
+        String(decoding: try Data(contentsOf: url), as: UTF8.self)
+    }
+
+    private func fileNames(in directory: URL) throws -> [String] {
+        try FileManager.default.contentsOfDirectory(atPath: directory.path(percentEncoded: false)).sorted()
+    }
+
+    @Test func renameChangesTitleHeadingAndFileName() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let note = NoteFixtures.note(title: "Weekly Sync")
+        let url = try await MarkdownNoteWriter(directory: directory).write(note)
+        let prefix = url.lastPathComponent.prefix("yyyy-MM-dd HHmm ".count)
+
+        let renamed = try NoteLibrary.rename(noteAt: url, to: "  Plan: Q4\nlaunch ")
+
+        #expect(renamed.lastPathComponent == "\(prefix)Plan- Q4 launch.md")
+        #expect(try fileNames(in: directory) == [renamed.lastPathComponent])
+        let expected = MarkdownNoteRenderer.render(NoteFixtures.note(title: "Plan: Q4 launch"))
+        #expect(try contents(of: renamed) == expected)
+        #expect(try NoteLibrary.loadNotes(in: directory).map(\.title) == ["Plan: Q4 launch"])
+    }
+
+    @Test func renameAvoidsTakenNamesAndKeepsItsOwn() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let writer = MarkdownNoteWriter(directory: directory)
+        let first = try await writer.write(NoteFixtures.note(title: "Standup"))
+        let second = try await writer.write(NoteFixtures.note(title: "Retro"))
+
+        let renamed = try NoteLibrary.rename(noteAt: second, to: "Standup")
+        let again = try NoteLibrary.rename(noteAt: renamed, to: "Standup")
+
+        #expect(renamed.lastPathComponent == first.deletingPathExtension().lastPathComponent + " 2.md")
+        #expect(again == renamed)
+        #expect(try fileNames(in: directory).count == 2)
+    }
+
+    @Test func renameChangesCaseOnly() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try write("# Standup\n", to: "standup.markdown", in: directory)
+
+        let renamed = try NoteLibrary.rename(
+            noteAt: directory.appending(path: "standup.markdown", directoryHint: .notDirectory),
+            to: "Standup"
+        )
+
+        #expect(try fileNames(in: directory) == ["Standup.markdown"])
+        #expect(try contents(of: renamed) == "# Standup\n")
+    }
+
+    @Test func renameWithoutFrontmatterChangesTitleHeading() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try write("Intro\r\n\r\n# Old **Name**\r\n\r\n# Old Name\r\n", to: "Ideas.md", in: directory)
+
+        let renamed = try NoteLibrary.rename(
+            noteAt: directory.appending(path: "Ideas.md", directoryHint: .notDirectory),
+            to: "New"
+        )
+
+        #expect(renamed.lastPathComponent == "New.md")
+        #expect(try contents(of: renamed) == "Intro\n\n# New\n\n# Old Name\n")
+    }
+
+    @Test func renameAddsFrontmatterWhenTitleCameFromFileName() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try write("```\n# Ideas\n```\nText", to: "Ideas.md", in: directory)
+
+        let renamed = try NoteLibrary.rename(
+            noteAt: directory.appending(path: "Ideas.md", directoryHint: .notDirectory),
+            to: "a/b"
+        )
+
+        #expect(renamed.lastPathComponent == "a-b.md")
+        #expect(try contents(of: renamed) == "---\ntitle: \"a/b\"\n---\n\n```\n# Ideas\n```\nText")
+        #expect(try NoteLibrary.loadNotes(in: directory).map(\.title) == ["a/b"])
+    }
+
+    @Test func renameReplacesMultiLineTitleAndFillsMissingOne() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try write("---\ntitle: >\n  Folded\n\n  title\ntags: [x]\n---\nText", to: "Folded.md", in: directory)
+        try write("---\ntags: [x]\n---\n# Heading\n", to: "Heading.md", in: directory)
+
+        let folded = try NoteLibrary.rename(
+            noteAt: directory.appending(path: "Folded.md", directoryHint: .notDirectory),
+            to: "One"
+        )
+        let heading = try NoteLibrary.rename(
+            noteAt: directory.appending(path: "Heading.md", directoryHint: .notDirectory),
+            to: "Two"
+        )
+
+        #expect(try contents(of: folded) == "---\ntitle: \"One\"\ntags: [x]\n---\nText")
+        #expect(try contents(of: heading) == "---\ntitle: \"Two\"\ntags: [x]\n---\n# Two\n")
+    }
+
+    @Test func renameToBlankIsUntitled() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = try await MarkdownNoteWriter(directory: directory).write(NoteFixtures.note())
+
+        let renamed = try NoteLibrary.rename(noteAt: url, to: " \n ")
+
+        #expect(renamed.lastPathComponent.hasSuffix(" Untitled.md"))
+        #expect(try NoteLibrary.loadNotes(in: directory).map(\.title) == ["Untitled"])
+    }
+
+    // MARK: Restoring
+
+    @Test func restoreMovesTrashedNoteBackUnderItsName() throws {
+        let directory = try makeDirectory()
+        let trash = try makeDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            try? FileManager.default.removeItem(at: trash)
+        }
+        try write("# Standup\n", to: "Standup 14.12.md", in: trash)
+        let original = directory.appending(path: "Standup.md", directoryHint: .notDirectory)
+
+        let restored = try NoteLibrary.restore(
+            trashedAt: trash.appending(path: "Standup 14.12.md", directoryHint: .notDirectory),
+            to: original
+        )
+
+        #expect(restored.lastPathComponent == "Standup.md")
+        #expect(try fileNames(in: trash).isEmpty)
+        #expect(try contents(of: restored) == "# Standup\n")
+    }
+
+    @Test func restoreAvoidsNameTakenSince() throws {
+        let directory = try makeDirectory()
+        let trash = try makeDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            try? FileManager.default.removeItem(at: trash)
+        }
+        try write("New", to: "Standup.md", in: directory)
+        try write("Old", to: "Standup.md", in: trash)
+        let original = directory.appending(path: "Standup.md", directoryHint: .notDirectory)
+
+        let restored = try NoteLibrary.restore(
+            trashedAt: trash.appending(path: "Standup.md", directoryHint: .notDirectory),
+            to: original
+        )
+
+        #expect(restored.lastPathComponent == "Standup 2.md")
+        #expect(try contents(of: restored) == "Old")
+        #expect(try contents(of: original) == "New")
+    }
+
+    @Test func restoreWritesContentsIntoMissingFolder() throws {
+        let parent = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: parent) }
+        let original = parent.appending(path: "Gone/Standup.markdown", directoryHint: .notDirectory)
+
+        let restored = try NoteLibrary.restore(contents: Data("# Standup".utf8), to: original)
+
+        #expect(restored.lastPathComponent == "Standup.markdown")
+        #expect(try contents(of: restored) == "# Standup")
+        #expect(try fileNames(in: original.deletingLastPathComponent()) == ["Standup.markdown"])
+    }
 }

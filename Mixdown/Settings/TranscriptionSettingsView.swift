@@ -48,6 +48,8 @@ struct TranscriptionSettingsView: View {
                     }
                 }
                 .disabled(!environment.model.supportsLanguageSelection)
+            } header: {
+                Text("Settings")
             } footer: {
                 Text(footer(for: environment.model))
                     .font(.caption)
@@ -63,6 +65,22 @@ struct TranscriptionSettingsView: View {
                         .labelStyle(.titleAndIcon)
                 }
             }
+
+            Section {
+                Toggle(
+                    "Summarize recordings",
+                    isOn: Binding(
+                        get: { environment.summarizesNotes },
+                        set: { environment.summarizesNotes = $0 }
+                    )
+                )
+            } header: {
+                Text("Summary")
+            } footer: {
+                Text(summaryFooter)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
     }
@@ -75,37 +93,43 @@ struct TranscriptionSettingsView: View {
                 Text("Downloading \(environment.model.displayName)…")
             } currentValueLabel: {
                 Text(
-                    DownloadProgressText.detail(
+                    ProgressText.detail(
                         progress: progress,
-                        remaining: environment.coordinator.preparationTimeRemaining
+                        remaining: environment.coordinator.timeRemaining
                     )
                 )
                 .monospacedDigit()
             }
-        case .failed(let message):
-            Text(message)
-                .foregroundStyle(.red)
         default:
-            Text(environment.coordinator.engineInfo.displayName)
-                .foregroundStyle(.secondary)
+            // Other failures, such as a missing microphone permission, aren't the model's; the main
+            // window shows those.
+            if let modelError = environment.coordinator.modelError {
+                Text(modelError)
+                    .foregroundStyle(.red)
+            } else {
+                Text(environment.coordinator.engineInfo.displayName)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
     /// "Downloaded" and a Delete button once the model is on disk, otherwise a button to fetch it;
     /// recording needs it. A Cancel button while preparing (files land on disk mid-download, so
-    /// "Downloaded" would be premature).
+    /// "Downloaded" would be premature). After a model error, Retry and Delete for files on disk
+    /// (they may be broken), else Download.
     @ViewBuilder
     private func downloadAccessory(for phase: RecordingCoordinator.Phase) -> some View {
         switch phase {
         case .preparingModel:
             Button("Cancel", systemImage: "xmark.circle") { environment.coordinator.cancelPreparation() }
-        // A failed load may mean the cached files are broken; offer the button to retry.
-        case .failed:
-            downloadButton
         default:
             if environment.coordinator.isDeletingModel {
                 ProgressView()
                     .controlSize(.small)
+            } else if environment.coordinator.isModelDownloaded, environment.coordinator.modelError != nil {
+                Button("Retry", systemImage: "arrow.clockwise") { prepare() }
+                    .disabled(!environment.canChangeModel)
+                deleteButton
             } else if environment.coordinator.isModelDownloaded {
                 Label {
                     Text("Downloaded")
@@ -137,10 +161,12 @@ struct TranscriptionSettingsView: View {
     }
 
     private var downloadButton: some View {
-        Button("Download", systemImage: "arrow.down.circle") {
-            Task { await environment.coordinator.prepareEngine() }
-        }
-        .disabled(!environment.canChangeModel)
+        Button("Download", systemImage: "arrow.down.circle") { prepare() }
+            .disabled(!environment.canChangeModel)
+    }
+
+    private func prepare() {
+        Task { await environment.coordinator.prepareEngine() }
     }
 
     private func footer(for model: SpeechSwiftModel) -> String {
@@ -166,6 +192,18 @@ struct TranscriptionSettingsView: View {
     /// "Low · Qwen3-ASR 0.6B": what the model is for, then which it is.
     static func label(for model: SpeechSwiftModel) -> String {
         "\(model.purpose) · \(model.displayName)"
+    }
+
+    /// What a summary is and who makes it, or why it can't be made right now.
+    private var summaryFooter: String {
+        let summarizer = environment.summarizer
+        switch summarizer.availability {
+        case .available:
+            return "Adds an overview, key points and action items above the transcript. "
+                + "\(summarizer.info.displayName) makes them on this Mac."
+        case .unavailable(let reason):
+            return reason
+        }
     }
 
     static func displayName(for code: String) -> String {

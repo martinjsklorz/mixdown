@@ -21,8 +21,20 @@ struct MenuBarContent: View {
             phase: coordinator.phase,
             engineName: coordinator.engineInfo.displayName,
             isModelDownloaded: coordinator.isModelDownloaded,
-            timeRemaining: coordinator.preparationTimeRemaining
+            notesFolder: environment.notesFolder.status,
+            timeRemaining: coordinator.timeRemaining
         )
+        if !coordinator.silentDevices.isEmpty {
+            ForEach(coordinator.silentDevices) { device in
+                Label(SilentInputWarning.title(for: device), systemImage: "speaker.slash")
+            }
+            if SilentInputWarning.needsPermission(coordinator.silentDevices) {
+                Button("Open Privacy Settings…") { SilentInputWarning.openPrivacySettings() }
+            }
+        }
+        if environment.notesFolder.directory == nil && !coordinator.isRecording {
+            Button("Choose Notes Folder…") { environment.chooseNotesFolder() }
+        }
         if case .preparingModel = coordinator.phase {
             Button("Cancel Download") { coordinator.cancelPreparation() }
         } else if !coordinator.isModelDownloaded && coordinator.isIdle {
