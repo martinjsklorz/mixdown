@@ -3,8 +3,8 @@ import MixdownCore
 
 /// Renders a `Note` as Markdown with YAML frontmatter.
 ///
-/// Layout: frontmatter, `# Title`, then one `##` section per body part. Today that is only
-/// `## Transcript`; further sections (e.g. `## Summary`) are added in `bodySections(for:)`.
+/// Layout: frontmatter, `# Title`, then one `##` section per body part: `## Summary` if the
+/// note has one, then `## Transcript`. Sections are added in `bodySections(for:)`.
 public enum MarkdownNoteRenderer {
     /// Shown instead of transcript paragraphs when nothing was recognized.
     public static let emptyTranscriptPlaceholder = "_No speech detected._"
@@ -44,13 +44,33 @@ public enum MarkdownNoteRenderer {
         return lines.joined(separator: "\n")
     }
 
-    /// Body sections in display order. A future summary goes before the transcript.
+    /// Body sections in display order.
     static func bodySections(for note: Note) -> [String] {
-        [section("Transcript", body: transcriptBody(note.transcript))]
+        var sections: [String] = []
+        if let summary = note.summary.flatMap(summaryBody) {
+            sections.append(section("Summary", body: summary))
+        }
+        sections.append(section("Transcript", body: transcriptBody(note.transcript)))
+        return sections
     }
 
     static func section(_ heading: String, body: String) -> String {
         "## \(heading)\n\n\(body)"
+    }
+
+    /// The overview, then `###` lists of key points and action items. Empty parts are left out;
+    /// `nil` if that's all of them.
+    static func summaryBody(_ summary: NoteSummary) -> String? {
+        var blocks: [String] = []
+        let overview = escapedMarkdown(singleLine(summary.overview))
+        if !overview.isEmpty { blocks.append(overview) }
+        for (heading, items) in [("Key Points", summary.keyPoints), ("Action Items", summary.actionItems)] {
+            let list = items.map { escapedMarkdown(singleLine($0)) }.filter { !$0.isEmpty }.map { "- \($0)" }
+            if !list.isEmpty {
+                blocks.append("### \(heading)\n\n" + list.joined(separator: "\n"))
+            }
+        }
+        return blocks.isEmpty ? nil : blocks.joined(separator: "\n\n")
     }
 
     static func transcriptBody(_ transcript: Transcript) -> String {

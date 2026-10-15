@@ -43,6 +43,7 @@ targets:
           - MixdownCore
           - MixdownAudio
           - MixdownSpeechSwift
+          - MixdownFoundationModels
           - MixdownNotes
       - package: KeyboardShortcuts
     settings:

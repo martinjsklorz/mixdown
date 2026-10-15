@@ -16,7 +16,8 @@ enum NoteFixtures {
         language: String? = "en",
         sources: [AudioInputDevice] = [
             AudioInputDevice(id: "builtin", name: "MacBook Pro Microphone", kind: .microphone)
-        ]
+        ],
+        summary: NoteSummary? = nil
     ) -> Note {
         Note(
             title: title,
@@ -24,7 +25,8 @@ enum NoteFixtures {
             duration: duration,
             sources: sources,
             engine: TranscriptionEngineInfo(id: "speech-swift", displayName: "Qwen3-ASR 0.6B"),
-            transcript: Transcript(segments: segments, language: language)
+            transcript: Transcript(segments: segments, language: language),
+            summary: summary
         )
     }
 }
@@ -141,5 +143,55 @@ struct MarkdownNoteRendererTests {
         let markdown = MarkdownNoteRenderer.render(NoteFixtures.note(title: "First\nSecond"))
         #expect(frontmatterLines(markdown).contains(#"title: "First Second""#))
         #expect(markdown.contains("\n# First Second\n"))
+    }
+
+    // MARK: - Summary
+
+    @Test func summaryGoesBeforeTranscript() {
+        let summary = NoteSummary(
+            overview: "We planned\nthe *release*.",
+            keyPoints: ["Ship on Friday", " "],
+            actionItems: ["Anna writes the notes"]
+        )
+        let markdown = MarkdownNoteRenderer.render(NoteFixtures.note(summary: summary))
+
+        let expected = """
+            ## Summary
+
+            We planned the \\*release\\*.
+
+            ### Key Points
+
+            - Ship on Friday
+
+            ### Action Items
+
+            - Anna writes the notes
+
+            ## Transcript
+            """
+        #expect(markdown.contains(expected))
+    }
+
+    @Test func emptySummaryPartsAreLeftOut() {
+        let markdown = MarkdownNoteRenderer.render(
+            NoteFixtures.note(summary: NoteSummary(overview: "", keyPoints: ["Only point"]))
+        )
+        #expect(markdown.contains("## Summary\n\n### Key Points\n\n- Only point\n\n## Transcript"))
+        #expect(!markdown.contains("Action Items"))
+
+        let empty = MarkdownNoteRenderer.render(NoteFixtures.note(summary: NoteSummary(overview: " ")))
+        #expect(!empty.contains("## Summary"))
+        #expect(!MarkdownNoteRenderer.render(NoteFixtures.note()).contains("## Summary"))
+    }
+
+    @Test func transcriptTextSkipsSummary() {
+        let markdown = MarkdownNoteRenderer.render(
+            NoteFixtures.note(summary: NoteSummary(overview: "Overview.", actionItems: ["Do it"]))
+        )
+        let document = NoteDocument(url: URL(fileURLWithPath: "/tmp/n.md"), contents: markdown, fileDate: .now)
+        #expect(!document.transcriptText.contains("Overview."))
+        #expect(document.transcriptText.contains("Hello everyone."))
+        #expect(document.snippet == "Overview.")
     }
 }

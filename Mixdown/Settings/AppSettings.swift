@@ -24,6 +24,8 @@ struct AppSettings {
         /// Whether the global recording shortcut is on. Absent means yes. The shortcut itself is
         /// stored by KeyboardShortcuts.
         static let recordingShortcutEnabled = "recordingShortcutEnabled"
+        /// Whether notes get a summary. Absent means yes.
+        static let summarizesNotes = "summarizesNotes"
     }
 
     var defaults: UserDefaults = .standard
@@ -76,6 +78,11 @@ struct AppSettings {
     var isRecordingShortcutEnabled: Bool {
         get { defaults.object(forKey: Key.recordingShortcutEnabled) as? Bool ?? true }
         nonmutating set { defaults.set(newValue, forKey: Key.recordingShortcutEnabled) }
+    }
+
+    var summarizesNotes: Bool {
+        get { defaults.object(forKey: Key.summarizesNotes) as? Bool ?? true }
+        nonmutating set { defaults.set(newValue, forKey: Key.summarizesNotes) }
     }
 
     /// `nil` means auto-detect.
