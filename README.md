@@ -19,7 +19,8 @@ collapsible sections by day. The cog above the sidebar, next to the sidebar butt
    Recording stays off until both are done.
 3. Pick your inputs in the **Recording** menu (a microphone, **System Audio**, or both), or with
    **Change…** next to the setup summary.
-4. Click the red button (or press ⌘R) to record, and again to stop.
+4. Click the red button (or press ⌘R) to record, and again to stop. From any other app, press
+   ⌃⌥⌘R. Change that shortcut or turn it off under **Settings → Recording**.
 
 A few seconds later the note appears under **Today** in the sidebar and opens, rendered much like
 Apple Notes. A **Note Ready** notification says so too, with **Open** to show the note in Mixdown

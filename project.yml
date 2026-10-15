@@ -26,6 +26,10 @@ settings:
 packages:
   MixdownKit:
     path: ./MixdownKit
+  # Records and registers the global recording shortcut. Sandbox-safe (Carbon hot keys).
+  KeyboardShortcuts:
+    url: https://github.com/sindresorhus/KeyboardShortcuts
+    from: "3.1.0"
 
 targets:
   Mixdown:
@@ -40,6 +44,7 @@ targets:
           - MixdownAudio
           - MixdownSpeechSwift
           - MixdownNotes
+      - package: KeyboardShortcuts
     settings:
       base:
         PRODUCT_NAME: Mixdown

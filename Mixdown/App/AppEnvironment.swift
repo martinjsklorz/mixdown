@@ -1,4 +1,5 @@
 import AppKit
+import KeyboardShortcuts
 import MixdownAudio
 import MixdownCore
 import MixdownNotes
@@ -24,6 +25,10 @@ final class AppEnvironment {
     /// doesn't run `TimelineView` or `.task`.
     private(set) var recordingElapsed: Int?
 
+    /// Whether the global shortcut (`KeyboardShortcuts.Name.toggleRecording`) starts and stops
+    /// recording. Off, the shortcut is kept but released, so other apps get those keys.
+    private(set) var isRecordingShortcutEnabled: Bool
+
     private let settings: AppSettings
     @ObservationIgnored private var deviceMonitor: Task<Void, Never>?
     @ObservationIgnored private var recordingClock: Task<Void, Never>?
@@ -40,6 +45,7 @@ final class AppEnvironment {
         self.model = model
         self.noteTrash = noteTrash
         self.noteReady = noteReady
+        self.isRecordingShortcutEnabled = settings.isRecordingShortcutEnabled
         self.notificationResponder = NotificationResponder(noteTrash: noteTrash, noteReady: noteReady)
         self.coordinator = Self.makeCoordinator(
             model: model,
@@ -50,6 +56,7 @@ final class AppEnvironment {
         observeRecording()
         observeNotesFolder()
         observeNewNotes()
+        listenForRecordingShortcut(navigation: navigation)
     }
 
     // MARK: Composition
@@ -174,6 +181,35 @@ final class AppEnvironment {
         set {
             settings.sourceLabels = newValue
             coordinator.sourceLabels = newValue
+        }
+    }
+
+    // MARK: Global shortcut
+
+    /// Starts or stops recording on the global shortcut, from any app. When recording can't start
+    /// yet (no notes folder or model, or busy transcribing), it opens Record instead, which says why.
+    private func listenForRecordingShortcut(navigation: MainNavigation) {
+        KeyboardShortcuts.onKeyUp(for: .toggleRecording) { [weak self] in
+            guard let self else { return }
+            let coordinator = self.coordinator
+            if coordinator.isRecording || coordinator.canStartRecording {
+                Task { await coordinator.toggleRecording() }
+            } else if let openWindow = navigation.openWindow {
+                navigation.show(.recorder, using: openWindow)
+            }
+        }
+        if !isRecordingShortcutEnabled {
+            KeyboardShortcuts.disable(.toggleRecording)
+        }
+    }
+
+    func setRecordingShortcutEnabled(_ enabled: Bool) {
+        settings.isRecordingShortcutEnabled = enabled
+        isRecordingShortcutEnabled = enabled
+        if enabled {
+            KeyboardShortcuts.enable(.toggleRecording)
+        } else {
+            KeyboardShortcuts.disable(.toggleRecording)
         }
     }
 
