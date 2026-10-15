@@ -23,11 +23,11 @@ struct RecordingStatusView: View {
         case .idle:
             Text("Ready · \(engineName)")
         case .preparingModel(let progress):
-            Text("Downloading model… \(DownloadProgressText.detail(progress: progress, remaining: timeRemaining))")
+            Text("Downloading model… \(ProgressText.detail(progress: progress, remaining: timeRemaining))")
         case .recording(let startedAt):
             Text("Recording since \(startedAt.formatted(date: .omitted, time: .shortened))")
-        case .transcribing:
-            Text("Transcribing…")
+        case .transcribing(let progress):
+            Text("Transcribing… \(ProgressText.detail(progress: progress, remaining: timeRemaining))")
         case .failed:
             // Shown with a Dismiss action further down the menu.
             EmptyView()

@@ -1,7 +1,8 @@
 import Foundation
 
-/// Wording for model download progress, shared by the menu bar, the menu and Settings.
-enum DownloadProgressText {
+/// Wording for model download and transcription progress, shared by the menu bar, the menu,
+/// the main window and Settings.
+enum ProgressText {
     /// "34% · about 6 min left", or "34% · estimating time left…" until there's an estimate.
     static func detail(progress: Double, remaining: TimeInterval?) -> String {
         "\(percentText(progress)) · \(remaining.map(remainingText) ?? "estimating time left…")"
