@@ -1,6 +1,7 @@
 import AppKit
 import MixdownAudio
 import MixdownCore
+import MixdownFoundationModels
 import MixdownNotes
 import MixdownSpeechSwift
 import Observation
@@ -13,6 +14,8 @@ final class AppEnvironment {
     /// receives its engine at init.
     private(set) var coordinator: RecordingCoordinator
     private(set) var model: SpeechSwiftModel
+    /// Makes the summaries; `coordinator` only has it while summaries are on.
+    let summarizer: any Summarizer
     let notesFolder: NotesFolderStore
     /// Created at launch, as it handles Restore on notifications from an earlier run.
     let noteTrash = NoteTrash()
@@ -30,11 +33,16 @@ final class AppEnvironment {
     init(settings: AppSettings = AppSettings()) {
         let notesFolder = NotesFolderStore(settings: settings)
         let model = settings.transcriptionModel
+        // This is the ONE place the summarizer is chosen. To use a different backend, construct
+        // any other `Summarizer` here; nothing else changes.
+        let summarizer: any Summarizer = AppleIntelligenceSummarizer()
         self.settings = settings
+        self.summarizer = summarizer
         self.notesFolder = notesFolder
         self.model = model
         self.coordinator = Self.makeCoordinator(
             model: model,
+            summarizer: settings.summarizesNotes ? summarizer : nil,
             notesDirectory: notesFolder.directory,
             settings: settings
         )
@@ -47,6 +55,7 @@ final class AppEnvironment {
 
     private static func makeCoordinator(
         model: SpeechSwiftModel,
+        summarizer: (any Summarizer)?,
         notesDirectory: URL?,
         settings: AppSettings
     ) -> RecordingCoordinator {
@@ -57,6 +66,7 @@ final class AppEnvironment {
             // backend, construct any other `TranscriptionEngine` here; nothing else changes.
             engine: SpeechSwiftEngine(model: model),
             noteWriter: notesDirectory.map { MarkdownNoteWriter(directory: $0) },
+            summarizer: summarizer,
             options: TranscriptionOptions(language: settings.language),
             sourceLabels: settings.sourceLabels,
             preferredDeviceIDs: settings.selectedDeviceIDs
@@ -176,10 +186,23 @@ final class AppEnvironment {
         self.model = model
         coordinator = Self.makeCoordinator(
             model: model,
+            summarizer: coordinator.summarizer,
             notesDirectory: notesFolder.directory,
             settings: settings
         )
         startMonitoringDevices()
+    }
+
+    // MARK: Summary
+
+    /// Whether notes get a summary. Takes effect from the next recording, even if the summarizer
+    /// is unavailable right now; it's skipped until it becomes available.
+    var summarizesNotes: Bool {
+        get { coordinator.summarizer != nil }
+        set {
+            settings.summarizesNotes = newValue
+            coordinator.summarizer = newValue ? summarizer : nil
+        }
     }
 
     // MARK: Notes

@@ -40,7 +40,7 @@ struct MenuBarLabel: View {
         case .idle: Image("MenuBarIcon").renderingMode(.template)
         case .preparingModel: Image(systemName: "arrow.down.circle")
         case .recording: Image(systemName: "record.circle.fill")
-        case .transcribing: Image(systemName: "ellipsis.circle")
+        case .transcribing, .summarizing: Image(systemName: "ellipsis.circle")
         case .failed: Image(systemName: "exclamationmark.triangle")
         }
     }
@@ -69,6 +69,7 @@ struct MenuBarLabel: View {
                 "Mixdown, recording"
             }
         case .transcribing: "Mixdown, transcribing"
+        case .summarizing: "Mixdown, summarizing"
         case .failed: "Mixdown, error"
         }
     }

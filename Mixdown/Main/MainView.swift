@@ -289,7 +289,7 @@ private struct SidebarRow<Accessory: View>: View {
 }
 
 /// What the recorder is doing, next to its sidebar row: the time while recording, progress
-/// while downloading or transcribing.
+/// while downloading, transcribing or summarizing.
 private struct RecorderStatusBadge: View {
     let coordinator: RecordingCoordinator
 
@@ -303,7 +303,7 @@ private struct RecorderStatusBadge: View {
             Text(progress.formatted(.percent.precision(.fractionLength(0))))
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
-        case .transcribing:
+        case .transcribing, .summarizing:
             ProgressView()
                 .controlSize(.small)
         case .failed:

@@ -21,6 +21,8 @@ struct AppSettings {
         static let suppressesTrashConfirmation = "suppressesTrashConfirmation"
         /// Whether Mixdown posts notifications at all. Absent means yes.
         static let showsNotifications = "showsNotifications"
+        /// Whether notes get a summary. Absent means yes.
+        static let summarizesNotes = "summarizesNotes"
     }
 
     var defaults: UserDefaults = .standard
@@ -68,6 +70,11 @@ struct AppSettings {
     var showsNotifications: Bool {
         get { defaults.object(forKey: Key.showsNotifications) as? Bool ?? true }
         nonmutating set { defaults.set(newValue, forKey: Key.showsNotifications) }
+    }
+
+    var summarizesNotes: Bool {
+        get { defaults.object(forKey: Key.summarizesNotes) as? Bool ?? true }
+        nonmutating set { defaults.set(newValue, forKey: Key.summarizesNotes) }
     }
 
     /// `nil` means auto-detect.

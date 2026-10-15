@@ -73,6 +73,14 @@ struct RecorderView: View {
                 ProgressView()
                     .controlSize(.large)
 
+            case .summarizing:
+                headline(
+                    "Summarizing…",
+                    detail: "\(environment.summarizer.info.displayName) is summarizing the transcript."
+                )
+                ProgressView()
+                    .controlSize(.large)
+
             case .failed(let message):
                 Label(message, systemImage: "exclamationmark.triangle.fill")
                     .symbolRenderingMode(.multicolor)
@@ -158,6 +166,7 @@ struct RecorderView: View {
                 row("speaker.wave.2", "System audio", environment.recordsSystemAudio ? "On" : "Off")
                 row("waveform", "Model", environment.model.displayName)
                 row("globe", "Language", languageName)
+                row("sparkles", "Summary", summaryName)
                 row("folder", "Notes folder", notesFolderName, help: environment.notesFolder.status.path)
             }
             .padding(6)
@@ -195,6 +204,13 @@ struct RecorderView: View {
         case .available: return status.name ?? ""
         case .unavailable: return status.name.map { "\($0) (not available)" } ?? "Not available"
         }
+    }
+
+    private var summaryName: String {
+        guard environment.summarizesNotes else { return "Off" }
+        let name = environment.summarizer.info.displayName
+        guard case .available = environment.summarizer.availability else { return "\(name) (not available)" }
+        return name
     }
 
     /// Models that detect the language themselves ignore the setting.

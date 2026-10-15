@@ -222,3 +222,30 @@ func waitUntil(
         try await Task.sleep(for: .milliseconds(5))
     }
 }
+
+/// Returns `summary`, or throws `error`, and records the transcripts it was given.
+final class MockSummarizer: Summarizer {
+    let info = SummarizerInfo(id: "mock", displayName: "Mock Summarizer")
+    let availability: SummarizerAvailability
+    private let summary: NoteSummary
+    private let error: (any Error)?
+    private let received = LockedValue<[Transcript]>([])
+
+    init(
+        summary: NoteSummary = NoteSummary(overview: "A test."),
+        error: (any Error)? = nil,
+        availability: SummarizerAvailability = .available
+    ) {
+        self.summary = summary
+        self.error = error
+        self.availability = availability
+    }
+
+    var receivedTranscripts: [Transcript] { received.current }
+
+    func summarize(_ transcript: Transcript) async throws -> NoteSummary {
+        received.update { $0.append(transcript) }
+        if let error { throw error }
+        return summary
+    }
+}

@@ -20,6 +20,8 @@ public final class RecordingCoordinator {
         case preparingModel(progress: Double)
         case recording(startedAt: Date)
         case transcribing
+        /// Summarizing the transcript before the note is saved.
+        case summarizing
         case failed(message: String)
     }
 
@@ -39,6 +41,8 @@ public final class RecordingCoordinator {
     public private(set) var lastNoteURL: URL?
     /// Saves finished notes. `nil` while there's no folder to save to; recording waits for one.
     public var noteWriter: (any NoteWriting)?
+    /// Adds a summary to each note. `nil` while summaries are off.
+    public var summarizer: (any Summarizer)?
     public var options: TranscriptionOptions
     /// Speaker names for multi-source recordings.
     public var sourceLabels: SourceLabels
@@ -73,10 +77,10 @@ public final class RecordingCoordinator {
         }
     }
 
-    /// Preparing the model or transcribing.
+    /// Preparing the model, transcribing or summarizing.
     public var isBusy: Bool {
         switch phase {
-        case .preparingModel, .transcribing: true
+        case .preparingModel, .transcribing, .summarizing: true
         default: false
         }
     }
@@ -88,7 +92,8 @@ public final class RecordingCoordinator {
         return preparationEstimator.remaining
     }
 
-    /// Nothing is downloading, deleting, recording or transcribing. An error may be showing.
+    /// Nothing is downloading, deleting, recording, transcribing or summarizing. An error may be
+    /// showing.
     public var isIdle: Bool {
         guard !isCapturing, !isDeletingModel else { return false }
         switch phase {
@@ -161,6 +166,7 @@ public final class RecordingCoordinator {
         captureFactory: any AudioCaptureFactory,
         engine: any TranscriptionEngine,
         noteWriter: (any NoteWriting)?,
+        summarizer: (any Summarizer)? = nil,
         options: TranscriptionOptions = .init(),
         sourceLabels: SourceLabels = .init(),
         preferredDeviceIDs: [String] = [],
@@ -171,6 +177,7 @@ public final class RecordingCoordinator {
         self.engine = engine
         self.isModelDownloaded = engine.isDownloaded
         self.noteWriter = noteWriter
+        self.summarizer = summarizer
         self.options = options
         self.sourceLabels = sourceLabels
         self.preferredDeviceIDs = preferredDeviceIDs
@@ -495,13 +502,15 @@ public final class RecordingCoordinator {
             } else {
                 transcript = try await transcribeSeparately(tracks, devices: session.devices)
             }
+            let summary = await summarize(transcript)
             let note = Note(
                 title: Self.noteTitle(for: session.startedAt),
                 createdAt: session.startedAt,
                 duration: duration,
                 sources: session.devices,
                 engine: engine.info,
-                transcript: transcript
+                transcript: transcript,
+                summary: summary
             )
             // The folder can go away mid-recording, e.g. when its drive is disconnected.
             guard let noteWriter else { throw NoteWritingError.noFolder }
@@ -520,6 +529,27 @@ public final class RecordingCoordinator {
             } else {
                 phase = .failed(message: error.localizedDescription)
             }
+        }
+    }
+
+    /// The transcript's summary, or `nil` if there's no summarizer, it isn't available or it
+    /// fails. The note is saved either way, so a failure is only logged.
+    private func summarize(_ transcript: Transcript) async -> NoteSummary? {
+        guard let summarizer, !transcript.isEmpty else { return nil }
+        let name = summarizer.info.displayName
+        if case .unavailable(let reason) = summarizer.availability {
+            logger.info("Not summarizing, \(name, privacy: .public) is unavailable: \(reason, privacy: .public)")
+            return nil
+        }
+        phase = .summarizing
+        do {
+            let summary = try await summarizer.summarize(transcript)
+            return summary.isEmpty ? nil : summary
+        } catch {
+            logger.error(
+                "Summarizing with \(name, privacy: .public) failed: \(error.localizedDescription, privacy: .public)"
+            )
+            return nil
         }
     }
 
