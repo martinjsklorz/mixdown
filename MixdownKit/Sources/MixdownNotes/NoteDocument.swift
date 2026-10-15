@@ -66,6 +66,104 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
         return String((text ?? "").prefix(maxSnippetLength))
     }
 
+    // MARK: - Transcript
+
+    /// The `## Transcript` section as plain text, or the whole body if there is none. Blocks are
+    /// separated by a blank line, list items by a line break.
+    public var transcriptText: String {
+        let blocks = MarkdownBlock.parse(body)
+        var section = blocks[...]
+        if let heading = blocks.firstIndex(where: { block in
+            guard case .heading(2, let text) = block else { return false }
+            return MarkdownBlock.plainText(text) == "Transcript"
+        }) {
+            let rest = blocks[(heading + 1)...]
+            let end = rest.firstIndex { block in
+                guard case .heading(let level, _) = block else { return false }
+                return level <= 2
+            }
+            section = rest[..<(end ?? rest.endIndex)]
+        }
+
+        var text = ""
+        var previous: MarkdownBlock?
+        for block in section {
+            let line: String
+            switch block {
+            case .heading(_, let markdown), .paragraph(let markdown), .quote(let markdown):
+                line = MarkdownBlock.plainText(markdown)
+            case .listItem(let number, let depth, let markdown):
+                let marker = number.map { "\($0)." } ?? "•"
+                line = String(repeating: "  ", count: depth) + "\(marker) \(MarkdownBlock.plainText(markdown))"
+            case .code(_, let code):
+                line = code
+            case .rule:
+                continue
+            }
+            if !text.isEmpty {
+                if case .listItem = previous, case .listItem = block {
+                    text += "\n"
+                } else {
+                    text += "\n\n"
+                }
+            }
+            text += line
+            previous = block
+        }
+        return text
+    }
+
+    // MARK: - Renaming
+
+    /// `contents` of the note at `url` with its title changed to `title`, a single line.
+    ///
+    /// Sets the frontmatter `title`, adding it if missing, and the first `#` heading if it shows
+    /// the current title. A note with neither frontmatter nor such a heading gets frontmatter.
+    /// Line endings become `\n`.
+    static func retitled(_ contents: String, url: URL, to title: String) -> String {
+        let currentTitle = NoteDocument(url: url, contents: contents, fileDate: .distantPast).title
+        var text = contents.replacingOccurrences(of: "\r\n", with: "\n")
+        if text.hasPrefix("\u{FEFF}") { text.removeFirst() }
+        var lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let titleLine = "title: \(MarkdownNoteRenderer.yamlQuoted(title))"
+
+        var bodyStart = 0
+        let frontmatter = frontmatterEnd(lines)
+        if let end = frontmatter {
+            if let index = lines[1..<end].firstIndex(where: { frontmatterKey($0) == "title" }) {
+                // Also drop the lines a multi-line value continues on, up to the next key.
+                let next = lines[(index + 1)..<end].firstIndex { $0.first.map { !$0.isWhitespace } ?? false }
+                lines.replaceSubrange(index..<(next ?? end), with: [titleLine])
+            } else {
+                lines.insert(titleLine, at: 1)
+            }
+            bodyStart = (frontmatterEnd(lines) ?? 0) + 1
+        }
+
+        var renamedHeading = false
+        var fence: Substring?
+        for index in lines.indices.dropFirst(bodyStart) {
+            if let open = fence {
+                if Parser.isClosingFence(lines[index], for: open) { fence = nil }
+                continue
+            }
+            let trimmed = lines[index].trimmingCharacters(in: .whitespaces)
+            if let (open, _) = Parser.openingFence(trimmed) {
+                fence = open
+            } else if let (level, text) = Parser.atxHeading(trimmed), level == 1 {
+                guard MarkdownBlock.plainText(text) == currentTitle else { continue }
+                lines[index] = "# \(title)"
+                renamedHeading = true
+                break
+            }
+        }
+
+        if frontmatter == nil && !renamedHeading {
+            lines.insert(contentsOf: ["---", titleLine, "---", ""], at: 0)
+        }
+        return lines.joined(separator: "\n")
+    }
+
     // MARK: - Frontmatter
 
     /// Splits off a leading `---` … `---` block and reads its top-level `key: value` lines.
@@ -74,23 +172,32 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
         var text = contents.replacingOccurrences(of: "\r\n", with: "\n")
         if text.hasPrefix("\u{FEFF}") { text.removeFirst() }
         let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
-        guard lines.first?.trimmingCharacters(in: .whitespaces) == "---",
-            let end = lines.dropFirst().firstIndex(where: {
-                let line = $0.trimmingCharacters(in: .whitespaces)
-                return line == "---" || line == "..."
-            })
-        else { return ([:], text) }
+        guard let end = frontmatterEnd(lines) else { return ([:], text) }
 
         var fields: [String: String] = [:]
         for line in lines[1..<end] {
-            guard let first = line.first, !first.isWhitespace, first != "#",
-                let colon = line.firstIndex(of: ":")
-            else { continue }
-            let key = line[..<colon].trimmingCharacters(in: .whitespaces)
+            guard let key = frontmatterKey(line), let colon = line.firstIndex(of: ":") else { continue }
             let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
             fields[key] = yamlScalar(value)
         }
         return (fields, lines[(end + 1)...].joined(separator: "\n"))
+    }
+
+    /// The index of the line closing the frontmatter, if `lines` start with frontmatter.
+    static func frontmatterEnd<Line: StringProtocol>(_ lines: [Line]) -> Int? {
+        guard lines.first?.trimmingCharacters(in: .whitespaces) == "---" else { return nil }
+        return lines.dropFirst().firstIndex {
+            let line = $0.trimmingCharacters(in: .whitespaces)
+            return line == "---" || line == "..."
+        }
+    }
+
+    /// The key of a top-level `key: value` frontmatter line.
+    static func frontmatterKey<Line: StringProtocol>(_ line: Line) -> String? {
+        guard let first = line.first, !first.isWhitespace, first != "#",
+            let colon = line.firstIndex(of: ":")
+        else { return nil }
+        return line[..<colon].trimmingCharacters(in: .whitespaces)
     }
 
     /// The value of a YAML scalar: quotes removed and escapes resolved, comments dropped.

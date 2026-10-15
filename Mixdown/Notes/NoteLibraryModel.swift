@@ -30,4 +30,17 @@ final class NoteLibraryModel {
         }
         hasLoaded = true
     }
+
+    /// Renames the note and its file, off the main thread. Returns the note's new URL.
+    func rename(_ note: NoteDocument, to title: String) async throws -> URL {
+        let url = note.url
+        return try await Task.detached(priority: .userInitiated) {
+            try NoteLibrary.rename(noteAt: url, to: title)
+        }.value
+    }
+
+    /// Drops a note that was moved away from `notes` right away, ahead of the next reload.
+    func didRemove(_ note: NoteDocument) {
+        notes.removeAll { $0.id == note.id }
+    }
 }
