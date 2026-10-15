@@ -51,7 +51,7 @@ final class NoteTrash {
         }
         Task {
             await Notifications.post(
-                title: "Note Moved to Trash",
+                title: "Recording Deleted",
                 body: trashed.title,
                 categoryIdentifier: Self.categoryIdentifier,
                 userInfo: trashed.userInfo,
