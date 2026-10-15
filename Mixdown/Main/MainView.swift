@@ -126,7 +126,13 @@ struct MainView: View {
     /// Shown under the section rows when there's no note to list.
     private func notesPlaceholder(isEmptyAfterSearch: Bool) -> some View {
         Group {
-            if let error = library.errorMessage {
+            if environment.notesFolder.directory == nil {
+                Text(
+                    environment.notesFolder.status == .notChosen
+                        ? "Notes you record appear here once you choose a folder for them."
+                        : "Your notes folder can't be reached."
+                )
+            } else if let error = library.errorMessage {
                 Label("Can't read notes: \(error)", systemImage: "exclamationmark.triangle")
             } else if library.hasLoaded && library.notes.isEmpty {
                 Text("Notes you record appear here.")

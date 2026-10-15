@@ -6,11 +6,6 @@ import MixdownCore
 /// The file appears atomically and an existing note is never overwritten: on a name
 /// collision the writer appends ` 2`, ` 3`, … to the file name.
 public struct MarkdownNoteWriter: NoteWriting {
-    /// `~/Documents/Mixdown` (inside the container for sandboxed apps).
-    public static var defaultDirectory: URL {
-        URL.documentsDirectory.appending(path: "Mixdown", directoryHint: .isDirectory)
-    }
-
     static let maxTitleLength = 80
     static let maxCollisionSuffix = 999
     /// File names may have 255 bytes, which APFS counts in decomposed UTF-8. The rest goes to

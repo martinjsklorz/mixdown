@@ -585,6 +585,31 @@ struct RecordingCoordinatorTests {
         #expect(coordinator.isRecording)
     }
 
+    @Test func recordingWaitsForNotesFolder() async {
+        let coordinator = makeCoordinator()
+        coordinator.noteWriter = nil
+        await coordinator.monitorDevices()
+
+        #expect(!coordinator.canStartRecording)
+        await coordinator.startRecording()
+        #expect(coordinator.phase == .idle)
+
+        coordinator.noteWriter = InMemoryNoteWriter()
+        #expect(coordinator.canStartRecording)
+    }
+
+    @Test func notesFolderGoingAwayMidRecordingFails() async {
+        let coordinator = makeCoordinator(capture: MockCapture(chunks: [Fixtures.chunk(seconds: 1)]))
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        coordinator.noteWriter = nil
+        await coordinator.stopRecording()
+
+        #expect(coordinator.phase == .failed(message: NoteWritingError.noFolder.localizedDescription))
+        #expect(coordinator.lastNoteURL == nil)
+    }
+
     @Test func failedOrCancelledDownloadKeepsRecordingDisabled() async throws {
         let failing = makeCoordinator(
             engine: MockEngine(isDownloaded: false, prepareError: TranscriptionError.modelUnavailable("offline"))

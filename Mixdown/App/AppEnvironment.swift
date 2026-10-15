@@ -40,13 +40,14 @@ final class AppEnvironment {
         )
         startMonitoringDevices()
         observeRecording()
+        observeNotesFolder()
     }
 
     // MARK: Composition
 
     private static func makeCoordinator(
         model: SpeechSwiftModel,
-        notesDirectory: URL,
+        notesDirectory: URL?,
         settings: AppSettings
     ) -> RecordingCoordinator {
         RecordingCoordinator(
@@ -55,7 +56,7 @@ final class AppEnvironment {
             // This is the ONE place the transcription engine is chosen. To use a different
             // backend, construct any other `TranscriptionEngine` here; nothing else changes.
             engine: SpeechSwiftEngine(model: model),
-            noteWriter: MarkdownNoteWriter(directory: notesDirectory),
+            noteWriter: notesDirectory.map { MarkdownNoteWriter(directory: $0) },
             options: TranscriptionOptions(language: settings.language),
             sourceLabels: settings.sourceLabels,
             preferredDeviceIDs: settings.selectedDeviceIDs
@@ -97,6 +98,17 @@ final class AppEnvironment {
                 try? await Task.sleep(for: .seconds(1 - elapsed.truncatingRemainder(dividingBy: 1)))
             }
         }
+    }
+
+    /// Points the coordinator at the notes folder whenever it's chosen, goes away or comes back.
+    /// Without one, recording is disabled. Re-registers itself after every change.
+    private func observeNotesFolder() {
+        let directory = withObservationTracking {
+            notesFolder.directory
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.observeNotesFolder() }
+        }
+        coordinator.noteWriter = directory.map { MarkdownNoteWriter(directory: $0) }
     }
 
     // MARK: Input
@@ -173,26 +185,16 @@ final class AppEnvironment {
     // MARK: Notes
 
     func chooseNotesFolder() {
-        if notesFolder.chooseFolder() { applyNotesFolder() }
-    }
-
-    func resetNotesFolder() {
-        notesFolder.resetToDefault()
-        applyNotesFolder()
+        notesFolder.chooseFolder()
     }
 
     func openNotesFolder() {
-        let directory = notesFolder.directory
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        guard let directory = notesFolder.directory else { return }
         NSWorkspace.shared.open(directory)
     }
 
     func revealLastNote() {
         guard let url = coordinator.lastNoteURL else { return }
         NSWorkspace.shared.activateFileViewerSelecting([url])
-    }
-
-    private func applyNotesFolder() {
-        coordinator.noteWriter = MarkdownNoteWriter(directory: notesFolder.directory)
     }
 }

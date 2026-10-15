@@ -37,7 +37,8 @@ public final class RecordingCoordinator {
     public private(set) var selectedDevices: [AudioInputDevice] = []
     /// Location of the most recently written note.
     public private(set) var lastNoteURL: URL?
-    public var noteWriter: any NoteWriting
+    /// Saves finished notes. `nil` while there's no folder to save to; recording waits for one.
+    public var noteWriter: (any NoteWriting)?
     public var options: TranscriptionOptions
     /// Speaker names for multi-source recordings.
     public var sourceLabels: SourceLabels
@@ -96,9 +97,9 @@ public final class RecordingCoordinator {
         }
     }
 
-    /// Idle, at least one device is selected and the model is downloaded.
+    /// Idle, at least one device is selected, the model is downloaded and there's a `noteWriter`.
     public var canStartRecording: Bool {
-        isIdle && !selectedDevices.isEmpty && isModelDownloaded
+        isIdle && !selectedDevices.isEmpty && isModelDownloaded && noteWriter != nil
     }
 
     private let deviceProvider: any AudioDeviceProvider
@@ -159,7 +160,7 @@ public final class RecordingCoordinator {
         deviceProvider: any AudioDeviceProvider,
         captureFactory: any AudioCaptureFactory,
         engine: any TranscriptionEngine,
-        noteWriter: any NoteWriting,
+        noteWriter: (any NoteWriting)?,
         options: TranscriptionOptions = .init(),
         sourceLabels: SourceLabels = .init(),
         preferredDeviceIDs: [String] = [],
@@ -502,6 +503,8 @@ public final class RecordingCoordinator {
                 engine: engine.info,
                 transcript: transcript
             )
+            // The folder can go away mid-recording, e.g. when its drive is disconnected.
+            guard let noteWriter else { throw NoteWritingError.noFolder }
             let url = try await noteWriter.write(note)
             lastNoteURL = url
             logger.info("Wrote note to \(url.path(percentEncoded: false), privacy: .private)")

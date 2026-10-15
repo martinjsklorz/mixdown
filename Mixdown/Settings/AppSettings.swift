@@ -57,7 +57,7 @@ struct AppSettings {
         nonmutating set { defaults.set(newValue.rawValue, forKey: Key.transcriptionModel) }
     }
 
-    /// Security-scoped bookmark to a user-chosen notes folder. `nil` means the default folder.
+    /// Security-scoped bookmark to the notes folder the user chose. `nil` until they choose one.
     var notesFolderBookmark: Data? {
         get { defaults.data(forKey: Key.notesFolderBookmark) }
         nonmutating set { defaults.set(newValue, forKey: Key.notesFolderBookmark) }

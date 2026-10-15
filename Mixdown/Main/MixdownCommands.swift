@@ -63,6 +63,7 @@ private struct NotesFileMenuItems: View {
     var body: some View {
         Button("Open Notes Folder") { environment.openNotesFolder() }
             .keyboardShortcut("o", modifiers: [.command, .shift])
+            .disabled(environment.notesFolder.directory == nil)
         Button("Reveal Last Note in Finder") { environment.revealLastNote() }
             .disabled(environment.coordinator.lastNoteURL == nil)
 

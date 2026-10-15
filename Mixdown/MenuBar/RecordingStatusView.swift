@@ -9,10 +9,14 @@ struct RecordingStatusView: View {
     let phase: RecordingCoordinator.Phase
     let engineName: String
     let isModelDownloaded: Bool
+    let notesFolder: NotesFolderStore.Status
     let timeRemaining: TimeInterval?
 
     var body: some View {
         switch phase {
+        case .idle where notesFolder.directory == nil:
+            // Followed by a Choose Notes Folder button.
+            Text(NotesFolderWarning.menuTitle(for: notesFolder) ?? "")
         case .idle where !isModelDownloaded:
             // Followed by a Download Model button.
             Text("Download \(engineName) to start recording")
