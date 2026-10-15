@@ -30,19 +30,24 @@ struct NoteListView<Header: View, Footer: View>: View {
                             withAnimation(.snappy) { collapsed.formSymmetricDifference([section.group]) }
                         }
                         ForEach(isCollapsed ? [] : section.notes) { note in
-                            NoteRow(note: note, isSelected: showsSelection && note.id == selection)
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    selection = note.id
-                                    isFocused = true
+                            // A button, so VoiceOver announces it and Space or Return opens it
+                            // once it has keyboard focus.
+                            Button {
+                                selection = note.id
+                                isFocused = true
+                            } label: {
+                                NoteRow(note: note, isSelected: showsSelection && note.id == selection)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityAddTraits(showsSelection && note.id == selection ? .isSelected : [])
+                            .contextMenu {
+                                Button("Open in Default App") { NSWorkspace.shared.open(note.url) }
+                                Button("Show in Finder") {
+                                    NSWorkspace.shared.activateFileViewerSelecting([note.url])
                                 }
-                                .contextMenu {
-                                    Button("Open in Default App") { NSWorkspace.shared.open(note.url) }
-                                    Button("Show in Finder") {
-                                        NSWorkspace.shared.activateFileViewerSelecting([note.url])
-                                    }
-                                }
-                                .id(note.id)
+                            }
+                            .id(note.id)
                         }
                     }
                     footer

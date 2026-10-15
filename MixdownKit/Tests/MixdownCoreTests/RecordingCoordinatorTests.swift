@@ -204,8 +204,24 @@ struct RecordingCoordinatorTests {
         await coordinator.stopRecording()
 
         #expect(coordinator.phase == .failed(message: error.localizedDescription))
+        #expect(coordinator.modelError == nil)
         #expect(coordinator.lastNoteURL == nil)
         #expect(await writer.notes.isEmpty)
+    }
+
+    @Test func modelLoadErrorWhileTranscribingIsAModelError() async {
+        let error = TranscriptionError.modelUnavailable("corrupt weights")
+        let coordinator = makeCoordinator(
+            capture: MockCapture(chunks: [Fixtures.chunk(seconds: 1)]),
+            engine: MockEngine(transcribeError: error)
+        )
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        await coordinator.stopRecording()
+
+        #expect(coordinator.phase == .failed(message: error.localizedDescription))
+        #expect(coordinator.modelError == error.localizedDescription)
     }
 
     @Test func startErrorFailsAndDismissReturnsToIdle() async {
@@ -216,6 +232,7 @@ struct RecordingCoordinatorTests {
         await coordinator.startRecording()
 
         #expect(coordinator.phase == .failed(message: error.localizedDescription))
+        #expect(coordinator.modelError == nil)
         #expect(!coordinator.isRecording)
         #expect(coordinator.canStartRecording)
 
@@ -466,6 +483,34 @@ struct RecordingCoordinatorTests {
         await coordinator.prepareEngine()
 
         #expect(coordinator.phase == .failed(message: error.localizedDescription))
+        #expect(coordinator.modelError == error.localizedDescription)
+    }
+
+    @Test func laterFailureReplacesModelError() async {
+        let startError = AudioCaptureError.microphonePermissionDenied
+        let coordinator = makeCoordinator(
+            capture: MockCapture(startError: startError),
+            engine: MockEngine(prepareError: TranscriptionError.modelUnavailable("offline"))
+        )
+        await coordinator.monitorDevices()
+        await coordinator.prepareEngine()
+        #expect(coordinator.modelError != nil)
+
+        await coordinator.startRecording()
+
+        #expect(coordinator.phase == .failed(message: startError.localizedDescription))
+        #expect(coordinator.modelError == nil)
+    }
+
+    @Test func dismissErrorClearsModelError() async {
+        let coordinator = makeCoordinator(
+            engine: MockEngine(prepareError: TranscriptionError.modelUnavailable("offline"))
+        )
+        await coordinator.prepareEngine()
+
+        coordinator.dismissError()
+
+        #expect(coordinator.modelError == nil)
     }
 
     @Test func cancelPreparationStopsEngineAndReturnsToIdle() async throws {
@@ -589,6 +634,7 @@ struct RecordingCoordinatorTests {
         await coordinator.deleteModel()
 
         #expect(coordinator.phase == .failed(message: error.localizedDescription))
+        #expect(coordinator.modelError == error.localizedDescription)
         #expect(coordinator.isModelDownloaded)
     }
 
