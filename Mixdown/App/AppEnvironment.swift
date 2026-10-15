@@ -14,8 +14,10 @@ final class AppEnvironment {
     private(set) var coordinator: RecordingCoordinator
     private(set) var model: SpeechSwiftModel
     let notesFolder: NotesFolderStore
-    /// Created at launch, as it handles Restore on notifications from an earlier run.
-    let noteTrash = NoteTrash()
+    let noteTrash: NoteTrash
+    private let noteReady: NoteReady
+    /// Created at launch, as it handles buttons on notifications from an earlier run.
+    private let notificationResponder: NotificationResponder
 
     /// Whole seconds since the current recording started, advanced every second; `nil` unless
     /// recording. Ticked here because the menu bar label only redraws on observed changes; it
@@ -26,13 +28,19 @@ final class AppEnvironment {
     @ObservationIgnored private var deviceMonitor: Task<Void, Never>?
     @ObservationIgnored private var recordingClock: Task<Void, Never>?
     @ObservationIgnored private var recordingClockStart: Date?
+    @ObservationIgnored private var notifiedNoteURL: URL?
 
-    init(settings: AppSettings = AppSettings()) {
+    init(navigation: MainNavigation, settings: AppSettings = AppSettings()) {
         let notesFolder = NotesFolderStore(settings: settings)
         let model = settings.transcriptionModel
+        let noteTrash = NoteTrash()
+        let noteReady = NoteReady(navigation: navigation)
         self.settings = settings
         self.notesFolder = notesFolder
         self.model = model
+        self.noteTrash = noteTrash
+        self.noteReady = noteReady
+        self.notificationResponder = NotificationResponder(noteTrash: noteTrash, noteReady: noteReady)
         self.coordinator = Self.makeCoordinator(
             model: model,
             notesDirectory: notesFolder.directory,
@@ -41,6 +49,7 @@ final class AppEnvironment {
         startMonitoringDevices()
         observeRecording()
         observeNotesFolder()
+        observeNewNotes()
     }
 
     // MARK: Composition
@@ -109,6 +118,19 @@ final class AppEnvironment {
             Task { @MainActor in self?.observeNotesFolder() }
         }
         coordinator.noteWriter = directory.map { MarkdownNoteWriter(directory: $0) }
+    }
+
+    /// Posts "Note Ready" for every note the coordinator writes. Re-registers itself after every
+    /// change, including the coordinator being replaced, which starts out without a note.
+    private func observeNewNotes() {
+        let url = withObservationTracking {
+            coordinator.lastNoteURL
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.observeNewNotes() }
+        }
+        guard let url, url != notifiedNoteURL else { return }
+        notifiedNoteURL = url
+        Task { await noteReady.notify(noteAt: url) }
     }
 
     // MARK: Input

@@ -31,7 +31,15 @@ final class MainNavigation {
     var destination: Destination = .recorder
     /// Kept while another section is showing, so going back to Notes returns to the same note.
     var selectedNoteID: URL?
+    /// A note to select once the main window has loaded the notes folder, e.g. one opened from
+    /// its notification. The window clears it when it takes it.
+    var noteToShow: URL?
     var settingsTab: SettingsTab = .general
+
+    /// SwiftUI only hands `openWindow` to views, so `capturesOpenWindow(for:navigation:)` stores
+    /// it here for the Dock icon and notifications. The main window opens at launch, so it's set
+    /// early on.
+    @ObservationIgnored var openWindow: OpenWindowAction?
 
     /// Switches to `destination` and brings the main window forward, opening it if it's closed.
     func show(_ destination: Destination, using openWindow: OpenWindowAction) {
@@ -39,6 +47,20 @@ final class MainNavigation {
         // The app isn't active when the menu bar extra is used.
         NSApp.activate()
         openWindow(id: MainView.windowID)
+    }
+
+    /// Selects the note at `url` and brings the main window forward, opening it if it's closed.
+    func showNote(at url: URL) {
+        noteToShow = url
+        destination = .notes
+        NSApp.activate()
+        openWindow?(id: MainView.windowID)
+    }
+
+    /// Takes `noteToShow`, clearing it.
+    func takeNoteToShow() -> URL? {
+        defer { noteToShow = nil }
+        return noteToShow
     }
 
     /// Opens the Settings window, at `tab` if given.

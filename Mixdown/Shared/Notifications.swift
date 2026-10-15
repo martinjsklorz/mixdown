@@ -3,8 +3,8 @@ import UserNotifications
 import os
 
 /// Posts Mixdown's notifications, asking for permission the first time. Without it, or with
-/// notifications turned off in Settings, nothing is shown. `NoteTrash`, the notification center's
-/// delegate, shows them while Mixdown is in front too.
+/// notifications turned off in Settings, nothing is shown. `NotificationResponder`, the
+/// notification center's delegate, shows them while Mixdown is in front too.
 @MainActor
 enum Notifications {
     private static let logger = Logger(subsystem: "app.mixdown", category: "Notifications")
