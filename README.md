@@ -29,7 +29,9 @@ both the title inside the note and its file name. The File and Edit menus have t
 for the note that's open.
 Mixdown asks before moving a note to the Trash (tick **Do not ask again**, or turn it back on under
 **Settings → General**), then shows a notification with **Restore** to put the note back. Copying
-a transcript is confirmed with a notification too.
+a transcript is confirmed with a notification too. To turn all of Mixdown's notifications off,
+untick **Show notifications** under **Settings → General**; notes can then only be restored from
+the Trash.
 **File → Open Notes Folder** and **Reveal Last Note in Finder** take you to the files.
 
 **View → Record / Notes** (⌘1, ⌘2) switch the window's section, and **Mixdown → Settings…** (⌘,)

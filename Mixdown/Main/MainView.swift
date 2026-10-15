@@ -17,6 +17,7 @@ struct MainView: View {
     @State private var noteToRename: NoteDocument?
     @State private var noteToTrash: NoteDocument?
     @AppStorage(AppSettings.Key.suppressesTrashConfirmation) private var suppressesTrashConfirmation = false
+    @AppStorage(AppSettings.Key.showsNotifications) private var showsNotifications = true
     @State private var titleDraft = ""
     @State private var failure: Failure?
 
@@ -57,7 +58,11 @@ struct MainView: View {
                 .keyboardShortcut(.defaultAction)
             Button("Cancel", role: .cancel) {}
         } message: { _ in
-            Text("You can restore it from the notification or the Trash.")
+            Text(
+                showsNotifications
+                    ? "You can restore it from the notification or the Trash."
+                    : "You can restore it from the Trash."
+            )
         }
         // Before the other dialogs, which would get its "Do not ask again" checkbox too.
         .dialogSuppressionToggle(isSuppressed: $suppressesTrashConfirmation)
