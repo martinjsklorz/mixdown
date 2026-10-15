@@ -33,7 +33,9 @@ brings it back.
 The first time, macOS asks for permission: **Microphone** to record your voice, or **System
 Audio Recording** to record what your Mac plays. If system audio comes out silent, check that
 Mixdown is on under System Settings › Privacy & Security › Screen & System Audio Recording ›
-System Audio Recording Only. macOS gives a muted recording rather than an error when it's off.
+System Audio Recording Only. macOS gives a muted recording rather than an error when it's off,
+so while recording Mixdown shows a level meter per input and warns (also in the menu bar) when an
+input has made no sound for 10 seconds.
 
 ## Recording calls
 

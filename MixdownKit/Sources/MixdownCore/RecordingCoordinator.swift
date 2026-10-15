@@ -37,6 +37,20 @@ public final class RecordingCoordinator {
     /// Speaker names for multi-source recordings.
     public var sourceLabels: SourceLabels
 
+    /// Each source's level while recording, by device ID. Changes about ten times a second, so
+    /// only read it from views that draw meters.
+    public private(set) var inputLevels: [String: InputLevel] = [:]
+
+    /// Sources of the current recording that haven't made a sound since it started, once
+    /// `silenceWarningDelay` has passed. A source leaves the list as soon as it's heard.
+    ///
+    /// Without the System Audio Recording permission the tap keeps running but delivers silence,
+    /// so this is the only way a denial shows up before the note comes out empty.
+    public private(set) var silentDevices: [AudioInputDevice] = []
+
+    /// How long a source may stay silent before it's listed in `silentDevices`.
+    var silenceWarningDelay: Duration = .seconds(10)
+
     public var engineInfo: TranscriptionEngineInfo { engine.info }
 
     /// Whether the model is on disk. Recording waits for it, since fetching it can take many
@@ -94,6 +108,10 @@ public final class RecordingCoordinator {
     @ObservationIgnored private var preparation: Task<Void, any Error>?
     /// True while the captures are starting; blocks a second start.
     private var isStartingCapture = false
+    /// Sources of the current recording that delivered sound at least once.
+    @ObservationIgnored private var heardDeviceIDs: Set<String> = []
+    /// Fills `silentDevices` once `silenceWarningDelay` has passed.
+    @ObservationIgnored private var silenceCheck: Task<Void, Never>?
     private var preparationEstimator = RemainingTimeEstimator()
 
     /// One recording from start to stop, across all of its sources.
@@ -318,11 +336,19 @@ public final class RecordingCoordinator {
         let startedAt = now()
         let sources = startedCaptures.map { started -> Source in
             let stream = started.stream
-            let consumer = Task.detached(priority: .userInitiated) { () async -> CaptureResult in
+            let deviceID = started.device.id
+            let consumer = Task.detached(priority: .userInitiated) { [weak self] () async -> CaptureResult in
                 var track = AudioTrack()
+                var meter = LevelMeter()
                 do {
                     for try await chunk in stream {
                         track.append(chunk)
+                        // Fire and forget, so a busy main actor never holds up capture.
+                        if let level = meter.add(chunk) {
+                            Task { @MainActor [weak self] in
+                                self?.updateLevel(level, of: deviceID, sessionID: sessionID)
+                            }
+                        }
                     }
                 } catch {
                     return CaptureResult(track: track, error: error)
@@ -333,6 +359,11 @@ public final class RecordingCoordinator {
         }
         session = Session(id: sessionID, sources: sources, startedAt: startedAt)
         isStartingCapture = false
+        silenceCheck = Task { [weak self, silenceWarningDelay] in
+            try? await Task.sleep(for: silenceWarningDelay)
+            guard !Task.isCancelled else { return }
+            self?.flagSilentDevices(sessionID: sessionID)
+        }
         phase = .recording(startedAt: startedAt)
         let names = devices.map(\.name).joined(separator: " + ")
         logger.info("Recording started on \(names, privacy: .public)")
@@ -404,6 +435,7 @@ public final class RecordingCoordinator {
         guard let session else { return }
         // Clearing the session first makes repeated stops and the end-of-stream handlers no-ops.
         self.session = nil
+        resetLevels()
 
         // An error racing a user-initiated stop doesn't matter; keep whatever was captured.
         let results = await endCaptures(of: session)
@@ -542,6 +574,7 @@ public final class RecordingCoordinator {
         // A stop already in progress owns the session.
         guard let session, session.id == sessionID else { return }
         self.session = nil
+        resetLevels()
 
         let results = await endCaptures(of: session)
         let error = results.lazy.compactMap(\.error).first
@@ -551,6 +584,34 @@ public final class RecordingCoordinator {
             logger.info("Capture ended by the system")
         }
         await finish(session, results: results, interruption: error)
+    }
+
+    // MARK: - Levels
+
+    private func updateLevel(_ level: InputLevel, of deviceID: String, sessionID: UUID) {
+        // Levels still in flight when the recording ends are dropped.
+        guard session?.id == sessionID else { return }
+        inputLevels[deviceID] = level
+        if !level.isSilent, heardDeviceIDs.insert(deviceID).inserted {
+            silentDevices.removeAll { $0.id == deviceID }
+        }
+    }
+
+    private func flagSilentDevices(sessionID: UUID) {
+        guard let session, session.id == sessionID else { return }
+        let silent = session.devices.filter { !heardDeviceIDs.contains($0.id) }
+        guard !silent.isEmpty else { return }
+        silentDevices = silent
+        let names = silent.map(\.name).joined(separator: ", ")
+        logger.info("No sound yet from \(names, privacy: .public)")
+    }
+
+    private func resetLevels() {
+        silenceCheck?.cancel()
+        silenceCheck = nil
+        heardDeviceIDs = []
+        inputLevels = [:]
+        silentDevices = []
     }
 
     nonisolated static func interruptedMessage(for error: any Error) -> String {

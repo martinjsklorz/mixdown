@@ -8,6 +8,8 @@ struct MenuBarLabel: View {
     /// Whole seconds recorded so far, while recording.
     let recordingElapsed: Int?
 
+    private var hasSilentInput: Bool { !coordinator.silentDevices.isEmpty }
+
     var body: some View {
         let phase = coordinator.phase
         let remaining = coordinator.preparationTimeRemaining
@@ -20,9 +22,16 @@ struct MenuBarLabel: View {
                 Text(Self.elapsedText(recordingElapsed))
                     .monospacedDigit()
             }
+            // Visible with the menu closed, for recordings started and left in the background.
+            if hasSilentInput {
+                Image(systemName: "speaker.slash")
+            }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Self.accessibilityLabel(for: phase, remaining: remaining, elapsed: recordingElapsed))
+        .accessibilityLabel(
+            Self.accessibilityLabel(for: phase, remaining: remaining, elapsed: recordingElapsed)
+                + (hasSilentInput ? ", no sound from an input" : "")
+        )
     }
 
     static func symbolName(for phase: RecordingCoordinator.Phase) -> String {
