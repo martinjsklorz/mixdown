@@ -244,9 +244,8 @@ extension CallPrompt {
     /// Handles a click on a notification of `startedCategory` or `endedCategory`, or its button.
     nonisolated func respond(to response: UNNotificationResponse) async {
         let category = response.notification.request.content.categoryIdentifier
-        guard [Self.recordAction, Self.stopAction, UNNotificationDefaultActionIdentifier]
-            .contains(response.actionIdentifier)
-        else { return }
+        let clicks = [Self.recordAction, Self.stopAction, UNNotificationDefaultActionIdentifier]
+        guard clicks.contains(response.actionIdentifier) else { return }
         if category == Self.startedCategoryIdentifier {
             await recordFromPrompt()
         } else {
