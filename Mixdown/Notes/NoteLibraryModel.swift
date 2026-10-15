@@ -12,9 +12,16 @@ final class NoteLibraryModel {
     /// Bumped per reload so a slow, older reload can't overwrite a newer result.
     @ObservationIgnored private var generation = 0
 
-    func reload(from directory: URL) async {
+    /// Without a `directory` (no notes folder, or it can't be reached) the list is empty.
+    func reload(from directory: URL?) async {
         generation += 1
         let current = generation
+        guard let directory else {
+            notes = []
+            errorMessage = nil
+            hasLoaded = true
+            return
+        }
         let result = await Task.detached(priority: .userInitiated) {
             Result { try NoteLibrary.loadNotes(in: directory) }
         }.value

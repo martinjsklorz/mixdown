@@ -10,19 +10,28 @@ struct GeneralSettingsView: View {
         Form {
             Section("Notes") {
                 LabeledContent("Folder") {
-                    Text(notesFolder.directory.path(percentEncoded: false))
+                    Text(notesFolder.status.path ?? "Not chosen")
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .textSelection(.enabled)
-                        .help(notesFolder.directory.path(percentEncoded: false))
+                        .help(notesFolder.status.path ?? "")
+                }
+                if let warning = NotesFolderWarning.message(
+                    for: notesFolder.status,
+                    hasLegacyNotes: notesFolder.hasLegacyNotes
+                ) {
+                    Text(warning)
+                        .font(.caption)
+                        .foregroundStyle(notesFolder.status == .notChosen ? Color.secondary : Color.red)
                 }
                 HStack {
                     Button("Choose…") { environment.chooseNotesFolder() }
-                    if notesFolder.isCustom {
-                        Button("Use Default") { environment.resetNotesFolder() }
+                    if case .unavailable = notesFolder.status {
+                        Button("Try Again") { notesFolder.refresh() }
                     }
                     Spacer()
                     Button("Show in Finder") { environment.openNotesFolder() }
+                        .disabled(notesFolder.directory == nil)
                 }
             }
 

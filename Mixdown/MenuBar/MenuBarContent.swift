@@ -21,6 +21,7 @@ struct MenuBarContent: View {
             phase: coordinator.phase,
             engineName: coordinator.engineInfo.displayName,
             isModelDownloaded: coordinator.isModelDownloaded,
+            notesFolder: environment.notesFolder.status,
             timeRemaining: coordinator.preparationTimeRemaining
         )
         if !coordinator.silentDevices.isEmpty {
@@ -30,6 +31,9 @@ struct MenuBarContent: View {
             if SilentInputWarning.needsPermission(coordinator.silentDevices) {
                 Button("Open Privacy Settings…") { SilentInputWarning.openPrivacySettings() }
             }
+        }
+        if environment.notesFolder.directory == nil && !coordinator.isRecording {
+            Button("Choose Notes Folder…") { environment.chooseNotesFolder() }
         }
         if case .preparingModel = coordinator.phase {
             Button("Cancel Download") { coordinator.cancelPreparation() }

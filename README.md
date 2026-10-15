@@ -14,8 +14,9 @@ collapsible sections by day. The cog above the sidebar, next to the sidebar butt
 
 1. Open Mixdown. **Record** shows the big record button and what the next recording uses:
    microphone, system audio, speech model, language and notes folder.
-2. The first time, click **Download Model** and wait for it to finish (see
-   [Speech models](#speech-models)). Recording stays off until the model is on your Mac.
+2. The first time, click **Choose Folder…** and pick where your notes go (see [Notes](#notes)),
+   then click **Download Model** and wait for it to finish (see [Speech models](#speech-models)).
+   Recording stays off until both are done.
 3. Pick your inputs in the **Recording** menu (a microphone, **System Audio**, or both), or with
    **Change…** next to the setup summary.
 4. Click the red button (or press ⌘R) to record, and again to stop.
@@ -72,8 +73,17 @@ so their lines are just labeled "Me" and "Others".
 
 ## Notes
 
-Notes are saved to `~/Documents/Mixdown` unless you pick another folder under
-**Settings → General**. A note looks like this:
+Notes are saved to a folder you choose the first time you open Mixdown, for example a new
+`Mixdown` folder in Documents (use **New Folder** in the dialog). Change it under
+**Settings → General**. Notes recorded by earlier versions of Mixdown, which saved them inside
+the app's container at `~/Library/Containers/app.mixdown.Mixdown/Data/Documents/Mixdown`, move
+to the folder you choose.
+
+If the folder can't be reached, for example because it's on a drive that isn't connected,
+Mixdown says so on **Record**, in the menu bar and in Settings, and doesn't record until it's back
+or you choose another folder. It picks the folder up again as soon as the drive is connected.
+
+A note looks like this:
 
 ```markdown
 ---

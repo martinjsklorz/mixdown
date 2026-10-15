@@ -32,3 +32,14 @@ public protocol NoteWriting: Sendable {
     /// Writes the note and returns its location. Never overwrites an existing note.
     func write(_ note: Note) async throws -> URL
 }
+
+public enum NoteWritingError: LocalizedError, Equatable, Sendable {
+    /// A recording finished while there was no folder to save it to.
+    case noFolder
+
+    public var errorDescription: String? {
+        switch self {
+        case .noFolder: "The notes folder isn't available, so the note couldn't be saved."
+        }
+    }
+}
