@@ -21,8 +21,15 @@ struct TranscriptionSettingsView: View {
                         set: { environment.setModel($0) }
                     )
                 ) {
-                    ForEach(SpeechSwiftModel.allCases) { model in
-                        Text(model.displayName).tag(model)
+                    Section("Offline: transcribed when you stop") {
+                        ForEach(SpeechSwiftModel.allCases.filter { !$0.isLive }) { model in
+                            Text(Self.label(for: model)).tag(model)
+                        }
+                    }
+                    Section("Live: transcribed while you record") {
+                        ForEach(SpeechSwiftModel.allCases.filter(\.isLive)) { model in
+                            Text(Self.label(for: model)).tag(model)
+                        }
                     }
                 }
                 .disabled(!environment.canChangeModel)
@@ -137,14 +144,28 @@ struct TranscriptionSettingsView: View {
     }
 
     private func footer(for model: SpeechSwiftModel) -> String {
-        var lines = [
-            "Larger models are more accurate but slower and take more disk space.",
-            "Models are downloaded once from Hugging Face; transcription always runs on this Mac.",
-        ]
+        var lines: [String]
+        if model.isLive {
+            lines = [
+                "The live model shows the text as you speak and saves it as the note, so the note is ready when you stop and no audio is kept, however long you record.",
+                "It's less accurate than the offline models and names speakers only by input, like Me and Others.",
+            ]
+        } else {
+            lines = [
+                "Offline models transcribe the whole recording once you stop, so its audio is kept in memory until then.",
+                "Larger models are more accurate but slower and take more disk space.",
+            ]
+        }
         if model.labelsSpeakers {
             lines.append("This model labels speakers and detects the language automatically.")
         }
+        lines.append("Models are downloaded once from Hugging Face; transcription always runs on this Mac.")
         return lines.joined(separator: " ")
+    }
+
+    /// "Low · Qwen3-ASR 0.6B": what the model is for, then which it is.
+    static func label(for model: SpeechSwiftModel) -> String {
+        "\(model.purpose) · \(model.displayName)"
     }
 
     static func displayName(for code: String) -> String {

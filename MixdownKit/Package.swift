@@ -31,6 +31,7 @@ let package = Package(
                 "MixdownCore",
                 .product(name: "AudioCommon", package: "speech-swift"),
                 .product(name: "MossTranscribe", package: "speech-swift"),
+                .product(name: "NemotronStreamingASR", package: "speech-swift"),
                 .product(name: "Qwen3ASR", package: "speech-swift"),
                 .product(name: "SpeechVAD", package: "speech-swift"),
             ]

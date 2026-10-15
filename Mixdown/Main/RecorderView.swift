@@ -3,6 +3,7 @@ import SwiftUI
 
 /// The Record section: one big button to start or stop, the state Mixdown is in, and a summary
 /// of what it records with. The inputs themselves are chosen in the Recording menu or Settings.
+/// While recording with the live model, the text recognized so far replaces the summary.
 struct RecorderView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(MainNavigation.self) private var navigation
@@ -11,13 +12,24 @@ struct RecorderView: View {
     var body: some View {
         let coordinator = environment.coordinator
 
-        VStack(spacing: 0) {
-            Spacer(minLength: 24)
-            hero(for: coordinator)
-                .frame(maxWidth: 420)
-            Spacer(minLength: 24)
-            setup
-                .frame(maxWidth: 420)
+        Group {
+            if coordinator.showsLiveTranscript {
+                VStack(spacing: 24) {
+                    hero(for: coordinator)
+                        .frame(maxWidth: 420)
+                    LiveTranscriptView(coordinator: coordinator)
+                        .frame(maxWidth: 640, maxHeight: .infinity)
+                }
+            } else {
+                VStack(spacing: 0) {
+                    Spacer(minLength: 24)
+                    hero(for: coordinator)
+                        .frame(maxWidth: 420)
+                    Spacer(minLength: 24)
+                    setup
+                        .frame(maxWidth: 420)
+                }
+            }
         }
         .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -65,7 +77,10 @@ struct RecorderView: View {
                 caption("Recording · click to stop")
 
             case .transcribing:
-                headline("Transcribing…", detail: "Your note appears in the sidebar in a moment.")
+                headline(
+                    environment.model.isLive ? "Finishing…" : "Transcribing…",
+                    detail: "Your note appears in the sidebar in a moment."
+                )
                 ProgressView()
                     .controlSize(.large)
 
@@ -120,7 +135,7 @@ struct RecorderView: View {
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 8) {
                 row("mic", "Microphone", environment.selectedMicrophone?.name ?? "Off")
                 row("speaker.wave.2", "System audio", environment.recordsSystemAudio ? "On" : "Off")
-                row("waveform", "Model", environment.model.displayName)
+                row("waveform", "Model", TranscriptionSettingsView.label(for: environment.model))
                 row("globe", "Language", languageName)
                 row(
                     "folder",
