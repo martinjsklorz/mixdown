@@ -19,7 +19,8 @@ collapsible sections by day. The cog above the sidebar, next to the sidebar butt
    Recording stays off until both are done.
 3. Pick your inputs in the **Recording** menu (a microphone, **System Audio**, or both), or with
    **Change…** next to the setup summary.
-4. Click the red button (or press ⌘R) to record, and again to stop.
+4. Click the red button (or press ⌘R) to record, and again to stop. From any other app, press
+   ⌃⌥⌘R. Change that shortcut or turn it off under **Settings → Recording**.
 
 A few seconds later the note appears under **Today** in the sidebar and opens, rendered much like
 Apple Notes. A **Note Ready** notification says so too, with **Open** to show the note in Mixdown
@@ -88,6 +89,18 @@ e.g. "Me (Speaker 1)" and "Me (Speaker 2)" for two people at your Mac, and "Othe
 and "Others (Speaker 2)" for two people on the call. The other models don't tell speakers apart,
 so their lines are just labeled "Me" and "Others".
 
+## Summaries
+
+On macOS 26 or later with Apple Intelligence turned on, each note starts with a summary: a short
+overview, the key points and any action items, in the language of the recording. Apple
+Intelligence writes it on your Mac after the transcript is ready, so the note takes a little
+longer to appear. Nothing extra is downloaded, and the transcript doesn't leave your Mac. Long
+recordings are summarized in parts, which are then combined.
+
+Turn summaries off under **Settings → Transcription**, which also says why summaries aren't
+available on this Mac if they aren't. Without them, or if summarizing fails, the note is saved
+with just the transcript.
+
 ## Notes
 
 Notes are saved to a folder you choose the first time you open Mixdown, for example a new
@@ -115,6 +128,18 @@ tags: [mixdown]
 ---
 
 # Recording Oct 13, 2026 at 2:02 PM
+
+## Summary
+
+The team went through the release timeline for the weekly sync.
+
+### Key Points
+
+- The release moves to Friday.
+
+### Action Items
+
+- Speaker 2 updates the release notes.
 
 ## Transcript
 
@@ -149,8 +174,9 @@ make clean       # quit Mixdown, delete all build output and refresh the Dock ic
 
 To sign the app with your Apple developer account, set `DEVELOPMENT_TEAM` in `project.yml`.
 
-The speech engine sits behind one interface (`TranscriptionEngine`), so it can be replaced
-by changing a single line in `Mixdown/App/AppEnvironment.swift`.
+The speech engine sits behind one interface (`TranscriptionEngine`), and so does the summarizer
+(`Summarizer`), so either can be replaced by changing a single line in
+`Mixdown/App/AppEnvironment.swift`.
 
 ## License
 

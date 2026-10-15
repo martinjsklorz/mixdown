@@ -28,6 +28,8 @@ struct RecordingStatusView: View {
             Text("Recording since \(startedAt.formatted(date: .omitted, time: .shortened))")
         case .transcribing(let progress):
             Text("Transcribing… \(ProgressText.detail(progress: progress, remaining: timeRemaining))")
+        case .summarizing:
+            Text("Summarizing…")
         case .failed:
             // Shown with a Dismiss action further down the menu.
             EmptyView()

@@ -58,6 +58,22 @@ struct TranscriptionSettingsView: View {
                         .labelStyle(.titleAndIcon)
                 }
             }
+
+            Section {
+                Toggle(
+                    "Summarize recordings",
+                    isOn: Binding(
+                        get: { environment.summarizesNotes },
+                        set: { environment.summarizesNotes = $0 }
+                    )
+                )
+            } header: {
+                Text("Summary")
+            } footer: {
+                Text(summaryFooter)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
     }
@@ -155,6 +171,18 @@ struct TranscriptionSettingsView: View {
             lines.append("This model labels speakers and detects the language automatically.")
         }
         return lines.joined(separator: " ")
+    }
+
+    /// What a summary is and who makes it, or why it can't be made right now.
+    private var summaryFooter: String {
+        let summarizer = environment.summarizer
+        switch summarizer.availability {
+        case .available:
+            return "Adds an overview, key points and action items above the transcript. "
+                + "\(summarizer.info.displayName) makes them on this Mac."
+        case .unavailable(let reason):
+            return reason
+        }
     }
 
     static func displayName(for code: String) -> String {

@@ -1,6 +1,8 @@
 import AppKit
+import KeyboardShortcuts
 import MixdownAudio
 import MixdownCore
+import MixdownFoundationModels
 import MixdownNotes
 import MixdownSpeechSwift
 import Observation
@@ -13,6 +15,8 @@ final class AppEnvironment {
     /// receives its engine at init.
     private(set) var coordinator: RecordingCoordinator
     private(set) var model: SpeechSwiftModel
+    /// Makes the summaries; `coordinator` only has it while summaries are on.
+    let summarizer: any Summarizer
     let notesFolder: NotesFolderStore
     let noteTrash: NoteTrash
     private let noteReady: NoteReady
@@ -23,6 +27,10 @@ final class AppEnvironment {
     /// recording. Ticked here because the menu bar label only redraws on observed changes; it
     /// doesn't run `TimelineView` or `.task`.
     private(set) var recordingElapsed: Int?
+
+    /// Whether the global shortcut (`KeyboardShortcuts.Name.toggleRecording`) starts and stops
+    /// recording. Off, the shortcut is kept but released, so other apps get those keys.
+    private(set) var isRecordingShortcutEnabled: Bool
 
     private let settings: AppSettings
     @ObservationIgnored private var deviceMonitor: Task<Void, Never>?
@@ -35,16 +43,22 @@ final class AppEnvironment {
     init(navigation: MainNavigation, settings: AppSettings = AppSettings()) {
         let notesFolder = NotesFolderStore(settings: settings)
         let model = settings.transcriptionModel
+        // This is the ONE place the summarizer is chosen. To use a different backend, construct
+        // any other `Summarizer` here; nothing else changes.
+        let summarizer: any Summarizer = AppleIntelligenceSummarizer()
         let noteTrash = NoteTrash()
         let noteReady = NoteReady(navigation: navigation)
         self.settings = settings
+        self.summarizer = summarizer
         self.notesFolder = notesFolder
         self.model = model
         self.noteTrash = noteTrash
         self.noteReady = noteReady
+        self.isRecordingShortcutEnabled = settings.isRecordingShortcutEnabled
         self.notificationResponder = NotificationResponder(noteTrash: noteTrash, noteReady: noteReady)
         self.coordinator = Self.makeCoordinator(
             model: model,
+            summarizer: settings.summarizesNotes ? summarizer : nil,
             notesDirectory: notesFolder.directory,
             settings: settings
         )
@@ -53,12 +67,14 @@ final class AppEnvironment {
         observePhaseForCues()
         observeNotesFolder()
         observeNewNotes()
+        listenForRecordingShortcut(navigation: navigation)
     }
 
     // MARK: Composition
 
     private static func makeCoordinator(
         model: SpeechSwiftModel,
+        summarizer: (any Summarizer)?,
         notesDirectory: URL?,
         settings: AppSettings
     ) -> RecordingCoordinator {
@@ -69,6 +85,7 @@ final class AppEnvironment {
             // backend, construct any other `TranscriptionEngine` here; nothing else changes.
             engine: SpeechSwiftEngine(model: model),
             noteWriter: notesDirectory.map { MarkdownNoteWriter(directory: $0) },
+            summarizer: summarizer,
             options: TranscriptionOptions(language: settings.language),
             sourceLabels: settings.sourceLabels,
             preferredDeviceIDs: settings.selectedDeviceIDs
@@ -195,6 +212,35 @@ final class AppEnvironment {
         }
     }
 
+    // MARK: Global shortcut
+
+    /// Starts or stops recording on the global shortcut, from any app. When recording can't start
+    /// yet (no notes folder or model, or busy transcribing), it opens Record instead, which says why.
+    private func listenForRecordingShortcut(navigation: MainNavigation) {
+        KeyboardShortcuts.onKeyUp(for: .toggleRecording) { [weak self] in
+            guard let self else { return }
+            let coordinator = self.coordinator
+            if coordinator.isRecording || coordinator.canStartRecording {
+                Task { await coordinator.toggleRecording() }
+            } else if let openWindow = navigation.openWindow {
+                navigation.show(.recorder, using: openWindow)
+            }
+        }
+        if !isRecordingShortcutEnabled {
+            KeyboardShortcuts.disable(.toggleRecording)
+        }
+    }
+
+    func setRecordingShortcutEnabled(_ enabled: Bool) {
+        settings.isRecordingShortcutEnabled = enabled
+        isRecordingShortcutEnabled = enabled
+        if enabled {
+            KeyboardShortcuts.enable(.toggleRecording)
+        } else {
+            KeyboardShortcuts.disable(.toggleRecording)
+        }
+    }
+
     // MARK: Transcription
 
     var language: String? { coordinator.options.language }
@@ -216,10 +262,23 @@ final class AppEnvironment {
         self.model = model
         coordinator = Self.makeCoordinator(
             model: model,
+            summarizer: coordinator.summarizer,
             notesDirectory: notesFolder.directory,
             settings: settings
         )
         startMonitoringDevices()
+    }
+
+    // MARK: Summary
+
+    /// Whether notes get a summary. Takes effect from the next recording, even if the summarizer
+    /// is unavailable right now; it's skipped until it becomes available.
+    var summarizesNotes: Bool {
+        get { coordinator.summarizer != nil }
+        set {
+            settings.summarizesNotes = newValue
+            coordinator.summarizer = newValue ? summarizer : nil
+        }
     }
 
     // MARK: Notes

@@ -32,6 +32,8 @@ struct AudioCueTests {
         #expect(AudioCue.cue(from: .transcribing(progress: 0.2), to: .transcribing(progress: 0.4)) == nil)
         // The note itself is cued when it's written.
         #expect(AudioCue.cue(from: .transcribing(progress: 1), to: .idle) == nil)
+        #expect(AudioCue.cue(from: .transcribing(progress: 1), to: .summarizing) == nil)
+        #expect(AudioCue.cue(from: .summarizing, to: .idle) == nil)
         #expect(AudioCue.cue(from: .failed(message: "Denied"), to: .idle) == nil)
     }
 }

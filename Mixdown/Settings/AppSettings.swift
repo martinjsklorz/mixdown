@@ -21,6 +21,11 @@ struct AppSettings {
         static let suppressesTrashConfirmation = "suppressesTrashConfirmation"
         /// Whether Mixdown posts notifications at all. Absent means yes.
         static let showsNotifications = "showsNotifications"
+        /// Whether the global recording shortcut is on. Absent means yes. The shortcut itself is
+        /// stored by KeyboardShortcuts.
+        static let recordingShortcutEnabled = "recordingShortcutEnabled"
+        /// Whether notes get a summary. Absent means yes.
+        static let summarizesNotes = "summarizesNotes"
         /// Whether Mixdown plays audio cues at all. Absent means yes.
         static let playsSounds = "playsSounds"
 
@@ -73,6 +78,16 @@ struct AppSettings {
     var showsNotifications: Bool {
         get { defaults.object(forKey: Key.showsNotifications) as? Bool ?? true }
         nonmutating set { defaults.set(newValue, forKey: Key.showsNotifications) }
+    }
+
+    var isRecordingShortcutEnabled: Bool {
+        get { defaults.object(forKey: Key.recordingShortcutEnabled) as? Bool ?? true }
+        nonmutating set { defaults.set(newValue, forKey: Key.recordingShortcutEnabled) }
+    }
+
+    var summarizesNotes: Bool {
+        get { defaults.object(forKey: Key.summarizesNotes) as? Bool ?? true }
+        nonmutating set { defaults.set(newValue, forKey: Key.summarizesNotes) }
     }
 
     var playsSounds: Bool {
