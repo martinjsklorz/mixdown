@@ -20,7 +20,7 @@ let package = Package(
         // beyond Foundation/Observation, so every other module can depend on it.
         .target(name: "MixdownCore"),
 
-        // Microphone (CoreAudio/AVAudioEngine) and system audio (Core Audio process tap) capture.
+        // Microphone (Core Audio IO proc) and system audio (Core Audio process tap) capture.
         .target(name: "MixdownAudio", dependencies: ["MixdownCore"]),
 
         // speech-swift (MLX) implementation of `TranscriptionEngine`. The only module that
