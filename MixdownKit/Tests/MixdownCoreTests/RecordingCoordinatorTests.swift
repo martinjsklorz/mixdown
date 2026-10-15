@@ -342,6 +342,49 @@ struct RecordingCoordinatorTests {
         #expect(note.transcript.speakers == ["Me"])
     }
 
+    // MARK: - Levels
+
+    @Test func flagsSourcesThatStaySilent() async throws {
+        let microphone = MockCapture(chunks: [Fixtures.chunk(seconds: 1)])
+        // A tap without permission keeps delivering zeros.
+        let systemAudio = MockCapture(chunks: [Fixtures.chunk(seconds: 1, amplitude: 0)])
+        let coordinator = makeCoordinator(
+            captures: [Fixtures.builtInMic.id: microphone, AudioInputDevice.systemAudioID: systemAudio],
+            preferredDeviceIDs: [Fixtures.builtInMic.id, AudioInputDevice.systemAudioID]
+        )
+        coordinator.silenceWarningDelay = .milliseconds(50)
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        try await waitUntil { coordinator.inputLevels.count == 2 }
+        #expect(coordinator.inputLevels[Fixtures.builtInMic.id] == InputLevel(peak: 0.1))
+        #expect(coordinator.inputLevels[AudioInputDevice.systemAudioID] == InputLevel(peak: 0))
+        #expect(coordinator.silentDevices.isEmpty)
+
+        try await waitUntil { !coordinator.silentDevices.isEmpty }
+        #expect(coordinator.silentDevices == [.systemAudio])
+
+        await coordinator.stopRecording()
+        #expect(coordinator.inputLevels.isEmpty)
+        #expect(coordinator.silentDevices.isEmpty)
+    }
+
+    @Test func sourceThatIsHeardLeavesSilentList() async throws {
+        let capture = MockCapture(chunks: [Fixtures.chunk(seconds: 1, amplitude: 0)])
+        let coordinator = makeCoordinator(capture: capture)
+        coordinator.silenceWarningDelay = .milliseconds(50)
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        try await waitUntil { coordinator.silentDevices == [Fixtures.builtInMic] }
+
+        capture.yield(Fixtures.chunk(seconds: 0.1, startTime: 1))
+        try await waitUntil { coordinator.silentDevices.isEmpty }
+        #expect(coordinator.inputLevels[Fixtures.builtInMic.id] == InputLevel(peak: 0.1))
+
+        await coordinator.stopRecording()
+    }
+
     @Test func sourceFailingToStartStopsTheOthers() async {
         let error = AudioCaptureError.deviceUnavailable("Couldn't create the system audio tap")
         let microphone = MockCapture()

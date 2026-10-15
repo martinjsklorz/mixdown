@@ -23,6 +23,14 @@ struct MenuBarContent: View {
             isModelDownloaded: coordinator.isModelDownloaded,
             timeRemaining: coordinator.preparationTimeRemaining
         )
+        if !coordinator.silentDevices.isEmpty {
+            ForEach(coordinator.silentDevices) { device in
+                Label(SilentInputWarning.title(for: device), systemImage: "speaker.slash")
+            }
+            if SilentInputWarning.needsPermission(coordinator.silentDevices) {
+                Button("Open Privacy Settings…") { SilentInputWarning.openPrivacySettings() }
+            }
+        }
         if case .preparingModel = coordinator.phase {
             Button("Cancel Download") { coordinator.cancelPreparation() }
         } else if !coordinator.isModelDownloaded && coordinator.isIdle {

@@ -63,6 +63,7 @@ struct RecorderView: View {
                     Task { await coordinator.stopRecording() }
                 }
                 caption("Recording · click to stop")
+                InputLevelsView(coordinator: coordinator)
 
             case .transcribing:
                 headline("Transcribing…", detail: "Your note appears in the sidebar in a moment.")

@@ -10,9 +10,14 @@ enum Fixtures {
     static let usbMic = AudioInputDevice(id: "usb", name: "USB Microphone", kind: .microphone)
     static let devices = [usbMic, builtInMic, AudioInputDevice.systemAudio]
 
-    static func chunk(seconds: Double, startTime: TimeInterval = 0, hostTime: TimeInterval? = nil) -> AudioChunk {
+    static func chunk(
+        seconds: Double,
+        startTime: TimeInterval = 0,
+        hostTime: TimeInterval? = nil,
+        amplitude: Float = 0.1
+    ) -> AudioChunk {
         AudioChunk(
-            samples: Array(repeating: 0.1, count: Int(seconds * AudioChunk.sampleRate)),
+            samples: Array(repeating: amplitude, count: Int(seconds * AudioChunk.sampleRate)),
             startTime: startTime,
             hostTime: hostTime
         )
@@ -98,6 +103,11 @@ final class MockCapture: AudioCapturing {
             continuation.finish()
         }
         return stream
+    }
+
+    /// Delivers another chunk while recording.
+    func yield(_ chunk: AudioChunk) {
+        continuation.yield(chunk)
     }
 
     func stop() async {
