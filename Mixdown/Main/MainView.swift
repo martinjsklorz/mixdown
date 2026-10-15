@@ -35,7 +35,7 @@ struct MainView: View {
         }
         .searchable(text: $searchText, placement: .sidebar, prompt: "Search Recordings")
         .frame(minWidth: 720, minHeight: 480)
-        .task(id: environment.notesFolder.directory) { await reload() }
+        .task(id: environment.notesFolder.directory) { await reload(selecting: navigation.takeNoteToShow()) }
         .onChange(of: environment.coordinator.lastNoteURL) { _, url in
             Task {
                 await reload(selecting: url)
@@ -67,6 +67,12 @@ struct MainView: View {
                 Task { await rename(note, to: titleDraft) }
             }
             Button("Cancel", role: .cancel) {}
+        }
+        // Shows a note opened from outside the window while it's open, e.g. from its notification.
+        // If the window was closed, the `.task` above takes the note when it opens.
+        .onChange(of: navigation.noteToShow) { _, url in
+            guard url != nil else { return }
+            Task { await reload(selecting: navigation.takeNoteToShow()) }
         }
         // Shows a note put back with Restore in its notification.
         .onChange(of: environment.noteTrash.lastRestored) { _, restored in
