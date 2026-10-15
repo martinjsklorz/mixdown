@@ -17,6 +17,8 @@ struct AppSettings {
         static let notesFolderBookmark = "notesFolderBookmark"
         /// ISO 639-1 code; absent means auto-detect.
         static let language = "transcriptionLanguage"
+        /// Whether to move notes to the Trash without asking first. Read with `@AppStorage`.
+        static let suppressesTrashConfirmation = "suppressesTrashConfirmation"
     }
 
     var defaults: UserDefaults = .standard

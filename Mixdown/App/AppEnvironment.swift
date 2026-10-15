@@ -14,6 +14,8 @@ final class AppEnvironment {
     private(set) var coordinator: RecordingCoordinator
     private(set) var model: SpeechSwiftModel
     let notesFolder: NotesFolderStore
+    /// Created at launch, as it handles Restore on notifications from an earlier run.
+    let noteTrash = NoteTrash()
 
     /// Whole seconds since the current recording started, advanced every second; `nil` unless
     /// recording. Ticked here because the menu bar label only redraws on observed changes; it

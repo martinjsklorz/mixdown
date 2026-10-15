@@ -7,12 +7,14 @@ import SwiftUI
 ///
 /// Drawn by hand rather than with `List(selection:)`: macOS paints a list's selection in the
 /// system accent color, and this highlights the selected note in Mixdown's orange like Apple
-/// Notes does in yellow. Arrow keys move the selection once the list has focus.
+/// Notes does in yellow. Arrow keys move the selection once the list has focus, and Delete moves
+/// the selected note to the Trash.
 struct NoteListView<Header: View, Footer: View>: View {
     let sections: [NoteSection]
     @Binding var selection: NoteDocument.ID?
     /// Whether to highlight `selection`; not while another section of the window is showing.
     var showsSelection = true
+    let actions: NoteActions
     @ViewBuilder var header: Header
     /// Shown instead of the notes when there are none, e.g. an empty or error state.
     @ViewBuilder var footer: Footer
@@ -42,10 +44,16 @@ struct NoteListView<Header: View, Footer: View>: View {
                             .buttonStyle(.plain)
                             .accessibilityAddTraits(showsSelection && note.id == selection ? .isSelected : [])
                             .contextMenu {
+                                Button("Rename…") { actions.rename(note) }
+                                Button("Copy Transcript") { NoteActions.copyTranscript(of: note) }
+                                ShareLink(item: note.url, preview: SharePreview(note.title))
+                                Divider()
                                 Button("Open in Default App") { NSWorkspace.shared.open(note.url) }
                                 Button("Show in Finder") {
                                     NSWorkspace.shared.activateFileViewerSelecting([note.url])
                                 }
+                                Divider()
+                                Button("Move to Trash") { actions.moveToTrash(note) }
                             }
                             .id(note.id)
                         }
@@ -60,6 +68,13 @@ struct NoteListView<Header: View, Footer: View>: View {
             .focusEffectDisabled()
             .onKeyPress(.downArrow) { moveSelection(by: 1, proxy: proxy) }
             .onKeyPress(.upArrow) { moveSelection(by: -1, proxy: proxy) }
+            // ⌫, ⌦ and Edit → Delete trash the selected note.
+            .onDeleteCommand {
+                guard showsSelection,
+                    let note = sections.lazy.flatMap(\.notes).first(where: { $0.id == selection })
+                else { return }
+                actions.moveToTrash(note)
+            }
             // Expand the day of a note selected from elsewhere, such as one just recorded.
             .onChange(of: selection) { _, id in
                 if let group = sections.first(where: { $0.notes.contains { $0.id == id } })?.group {

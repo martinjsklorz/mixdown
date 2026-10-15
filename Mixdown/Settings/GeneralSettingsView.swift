@@ -4,6 +4,7 @@ import SwiftUI
 struct GeneralSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
     @State private var launchAtLogin = LaunchAtLogin()
+    @AppStorage(AppSettings.Key.suppressesTrashConfirmation) private var suppressesTrashConfirmation = false
 
     var body: some View {
         let notesFolder = environment.notesFolder
@@ -25,6 +26,13 @@ struct GeneralSettingsView: View {
                     Spacer()
                     Button("Show in Finder") { environment.openNotesFolder() }
                 }
+                Toggle(
+                    "Ask before moving a note to the Trash",
+                    isOn: Binding(
+                        get: { !suppressesTrashConfirmation },
+                        set: { suppressesTrashConfirmation = !$0 }
+                    )
+                )
             }
 
             Section("Startup") {

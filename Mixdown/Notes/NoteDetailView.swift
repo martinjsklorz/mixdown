@@ -2,9 +2,11 @@ import AppKit
 import MixdownNotes
 import SwiftUI
 
-/// A read-only, rendered preview of one note.
+/// A rendered preview of one note. The text is read-only; the toolbar renames, copies, shares
+/// and trashes the note.
 struct NoteDetailView: View {
     let note: NoteDocument
+    let actions: NoteActions
 
     var body: some View {
         let blocks = note.displayBlocks()
@@ -31,13 +33,16 @@ struct NoteDetailView: View {
         .id(note.id)
         .navigationTitle(note.title)
         .toolbar {
-            ToolbarItemGroup {
+            ToolbarItem {
                 Button("Show in Finder", systemImage: "folder") {
                     NSWorkspace.shared.activateFileViewerSelecting([note.url])
                 }
-                Button("Open in Default App", systemImage: "arrow.up.forward.app") {
-                    NSWorkspace.shared.open(note.url)
-                }
+            }
+            ToolbarItemGroup {
+                Button("Rename", systemImage: "pencil") { actions.rename(note) }
+                Button("Copy Transcript", systemImage: "doc.on.doc") { NoteActions.copyTranscript(of: note) }
+                ShareLink(item: note.url, preview: SharePreview(note.title))
+                Button("Move to Trash", systemImage: "trash") { actions.moveToTrash(note) }
             }
         }
     }

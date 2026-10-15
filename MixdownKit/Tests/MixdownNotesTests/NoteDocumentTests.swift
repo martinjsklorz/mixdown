@@ -110,4 +110,20 @@ struct NoteDocumentTests {
 
         #expect(document.snippet.count == 200)
     }
+
+    @Test func transcriptTextIsTranscriptSectionAsPlainText() {
+        let contents = MarkdownNoteRenderer.render(NoteFixtures.note()) + "\n## Summary\n\nLater."
+
+        let document = NoteDocument(url: url, contents: contents, fileDate: fileDate)
+
+        #expect(document.transcriptText == "[00:00:00] Hello everyone.\n\n[00:01:05] Next topic.")
+    }
+
+    @Test func transcriptTextWithoutTranscriptSectionIsWholeBody() {
+        let contents = "# Title\n\nSome **bold** text.\n\n- One\n  - Two\n1. Three\n\n---\n\n```\ncode  here\n```"
+
+        let document = NoteDocument(url: url, contents: contents, fileDate: fileDate)
+
+        #expect(document.transcriptText == "Title\n\nSome bold text.\n\n• One\n  • Two\n1. Three\n\ncode  here")
+    }
 }
