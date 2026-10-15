@@ -5,19 +5,20 @@ import MixdownNotes
 import SwiftUI
 
 /// The main window: Record at the top of the sidebar, the notes folder by day below it, and the
-/// recorder or the selected note on the right. The cog above the sidebar opens Settings.
+/// recorder or the selected note on the right. Above the sidebar are the notes folder and Settings.
 struct MainView: View {
     static let windowID = "main"
 
     @Environment(AppEnvironment.self) private var environment
     @Environment(MainNavigation.self) private var navigation
     @Environment(\.openSettings) private var openSettings
-    @Environment(\.openWindow) private var openWindow
     @State private var library = NoteLibraryModel()
     @State private var searchText = ""
+    @State private var columnVisibility = NavigationSplitViewVisibility.automatic
     @State private var noteToRename: NoteDocument?
     @State private var noteToTrash: NoteDocument?
     @AppStorage(AppSettings.Key.suppressesTrashConfirmation) private var suppressesTrashConfirmation = false
+    @AppStorage(AppSettings.Key.showsNotifications) private var showsNotifications = true
     @State private var titleDraft = ""
     @State private var failure: Failure?
 
@@ -28,18 +29,22 @@ struct MainView: View {
     }
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             sidebar
                 .navigationSplitViewColumnWidth(min: 220, ideal: 280, max: 420)
         } detail: {
             detail
+                // With the sidebar collapsed, macOS keeps only one of its toolbar items next to
+                // the sidebar toggle and moves the rest into the overflow menu, so they move here.
+                .toolbar {
+                    if isSidebarCollapsed {
+                        ToolbarItemGroup(placement: .navigation) { folderAndSettingsButtons }
+                    }
+                }
         }
         .searchable(text: $searchText, placement: .sidebar, prompt: "Search Recordings")
         .frame(minWidth: 720, minHeight: 480)
-        .task(id: environment.notesFolder.directory) { await reload() }
-        .onAppear {
-            environment.showRecorder = { [navigation, openWindow] in navigation.show(.recorder, using: openWindow) }
-        }
+        .task(id: environment.notesFolder.directory) { await reload(selecting: navigation.takeNoteToShow()) }
         .onChange(of: environment.coordinator.lastNoteURL) { _, url in
             Task {
                 await reload(selecting: url)
@@ -61,7 +66,11 @@ struct MainView: View {
                 .keyboardShortcut(.defaultAction)
             Button("Cancel", role: .cancel) {}
         } message: { _ in
-            Text("You can restore it from the notification or the Trash.")
+            Text(
+                showsNotifications
+                    ? "You can restore it from the notification or the Trash."
+                    : "You can restore it from the Trash."
+            )
         }
         // Before the other dialogs, which would get its "Do not ask again" checkbox too.
         .dialogSuppressionToggle(isSuppressed: $suppressesTrashConfirmation)
@@ -71,6 +80,12 @@ struct MainView: View {
                 Task { await rename(note, to: titleDraft) }
             }
             Button("Cancel", role: .cancel) {}
+        }
+        // Shows a note opened from outside the window while it's open, e.g. from its notification.
+        // If the window was closed, the `.task` above takes the note when it opens.
+        .onChange(of: navigation.noteToShow) { _, url in
+            guard url != nil else { return }
+            Task { await reload(selecting: navigation.takeNoteToShow()) }
         }
         // Shows a note put back with Restore in its notification.
         .onChange(of: environment.noteTrash.lastRestored) { _, restored in
@@ -120,11 +135,21 @@ struct MainView: View {
         }
         // Toolbar items on the sidebar sit above it, next to the sidebar toggle.
         .toolbar {
-            ToolbarItem {
-                Button("Settings", systemImage: "gearshape") { navigation.showSettings(using: openSettings) }
-                    .help("Settings (⌘,)")
+            if !isSidebarCollapsed {
+                ToolbarItemGroup { folderAndSettingsButtons }
             }
         }
+    }
+
+    private var isSidebarCollapsed: Bool { columnVisibility == .detailOnly }
+
+    @ViewBuilder
+    private var folderAndSettingsButtons: some View {
+        Button("Open Notes Folder", systemImage: "folder") { environment.openNotesFolder() }
+            .help("Open Notes Folder (⇧⌘O)")
+            .disabled(environment.notesFolder.directory == nil)
+        Button("Settings", systemImage: "gearshape") { navigation.showSettings(using: openSettings) }
+            .help("Settings (⌘,)")
     }
 
     /// Shown under the section rows when there's no note to list.
@@ -288,7 +313,7 @@ private struct SidebarRow<Accessory: View>: View {
 }
 
 /// What the recorder is doing, next to its sidebar row: the time while recording, progress
-/// while downloading or transcribing.
+/// while downloading, transcribing or summarizing.
 private struct RecorderStatusBadge: View {
     let coordinator: RecordingCoordinator
 
@@ -298,11 +323,11 @@ private struct RecorderStatusBadge: View {
             Text(startedAt, style: .timer)
                 .monospacedDigit()
                 .foregroundStyle(.red)
-        case .preparingModel(let progress):
+        case .preparingModel(let progress), .transcribing(let progress):
             Text(progress.formatted(.percent.precision(.fractionLength(0))))
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
-        case .transcribing:
+        case .summarizing:
             ProgressView()
                 .controlSize(.small)
         case .failed:

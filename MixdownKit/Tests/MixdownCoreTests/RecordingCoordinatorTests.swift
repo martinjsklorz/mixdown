@@ -11,6 +11,7 @@ struct RecordingCoordinatorTests {
         captures: [String: MockCapture] = [:],
         engine: MockEngine = MockEngine(),
         writer: InMemoryNoteWriter = InMemoryNoteWriter(),
+        summarizer: MockSummarizer? = nil,
         preferredDeviceIDs: [String] = []
     ) -> RecordingCoordinator {
         RecordingCoordinator(
@@ -18,6 +19,7 @@ struct RecordingCoordinatorTests {
             captureFactory: MockCaptureFactory(capture: capture, captures: captures),
             engine: engine,
             noteWriter: writer,
+            summarizer: summarizer,
             preferredDeviceIDs: preferredDeviceIDs,
             now: { Fixtures.startDate }
         )
@@ -293,6 +295,75 @@ struct RecordingCoordinatorTests {
         #expect(coordinator.phase == .idle)
     }
 
+    // MARK: - Summary
+
+    /// Records a second of audio that `MockEngine` turns into `transcript`, and returns the note.
+    private func recordNote(
+        transcript: Transcript = Transcript(segments: [TranscriptSegment(start: 0, end: 1, text: "Hello.")]),
+        summarizer: MockSummarizer?
+    ) async throws -> (RecordingCoordinator, Note) {
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            capture: MockCapture(chunks: [Fixtures.chunk(seconds: 1)]),
+            engine: MockEngine(transcript: transcript),
+            writer: writer,
+            summarizer: summarizer
+        )
+        await coordinator.monitorDevices()
+        await coordinator.startRecording()
+        await coordinator.stopRecording()
+        return (coordinator, try #require(await writer.notes.first))
+    }
+
+    @Test func summarizesTranscriptIntoNote() async throws {
+        let summary = NoteSummary(overview: "A greeting.", keyPoints: ["Someone said hello."])
+        let summarizer = MockSummarizer(summary: summary)
+
+        let (coordinator, note) = try await recordNote(summarizer: summarizer)
+
+        #expect(coordinator.phase == .idle)
+        #expect(note.summary == summary)
+        #expect(summarizer.receivedTranscripts == [note.transcript])
+    }
+
+    @Test func noteIsSavedWithoutSummaryWhenSummarizingFails() async throws {
+        let summarizer = MockSummarizer(error: SummarizationError.failed("guardrail"))
+
+        let (coordinator, note) = try await recordNote(summarizer: summarizer)
+
+        #expect(coordinator.phase == .idle)
+        #expect(coordinator.lastNoteURL != nil)
+        #expect(note.summary == nil)
+        #expect(summarizer.receivedTranscripts.count == 1)
+    }
+
+    @Test func unavailableSummarizerIsSkipped() async throws {
+        let summarizer = MockSummarizer(availability: .unavailable(reason: "Turn it on."))
+
+        let (coordinator, note) = try await recordNote(summarizer: summarizer)
+
+        #expect(coordinator.phase == .idle)
+        #expect(note.summary == nil)
+        #expect(summarizer.receivedTranscripts.isEmpty)
+    }
+
+    @Test func emptyTranscriptOrSummaryLeavesNoSummary() async throws {
+        let silent = MockSummarizer()
+        let (_, silentNote) = try await recordNote(transcript: Transcript(segments: []), summarizer: silent)
+        #expect(silentNote.summary == nil)
+        #expect(silent.receivedTranscripts.isEmpty)
+
+        let empty = MockSummarizer(summary: NoteSummary(overview: " ", keyPoints: [""]))
+        let (_, emptyNote) = try await recordNote(summarizer: empty)
+        #expect(emptyNote.summary == nil)
+        #expect(empty.receivedTranscripts.count == 1)
+    }
+
+    @Test func noSummarizerMeansNoSummary() async throws {
+        let (_, note) = try await recordNote(summarizer: nil)
+        #expect(note.summary == nil)
+    }
+
     // MARK: - Multiple sources
 
     @Test func recordsSourcesSeparatelyAndMergesByTime() async throws {
@@ -334,6 +405,49 @@ struct RecordingCoordinatorTests {
                     language: "en"
                 )
         )
+    }
+
+    @Test func reportsTranscriptionProgress() async throws {
+        let gate = Gate()
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            capture: MockCapture(chunks: [Fixtures.chunk(seconds: 1)]),
+            engine: MockEngine(progressBySampleCount: [16_000: 0.4], transcriptionGate: gate),
+            writer: writer
+        )
+        await coordinator.monitorDevices()
+        await coordinator.startRecording()
+
+        let stopping = Task { await coordinator.stopRecording() }
+        try await waitUntil { coordinator.phase == .transcribing(progress: 0.4) }
+        #expect(coordinator.isBusy)
+        await gate.open()
+        await stopping.value
+
+        #expect(coordinator.phase == .idle)
+        #expect(coordinator.timeRemaining == nil)
+        #expect(await writer.notes.count == 1)
+    }
+
+    @Test func weighsSourceProgressByLength() async throws {
+        let gate = Gate()
+        let microphone = MockCapture(chunks: [Fixtures.chunk(seconds: 3, hostTime: 100)])
+        let systemAudio = MockCapture(chunks: [Fixtures.chunk(seconds: 1, hostTime: 100)])
+        let coordinator = makeCoordinator(
+            captures: [Fixtures.builtInMic.id: microphone, AudioInputDevice.systemAudioID: systemAudio],
+            // The short source is done, the long one hasn't started.
+            engine: MockEngine(progressBySampleCount: [48_000: 0, 16_000: 1], transcriptionGate: gate),
+            preferredDeviceIDs: [Fixtures.builtInMic.id, AudioInputDevice.systemAudioID]
+        )
+        await coordinator.monitorDevices()
+        await coordinator.startRecording()
+
+        let stopping = Task { await coordinator.stopRecording() }
+        try await waitUntil { coordinator.phase == .transcribing(progress: 0.25) }
+        await gate.open()
+        await stopping.value
+
+        #expect(coordinator.phase == .idle)
     }
 
     @Test func silentSourceIsNotTranscribed() async throws {
@@ -522,7 +636,7 @@ struct RecordingCoordinatorTests {
         coordinator.cancelPreparation()
 
         #expect(coordinator.phase == .idle)
-        #expect(coordinator.preparationTimeRemaining == nil)
+        #expect(coordinator.timeRemaining == nil)
         await preparing.value
         #expect(coordinator.phase == .idle)
         #expect(await engine.cancelledPrepareCount == 1)

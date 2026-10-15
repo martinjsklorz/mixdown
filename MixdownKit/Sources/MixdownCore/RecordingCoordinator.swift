@@ -19,7 +19,10 @@ public final class RecordingCoordinator {
         /// Downloading or loading the model. `progress` is 0...1.
         case preparingModel(progress: Double)
         case recording(startedAt: Date)
-        case transcribing
+        /// `progress` is 0...1 across all of the recording's sources.
+        case transcribing(progress: Double)
+        /// Summarizing the transcript before the note is saved.
+        case summarizing
         case failed(message: String)
     }
 
@@ -39,6 +42,8 @@ public final class RecordingCoordinator {
     public private(set) var lastNoteURL: URL?
     /// Saves finished notes. `nil` while there's no folder to save to; recording waits for one.
     public var noteWriter: (any NoteWriting)?
+    /// Adds a summary to each note. `nil` while summaries are off.
+    public var summarizer: (any Summarizer)?
     public var options: TranscriptionOptions
     /// Speaker names for multi-source recordings.
     public var sourceLabels: SourceLabels
@@ -73,22 +78,25 @@ public final class RecordingCoordinator {
         }
     }
 
-    /// Preparing the model or transcribing.
+    /// Preparing the model, transcribing or summarizing.
     public var isBusy: Bool {
         switch phase {
-        case .preparingModel, .transcribing: true
+        case .preparingModel, .transcribing, .summarizing: true
         default: false
         }
     }
 
-    /// Estimated seconds until the model is ready, while preparing. `nil` until there's enough
-    /// progress to extrapolate from (a few seconds in).
-    public var preparationTimeRemaining: TimeInterval? {
-        guard case .preparingModel = phase else { return nil }
-        return preparationEstimator.remaining
+    /// Estimated seconds until the model is ready or the note is transcribed, while preparing or
+    /// transcribing. `nil` until there's enough progress to extrapolate from (a few seconds in).
+    public var timeRemaining: TimeInterval? {
+        switch phase {
+        case .preparingModel, .transcribing: return progressEstimator.remaining
+        default: return nil
+        }
     }
 
-    /// Nothing is downloading, deleting, recording or transcribing. An error may be showing.
+    /// Nothing is downloading, deleting, recording, transcribing or summarizing. An error may be
+    /// showing.
     public var isIdle: Bool {
         guard !isCapturing, !isDeletingModel else { return false }
         switch phase {
@@ -118,7 +126,10 @@ public final class RecordingCoordinator {
     @ObservationIgnored private var heardDeviceIDs: Set<String> = []
     /// Fills `silentDevices` once `silenceWarningDelay` has passed.
     @ObservationIgnored private var silenceCheck: Task<Void, Never>?
-    private var preparationEstimator = RemainingTimeEstimator()
+    /// Fed by whichever of preparing and transcribing is running.
+    private var progressEstimator = RemainingTimeEstimator()
+    /// Per-track progress of the transcription in flight.
+    @ObservationIgnored private var transcriptionProgress: TranscriptionProgress?
 
     /// One recording from start to stop, across all of its sources.
     private struct Session {
@@ -153,6 +164,26 @@ public final class RecordingCoordinator {
         var end: TimeInterval { offset + Double(samples.count) / AudioChunk.sampleRate }
     }
 
+    /// Combines the progress of a recording's tracks, each weighted by its length. speech-swift
+    /// transcribes them one after another, so the total keeps moving at about the same pace.
+    private struct TranscriptionProgress {
+        let sessionID: UUID
+        let sampleCounts: [Int]
+        var fractions: [Double]
+
+        init(sessionID: UUID, tracks: [RecordedTrack]) {
+            self.sessionID = sessionID
+            sampleCounts = tracks.map(\.samples.count)
+            fractions = Array(repeating: 0, count: tracks.count)
+        }
+
+        var total: Double {
+            let samples = Double(sampleCounts.reduce(0, +))
+            guard samples > 0 else { return 0 }
+            return zip(sampleCounts, fractions).reduce(0) { $0 + Double($1.0) * $1.1 } / samples
+        }
+    }
+
     /// - Parameters:
     ///   - preferredDeviceIDs: Devices to select when they're available, e.g. the user's last choice.
     ///   - now: Clock used for recording start times. Injectable for tests.
@@ -161,6 +192,7 @@ public final class RecordingCoordinator {
         captureFactory: any AudioCaptureFactory,
         engine: any TranscriptionEngine,
         noteWriter: (any NoteWriting)?,
+        summarizer: (any Summarizer)? = nil,
         options: TranscriptionOptions = .init(),
         sourceLabels: SourceLabels = .init(),
         preferredDeviceIDs: [String] = [],
@@ -171,6 +203,7 @@ public final class RecordingCoordinator {
         self.engine = engine
         self.isModelDownloaded = engine.isDownloaded
         self.noteWriter = noteWriter
+        self.summarizer = summarizer
         self.options = options
         self.sourceLabels = sourceLabels
         self.preferredDeviceIDs = preferredDeviceIDs
@@ -249,8 +282,8 @@ public final class RecordingCoordinator {
     public func prepareEngine() async {
         guard isIdle else { return }
 
-        preparationEstimator = RemainingTimeEstimator()
-        preparationEstimator.add(progress: 0, at: now())
+        progressEstimator = RemainingTimeEstimator()
+        progressEstimator.add(progress: 0, at: now())
         phase = .preparingModel(progress: 0)
         let preparation = Task { [engine] in
             // Progress arrives on arbitrary threads; hop to the main actor before touching state.
@@ -321,7 +354,7 @@ public final class RecordingCoordinator {
     private func updatePreparationProgress(_ progress: Double) {
         guard case .preparingModel = phase, progress.isFinite else { return }
         let clamped = min(max(progress, 0), 1)
-        preparationEstimator.add(progress: clamped, at: now())
+        progressEstimator.add(progress: clamped, at: now())
         phase = .preparingModel(progress: clamped)
     }
 
@@ -487,21 +520,30 @@ public final class RecordingCoordinator {
             return
         }
 
-        phase = .transcribing
+        progressEstimator = RemainingTimeEstimator()
+        progressEstimator.add(progress: 0, at: now())
+        phase = .transcribing(progress: 0)
         do {
             let transcript: Transcript
             if let track = tracks.first, tracks.count == 1 {
-                transcript = try await engine.transcribe(track.samples, options: options)
+                transcriptionProgress = TranscriptionProgress(sessionID: session.id, tracks: tracks)
+                transcript = try await engine.transcribe(
+                    track.samples,
+                    options: options,
+                    progress: progressHandler(track: 0, sessionID: session.id)
+                )
             } else {
-                transcript = try await transcribeSeparately(tracks, devices: session.devices)
+                transcript = try await transcribeSeparately(tracks, session: session)
             }
+            let summary = await summarize(transcript)
             let note = Note(
                 title: Self.noteTitle(for: session.startedAt),
                 createdAt: session.startedAt,
                 duration: duration,
                 sources: session.devices,
                 engine: engine.info,
-                transcript: transcript
+                transcript: transcript,
+                summary: summary
             )
             // The folder can go away mid-recording, e.g. when its drive is disconnected.
             guard let noteWriter else { throw NoteWritingError.noFolder }
@@ -523,11 +565,31 @@ public final class RecordingCoordinator {
         }
     }
 
+    /// The transcript's summary, or `nil` if there's no summarizer, it isn't available or it
+    /// fails. The note is saved either way, so a failure is only logged.
+    private func summarize(_ transcript: Transcript) async -> NoteSummary? {
+        guard let summarizer, !transcript.isEmpty else { return nil }
+        let name = summarizer.info.displayName
+        if case .unavailable(let reason) = summarizer.availability {
+            logger.info("Not summarizing, \(name, privacy: .public) is unavailable: \(reason, privacy: .public)")
+            return nil
+        }
+        phase = .summarizing
+        do {
+            let summary = try await summarizer.summarize(transcript)
+            return summary.isEmpty ? nil : summary
+        } catch {
+            logger.error(
+                "Summarizing with \(name, privacy: .public) failed: \(error.localizedDescription, privacy: .public)"
+            )
+            return nil
+        }
+    }
+
     /// Transcribes each track on its own, so speech stays attributed to its source, then merges the
     /// labeled transcripts by time. Tracks are submitted together; the engine decides how many it
     /// runs at once (speech-swift runs one at a time, since they share the GPU anyway).
-    private func transcribeSeparately(_ tracks: [RecordedTrack], devices: [AudioInputDevice]) async throws -> Transcript
-    {
+    private func transcribeSeparately(_ tracks: [RecordedTrack], session: Session) async throws -> Transcript {
         let engine = engine
         let options = options
         let sourceLabels = sourceLabels
@@ -541,13 +603,15 @@ public final class RecordingCoordinator {
             )
         }
 
+        transcriptionProgress = TranscriptionProgress(sessionID: session.id, tracks: audible)
         let transcripts = try await withThrowingTaskGroup(
             of: (Int, Transcript).self,
             returning: [Transcript].self
         ) { group in
             for (index, track) in audible.enumerated() {
+                let progress = progressHandler(track: index, sessionID: session.id)
                 group.addTask {
-                    var transcript = try await engine.transcribe(track.samples, options: options)
+                    var transcript = try await engine.transcribe(track.samples, options: options, progress: progress)
                     for i in transcript.segments.indices {
                         transcript.segments[i].start += track.offset
                         transcript.segments[i].end += track.offset
@@ -565,11 +629,32 @@ public final class RecordingCoordinator {
         let sources = zip(audible, transcripts).map { track, transcript in
             SourceTranscript(
                 device: track.device,
-                label: sourceLabels.label(for: track.device, among: devices),
+                label: sourceLabels.label(for: track.device, among: session.devices),
                 transcript: transcript
             )
         }
         return TranscriptMerger.merge(sources)
+    }
+
+    /// Forwards one track's progress to `updateTranscriptionProgress` from any thread.
+    private func progressHandler(track index: Int, sessionID: UUID) -> @Sendable (Double) -> Void {
+        { [weak self] progress in
+            Task { @MainActor [weak self] in
+                self?.updateTranscriptionProgress(progress, track: index, sessionID: sessionID)
+            }
+        }
+    }
+
+    private func updateTranscriptionProgress(_ progress: Double, track index: Int, sessionID: UUID) {
+        // Updates still in flight when the transcription ends are dropped.
+        guard case .transcribing = phase, var transcriptionProgress, transcriptionProgress.sessionID == sessionID,
+            transcriptionProgress.fractions.indices.contains(index), progress.isFinite
+        else { return }
+        transcriptionProgress.fractions[index] = max(transcriptionProgress.fractions[index], min(max(progress, 0), 1))
+        self.transcriptionProgress = transcriptionProgress
+        let total = transcriptionProgress.total
+        progressEstimator.add(progress: total, at: now())
+        phase = .transcribing(progress: total)
     }
 
     public func toggleRecording() async {

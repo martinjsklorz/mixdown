@@ -17,8 +17,8 @@ import os
 ///   notification saying so. If it can't record, e.g. as the model isn't downloaded, it asks
 ///   instead (if notifying), and clicking that opens Record, which says why.
 ///
-/// Call `recordingDidStart()` and `recordingDidStop()` as recordings come and go. Set up at
-/// launch, so the buttons also work on notifications from an earlier run.
+/// Call `recordingDidStart()` and `recordingDidStop()` as recordings come and go.
+/// `NotificationResponder` hands it the buttons, on notifications from an earlier run, too.
 @MainActor
 final class CallPrompt {
     /// Whether to post notifications. Turning it off takes away any that are open.
@@ -50,11 +50,25 @@ final class CallPrompt {
     /// The notification saying an automatic recording is going on.
     private var recordingNoticeID: String?
 
-    private static let startedCategory = "callStarted"
-    private static let endedCategory = "callEnded"
-    private static let recordAction = "record"
-    private static let stopAction = "stop"
+    nonisolated static let startedCategoryIdentifier = "callStarted"
+    nonisolated static let endedCategoryIdentifier = "callEnded"
+    private nonisolated static let recordAction = "record"
+    private nonisolated static let stopAction = "stop"
     private static let logger = Logger(subsystem: "app.mixdown", category: "CallPrompt")
+
+    /// The Record button, registered by `NotificationResponder`.
+    static let startedCategory = UNNotificationCategory(
+        identifier: startedCategoryIdentifier,
+        actions: [UNNotificationAction(identifier: recordAction, title: "Record")],
+        intentIdentifiers: []
+    )
+
+    /// The Stop Recording button, registered by `NotificationResponder`.
+    static let endedCategory = UNNotificationCategory(
+        identifier: endedCategoryIdentifier,
+        actions: [UNNotificationAction(identifier: stopAction, title: "Stop Recording")],
+        intentIdentifiers: []
+    )
 
     /// - Parameters:
     ///   - isRecording: Whether Mixdown is recording.
@@ -71,32 +85,16 @@ final class CallPrompt {
         self.startRecording = startRecording
         self.stopRecording = stopRecording
         self.showRecorder = showRecorder
-        Self.register(Self.startedCategory, action: Self.recordAction, title: "Record") { [weak self] in
-            guard let self, !self.startRecording() else { return }
-            self.showRecorder()
-        }
-        Self.register(Self.endedCategory, action: Self.stopAction, title: "Stop Recording") { [weak self] in
-            self?.stopRecording()
-        }
     }
 
-    /// Registers a category whose notification and button both call `handler`.
-    private static func register(
-        _ category: String,
-        action: String,
-        title: String,
-        handler: @escaping () -> Void
-    ) {
-        NotificationRouter.shared.register(
-            UNNotificationCategory(
-                identifier: category,
-                actions: [UNNotificationAction(identifier: action, title: title)],
-                intentIdentifiers: []
-            )
-        ) { response in
-            guard [action, UNNotificationDefaultActionIdentifier].contains(response.actionIdentifier) else { return }
-            handler()
-        }
+    /// Records from the record prompt, or opens Record if it can't, which says why.
+    private func recordFromPrompt() {
+        guard !startRecording() else { return }
+        showRecorder()
+    }
+
+    private func stopFromPrompt() {
+        stopRecording()
     }
 
     /// Watches calls while there's something to do about them.
@@ -201,7 +199,7 @@ final class CallPrompt {
         post(
             title: "Record This Call?",
             body: "\(app.name) is using the microphone. Click to record.",
-            category: Self.startedCategory,
+            category: Self.startedCategoryIdentifier,
             id: id
         )
     }
@@ -230,7 +228,7 @@ final class CallPrompt {
         post(
             title: "Stop Recording?",
             body: "The \(app.name) call has ended. Click to stop recording.",
-            category: Self.endedCategory,
+            category: Self.endedCategoryIdentifier,
             id: id
         )
     }
@@ -238,6 +236,21 @@ final class CallPrompt {
     private func post(title: String, body: String, category: String? = nil, id: String = UUID().uuidString) {
         Task {
             await Notifications.post(title: title, body: body, categoryIdentifier: category, id: id)
+        }
+    }
+}
+
+extension CallPrompt {
+    /// Handles a click on a notification of `startedCategory` or `endedCategory`, or its button.
+    nonisolated func respond(to response: UNNotificationResponse) async {
+        let category = response.notification.request.content.categoryIdentifier
+        guard [Self.recordAction, Self.stopAction, UNNotificationDefaultActionIdentifier]
+            .contains(response.actionIdentifier)
+        else { return }
+        if category == Self.startedCategoryIdentifier {
+            await recordFromPrompt()
+        } else {
+            await stopFromPrompt()
         }
     }
 }

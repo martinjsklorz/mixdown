@@ -107,7 +107,7 @@ private struct SectionHeader: View {
         Button(action: toggle) {
             HStack(spacing: 6) {
                 Text(section.group.title)
-                    .font(.headline)
+                    .font(.body.weight(.semibold))
                 Spacer()
                 if isCollapsed {
                     Text(section.notes.count, format: .number)
@@ -137,7 +137,7 @@ private struct NoteRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(note.title)
-                .font(.headline)
+                .font(.body.weight(.medium))
                 .lineLimit(1)
             HStack(spacing: 6) {
                 Text(note.createdAt, format: .dateTime.hour().minute())

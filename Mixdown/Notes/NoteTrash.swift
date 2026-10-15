@@ -7,7 +7,7 @@ import os
 /// Moves notes to the Trash and puts them back. Each note moved to the Trash gets a notification
 /// with a Restore button, shown even while Mixdown is in front so it works like an undo.
 ///
-/// Set up at launch, so it handles Restore on notifications from an earlier run, too.
+/// `NotificationResponder` hands it Restore, on notifications from an earlier run, too.
 @MainActor @Observable
 final class NoteTrash {
     /// A note put back from the Trash, for the main window to show. A new value per restore, so
@@ -24,27 +24,19 @@ final class NoteTrash {
     @ObservationIgnored private var contents: [(notificationID: String, data: Data)] = []
 
     private static let maxKeptContents = 20
-    private static let trashedCategory = "noteTrashed"
-    private static let restoreAction = "restore"
+    nonisolated static let categoryIdentifier = "noteTrashed"
+    private nonisolated static let restoreAction = "restore"
     private static let logger = Logger(subsystem: "app.mixdown", category: "NoteTrash")
 
-    init() {
-        NotificationRouter.shared.register(
-            UNNotificationCategory(
-                identifier: Self.trashedCategory,
-                actions: [UNNotificationAction(identifier: Self.restoreAction, title: "Restore")],
-                intentIdentifiers: []
-            )
-        ) { [weak self] response in
-            guard response.actionIdentifier == Self.restoreAction,
-                let trashed = TrashedNote(userInfo: response.userInfo)
-            else { return }
-            self?.restore(trashed, notificationID: response.notificationID)
-        }
-    }
+    /// The Restore button, registered by `NotificationResponder`.
+    static let category = UNNotificationCategory(
+        identifier: categoryIdentifier,
+        actions: [UNNotificationAction(identifier: restoreAction, title: "Restore")],
+        intentIdentifiers: []
+    )
 
-    /// Moves the note to the Trash, then posts a notification offering to restore it. Asks for
-    /// permission to notify the first time.
+    /// Moves the note to the Trash, then posts a notification offering to restore it, unless
+    /// notifications are turned off. Asks for permission to notify the first time.
     func moveToTrash(_ note: NoteDocument) throws {
         let data = try? Data(contentsOf: note.url)
         var trashedURL: NSURL?
@@ -61,7 +53,7 @@ final class NoteTrash {
             await Notifications.post(
                 title: "Note Moved to Trash",
                 body: trashed.title,
-                categoryIdentifier: Self.trashedCategory,
+                categoryIdentifier: Self.categoryIdentifier,
                 userInfo: trashed.userInfo,
                 id: notificationID
             )
@@ -96,6 +88,17 @@ final class NoteTrash {
     }
 }
 
+extension NoteTrash {
+    /// Handles a button on a notification of `category`.
+    nonisolated func respond(to response: UNNotificationResponse) async {
+        let request = response.notification.request
+        guard response.actionIdentifier == Self.restoreAction,
+            let trashed = TrashedNote(userInfo: request.content.userInfo)
+        else { return }
+        await restore(trashed, notificationID: request.identifier)
+    }
+}
+
 /// Where a trashed note came from and went, kept in its notification's `userInfo`.
 private struct TrashedNote: Sendable {
     let title: String
@@ -108,17 +111,17 @@ private struct TrashedNote: Sendable {
         self.trashedURL = trashedURL
     }
 
-    init?(userInfo: [String: String]) {
-        guard let title = userInfo["title"],
-            let originalPath = userInfo["originalPath"],
-            let trashedPath = userInfo["trashedPath"]
+    init?(userInfo: [AnyHashable: Any]) {
+        guard let title = userInfo["title"] as? String,
+            let originalPath = userInfo["originalPath"] as? String,
+            let trashedPath = userInfo["trashedPath"] as? String
         else { return nil }
         self.title = title
         originalURL = URL(filePath: originalPath)
         trashedURL = URL(filePath: trashedPath)
     }
 
-    var userInfo: [String: String] {
+    var userInfo: [AnyHashable: Any] {
         [
             "title": title,
             "originalPath": originalURL.path(percentEncoded: false),

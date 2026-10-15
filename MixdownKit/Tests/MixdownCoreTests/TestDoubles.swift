@@ -136,6 +136,8 @@ actor MockEngine: TranscriptionEngine {
     /// Returned instead of `transcript` for a given sample count, to tell sources apart.
     private let transcriptsBySampleCount: [Int: Transcript]
     private let transcribeError: (any Error)?
+    private let progressBySampleCount: [Int: Double]
+    private let transcriptionGate: Gate?
     private let prepareError: (any Error)?
     private let preparesUntilCancelled: Bool
     private let deleteError: (any Error)?
@@ -150,10 +152,15 @@ actor MockEngine: TranscriptionEngine {
     ///   - preparesUntilCancelled: `prepare` stalls halfway, like a slow download, until its task
     ///     is cancelled.
     ///   - deleteError: Thrown by `deleteModel`, which then leaves the model on disk.
+    ///   - progressBySampleCount: Progress `transcribe` reports for a given sample count before
+    ///     waiting for `transcriptionGate`.
+    ///   - transcriptionGate: `transcribe` returns once it opens.
     init(
         transcript: Transcript = Transcript(segments: []),
         transcriptsBySampleCount: [Int: Transcript] = [:],
         transcribeError: (any Error)? = nil,
+        progressBySampleCount: [Int: Double] = [:],
+        transcriptionGate: Gate? = nil,
         isDownloaded: Bool = true,
         prepareError: (any Error)? = nil,
         preparesUntilCancelled: Bool = false,
@@ -162,6 +169,8 @@ actor MockEngine: TranscriptionEngine {
         self.transcript = transcript
         self.transcriptsBySampleCount = transcriptsBySampleCount
         self.transcribeError = transcribeError
+        self.progressBySampleCount = progressBySampleCount
+        self.transcriptionGate = transcriptionGate
         self.downloaded = LockedValue(isDownloaded)
         self.prepareError = prepareError
         self.preparesUntilCancelled = preparesUntilCancelled
@@ -190,10 +199,33 @@ actor MockEngine: TranscriptionEngine {
         downloaded.update { $0 = false }
     }
 
-    func transcribe(_ samples: [Float], options: TranscriptionOptions) async throws -> Transcript {
+    func transcribe(
+        _ samples: [Float],
+        options: TranscriptionOptions,
+        progress: (@Sendable (Double) -> Void)?
+    ) async throws -> Transcript {
         receivedSampleCounts.append(samples.count)
+        if let fraction = progressBySampleCount[samples.count] { progress?(fraction) }
+        await transcriptionGate?.wait()
         if let transcribeError { throw transcribeError }
         return transcriptsBySampleCount[samples.count] ?? transcript
+    }
+}
+
+/// Holds callers of `wait()` until `open()`.
+actor Gate {
+    private var isOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        guard !isOpen else { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func open() {
+        isOpen = true
+        waiters.forEach { $0.resume() }
+        waiters = []
     }
 }
 
@@ -220,5 +252,32 @@ func waitUntil(
             return
         }
         try await Task.sleep(for: .milliseconds(5))
+    }
+}
+
+/// Returns `summary`, or throws `error`, and records the transcripts it was given.
+final class MockSummarizer: Summarizer {
+    let info = SummarizerInfo(id: "mock", displayName: "Mock Summarizer")
+    let availability: SummarizerAvailability
+    private let summary: NoteSummary
+    private let error: (any Error)?
+    private let received = LockedValue<[Transcript]>([])
+
+    init(
+        summary: NoteSummary = NoteSummary(overview: "A test."),
+        error: (any Error)? = nil,
+        availability: SummarizerAvailability = .available
+    ) {
+        self.summary = summary
+        self.error = error
+        self.availability = availability
+    }
+
+    var receivedTranscripts: [Transcript] { received.current }
+
+    func summarize(_ transcript: Transcript) async throws -> NoteSummary {
+        received.update { $0.append(transcript) }
+        if let error { throw error }
+        return summary
     }
 }

@@ -51,7 +51,7 @@ struct RecorderView: View {
                     EmptyView()
                 } currentValueLabel: {
                     Text(
-                        DownloadProgressText.detail(progress: progress, remaining: coordinator.preparationTimeRemaining)
+                        ProgressText.detail(progress: progress, remaining: coordinator.timeRemaining)
                     )
                     .monospacedDigit()
                 }
@@ -68,8 +68,21 @@ struct RecorderView: View {
                 caption("Recording · click to stop")
                 InputLevelsView(coordinator: coordinator)
 
-            case .transcribing:
-                headline("Transcribing…", detail: "Your note appears in the sidebar in a moment.")
+            case .transcribing(let progress):
+                headline("Transcribing…", detail: "Your note appears in the sidebar when it's done.")
+                ProgressView(value: progress) {
+                    EmptyView()
+                } currentValueLabel: {
+                    Text(ProgressText.detail(progress: progress, remaining: coordinator.timeRemaining))
+                        .monospacedDigit()
+                }
+                .frame(maxWidth: 320)
+
+            case .summarizing:
+                headline(
+                    "Summarizing…",
+                    detail: "\(environment.summarizer.info.displayName) is summarizing the transcript."
+                )
                 ProgressView()
                     .controlSize(.large)
 
@@ -158,6 +171,7 @@ struct RecorderView: View {
                 row("speaker.wave.2", "System audio", environment.recordsSystemAudio ? "On" : "Off")
                 row("waveform", "Model", environment.model.displayName)
                 row("globe", "Language", languageName)
+                row("sparkles", "Summary", summaryName)
                 row("folder", "Notes folder", notesFolderName, help: environment.notesFolder.status.path)
             }
             .padding(6)
@@ -195,6 +209,13 @@ struct RecorderView: View {
         case .available: return status.name ?? ""
         case .unavailable: return status.name.map { "\($0) (not available)" } ?? "Not available"
         }
+    }
+
+    private var summaryName: String {
+        guard environment.summarizesNotes else { return "Off" }
+        let name = environment.summarizer.info.displayName
+        guard case .available = environment.summarizer.availability else { return "\(name) (not available)" }
+        return name
     }
 
     /// Models that detect the language themselves ignore the setting.

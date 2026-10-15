@@ -1,23 +1,25 @@
-import Foundation
+import AppKit
 import UserNotifications
 import os
 
-/// Posts Mixdown's notifications, asking for permission the first time. Without it, nothing is
-/// shown. `NotificationRouter`, the notification center's delegate, shows them while Mixdown is in
-/// front too.
+/// Posts Mixdown's notifications, asking for permission the first time. Without it, or with
+/// notifications turned off in Settings, nothing is shown. `NotificationResponder`, the
+/// notification center's delegate, shows them while Mixdown is in front too.
 @MainActor
 enum Notifications {
     private static let logger = Logger(subsystem: "app.mixdown", category: "Notifications")
 
-    /// - Parameter categoryIdentifier: A category registered with `NotificationRouter`, for
-    ///   buttons such as Restore. `userInfo` goes to its handler.
+    /// - Parameter categoryIdentifier: A category registered with the notification center, for
+    ///   buttons such as Restore. `userInfo` goes to whoever handles them.
     static func post(
         title: String,
         body: String,
         categoryIdentifier: String? = nil,
-        userInfo: [String: String] = [:],
+        userInfo: [AnyHashable: Any] = [:],
         id: String = UUID().uuidString
     ) async {
+        // Checked before asking, so turning them off in Settings also stops the permission prompt.
+        guard AppSettings().showsNotifications else { return }
         let center = UNUserNotificationCenter.current()
         do {
             guard try await center.requestAuthorization(options: [.alert]) else {
@@ -43,70 +45,18 @@ enum Notifications {
         center.removePendingNotificationRequests(withIdentifiers: [id])
         center.removeDeliveredNotifications(withIdentifiers: [id])
     }
-}
 
-/// A click on one of Mixdown's notifications or one of its buttons.
-struct NotificationResponse: Sendable {
-    let notificationID: String
-    /// The button's identifier, or `UNNotificationDefaultActionIdentifier` for the notification.
-    let actionIdentifier: String
-    let userInfo: [String: String]
-}
-
-/// The delegate of the app's `UNUserNotificationCenter`. Has Mixdown's notifications shown while
-/// it's in front too, and hands clicks to the handler registered for the notification's category.
-///
-/// Created at launch, by the first `register`, so it also handles notifications from an earlier run.
-@MainActor
-final class NotificationRouter: NSObject {
-    static let shared = NotificationRouter()
-
-    private var categories: [String: UNNotificationCategory] = [:]
-    private var handlers: [String: (NotificationResponse) -> Void] = [:]
-
-    private override init() {
-        super.init()
-        UNUserNotificationCenter.current().delegate = self
+    /// Whether the user turned Mixdown's notifications off in System Settings, so none are shown
+    /// even with them on in Mixdown's Settings.
+    nonisolated static func isDeniedBySystem() async -> Bool {
+        await UNUserNotificationCenter.current().notificationSettings().authorizationStatus == .denied
     }
 
-    /// Adds `category`, so notifications posted with it get its buttons, and calls `handler` when
-    /// one of them, or the notification, is clicked.
-    func register(_ category: UNNotificationCategory, handler: @escaping (NotificationResponse) -> Void) {
-        categories[category.identifier] = category
-        handlers[category.identifier] = handler
-        // This replaces the categories registered so far, so it has to include all of them.
-        UNUserNotificationCenter.current().setNotificationCategories(Set(categories.values))
-    }
-
-    private func handle(_ response: NotificationResponse, category: String) {
-        handlers[category]?(response)
-    }
-}
-
-extension NotificationRouter: UNUserNotificationCenterDelegate {
-    nonisolated func userNotificationCenter(
-        _ center: UNUserNotificationCenter,
-        willPresent notification: UNNotification
-    ) async -> UNNotificationPresentationOptions {
-        // Shown while Mixdown is in front too: that's when Restore is most useful, and when
-        // Copy Transcript happens.
-        [.banner, .list]
-    }
-
-    nonisolated func userNotificationCenter(
-        _ center: UNUserNotificationCenter,
-        didReceive response: UNNotificationResponse
-    ) async {
-        let request = response.notification.request
-        var userInfo: [String: String] = [:]
-        for (key, value) in request.content.userInfo {
-            if let key = key as? String, let value = value as? String { userInfo[key] = value }
-        }
-        let routed = NotificationResponse(
-            notificationID: request.identifier,
-            actionIdentifier: response.actionIdentifier,
-            userInfo: userInfo
-        )
-        await handle(routed, category: request.content.categoryIdentifier)
+    /// Opens System Settings › Notifications at Mixdown.
+    static func openSystemSettings() {
+        guard let bundleID = Bundle.main.bundleIdentifier,
+            let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(bundleID)")
+        else { return }
+        NSWorkspace.shared.open(url)
     }
 }
