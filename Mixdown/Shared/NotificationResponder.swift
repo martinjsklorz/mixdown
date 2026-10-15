@@ -10,6 +10,8 @@ import UserNotifications
 final class NotificationResponder: NSObject {
     private let noteTrash: NoteTrash
     private let noteReady: NoteReady
+    /// Set right after launch; it needs the app environment, which needs this first.
+    weak var callPrompt: CallPrompt?
 
     init(noteTrash: NoteTrash, noteReady: NoteReady) {
         self.noteTrash = noteTrash
@@ -17,7 +19,9 @@ final class NotificationResponder: NSObject {
         super.init()
         let center = UNUserNotificationCenter.current()
         center.delegate = self
-        center.setNotificationCategories([NoteTrash.category, NoteReady.category])
+        center.setNotificationCategories([
+            NoteTrash.category, NoteReady.category, CallPrompt.startedCategory, CallPrompt.endedCategory,
+        ])
     }
 }
 
@@ -40,6 +44,8 @@ extension NotificationResponder: UNUserNotificationCenterDelegate {
             await noteTrash.respond(to: response)
         case NoteReady.categoryIdentifier:
             await noteReady.respond(to: response)
+        case CallPrompt.startedCategoryIdentifier, CallPrompt.endedCategoryIdentifier:
+            await callPrompt?.respond(to: response)
         default:
             break
         }

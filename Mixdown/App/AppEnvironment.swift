@@ -28,6 +28,10 @@ final class AppEnvironment {
     /// doesn't run `TimelineView` or `.task`.
     private(set) var recordingElapsed: Int?
 
+    /// Whether to post notifications when calls start and end. See `CallPrompt`.
+    private(set) var notifiesAboutCalls: Bool
+    /// Whether to start and stop recording with calls, without asking. See `CallPrompt`.
+    private(set) var recordsCallsAutomatically: Bool
     /// Whether the global shortcut (`KeyboardShortcuts.Name.toggleRecording`) starts and stops
     /// recording. Off, the shortcut is kept but released, so other apps get those keys.
     private(set) var isRecordingShortcutEnabled: Bool
@@ -36,6 +40,7 @@ final class AppEnvironment {
     @ObservationIgnored private var deviceMonitor: Task<Void, Never>?
     @ObservationIgnored private var recordingClock: Task<Void, Never>?
     @ObservationIgnored private var recordingClockStart: Date?
+    @ObservationIgnored private var callPrompt: CallPrompt?
     @ObservationIgnored private var notifiedNoteURL: URL?
     /// The phase `observePhaseForCues` saw last.
     @ObservationIgnored private var cuedPhase: RecordingCoordinator.Phase = .idle
@@ -62,12 +67,27 @@ final class AppEnvironment {
             notesDirectory: notesFolder.directory,
             settings: settings
         )
+        self.notifiesAboutCalls = settings.notifiesAboutCalls
+        self.recordsCallsAutomatically = settings.recordsCallsAutomatically
         startMonitoringDevices()
         observeRecording()
         observePhaseForCues()
         observeNotesFolder()
         observeNewNotes()
         listenForRecordingShortcut(navigation: navigation)
+        let callPrompt = CallPrompt(
+            isRecording: { [weak self] in self?.coordinator.isRecording ?? false },
+            startRecording: { [weak self] in self?.startRecordingCall() ?? false },
+            stopRecording: { [weak self] in self?.stopRecordingCall() },
+            showRecorder: { [weak navigation] in
+                guard let navigation, let openWindow = navigation.openWindow else { return }
+                navigation.show(.recorder, using: openWindow)
+            }
+        )
+        callPrompt.notifies = notifiesAboutCalls
+        callPrompt.recordsAutomatically = recordsCallsAutomatically
+        notificationResponder.callPrompt = callPrompt
+        self.callPrompt = callPrompt
     }
 
     // MARK: Composition
@@ -110,6 +130,7 @@ final class AppEnvironment {
             Task { @MainActor in self?.observeRecording() }
         }
         guard case .recording(let startedAt) = phase else {
+            callPrompt?.recordingDidStop()
             recordingClock?.cancel()
             recordingClock = nil
             recordingClockStart = nil
@@ -117,6 +138,7 @@ final class AppEnvironment {
             return
         }
         guard startedAt != recordingClockStart else { return }
+        callPrompt?.recordingDidStart()
         recordingClock?.cancel()
         recordingClockStart = startedAt
         recordingClock = Task { [weak self] in
@@ -210,6 +232,37 @@ final class AppEnvironment {
             settings.sourceLabels = newValue
             coordinator.sourceLabels = newValue
         }
+    }
+
+    // MARK: Calls
+
+    func setNotifiesAboutCalls(_ enabled: Bool) {
+        settings.notifiesAboutCalls = enabled
+        notifiesAboutCalls = enabled
+        callPrompt?.notifies = enabled
+    }
+
+    func setRecordsCallsAutomatically(_ enabled: Bool) {
+        settings.recordsCallsAutomatically = enabled
+        recordsCallsAutomatically = enabled
+        callPrompt?.recordsAutomatically = enabled
+    }
+
+    /// Starts recording a call: with system audio on, so the other people are recorded too, and the
+    /// microphone if one is selected. Returns `false` if recording can't start, e.g. as the model
+    /// isn't downloaded; Record in the main window says why.
+    private func startRecordingCall() -> Bool {
+        guard !coordinator.isRecording else { return true }
+        setRecordsSystemAudio(true)
+        guard coordinator.canStartRecording else { return false }
+        Task { await coordinator.startRecording() }
+        return true
+    }
+
+    /// Stops recording, as the call has ended.
+    private func stopRecordingCall() {
+        guard coordinator.isRecording else { return }
+        Task { await coordinator.stopRecording() }
     }
 
     // MARK: Global shortcut

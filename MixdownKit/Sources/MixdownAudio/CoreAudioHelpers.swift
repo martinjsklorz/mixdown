@@ -26,15 +26,25 @@ enum CoreAudioHAL {
 
     /// Every audio device known to the HAL, inputs and outputs alike.
     static func allDeviceIDs() throws -> [AudioDeviceID] {
-        var address = propertyAddress(kAudioHardwarePropertyDevices)
-        var size: UInt32 = 0
-        try check(AudioObjectGetPropertyDataSize(systemObject, &address, 0, nil, &size), "list audio devices")
+        try objectIDs(kAudioHardwarePropertyDevices, "list audio devices")
+    }
 
-        let stride = MemoryLayout<AudioDeviceID>.stride
-        var ids = [AudioDeviceID](repeating: 0, count: Int(size) / stride)
+    /// Every process the HAL knows as an audio client, whether it plays, records or neither.
+    static func allProcessObjectIDs() throws -> [AudioObjectID] {
+        try objectIDs(kAudioHardwarePropertyProcessObjectList, "list audio processes")
+    }
+
+    /// A list of objects from the system object, e.g. its devices.
+    private static func objectIDs(_ selector: AudioObjectPropertySelector, _ action: String) throws -> [AudioObjectID] {
+        var address = propertyAddress(selector)
+        var size: UInt32 = 0
+        try check(AudioObjectGetPropertyDataSize(systemObject, &address, 0, nil, &size), action)
+
+        let stride = MemoryLayout<AudioObjectID>.stride
+        var ids = [AudioObjectID](repeating: 0, count: Int(size) / stride)
         guard !ids.isEmpty else { return [] }
-        try check(AudioObjectGetPropertyData(systemObject, &address, 0, nil, &size, &ids), "list audio devices")
-        // The list can shrink between the two calls if a device is unplugged.
+        try check(AudioObjectGetPropertyData(systemObject, &address, 0, nil, &size, &ids), action)
+        // The list can shrink between the two calls if a device is unplugged or a process exits.
         return Array(ids.prefix(Int(size) / stride))
     }
 
@@ -91,15 +101,35 @@ enum CoreAudioHAL {
         var streams = [AudioStreamID](repeating: 0, count: Int(size) / MemoryLayout<AudioStreamID>.stride)
         guard !streams.isEmpty,
               AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &streams) == noErr
-        else { return nil }
+        else {
+            audioLogger.error("Device \(deviceID, privacy: .public) has no input streams")
+            return nil
+        }
 
         var formatAddress = propertyAddress(kAudioStreamPropertyVirtualFormat)
         var description = AudioStreamBasicDescription()
         var formatSize = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
-        guard AudioObjectGetPropertyData(streams[0], &formatAddress, 0, nil, &formatSize, &description) == noErr,
-              description.mSampleRate > 0, description.mChannelsPerFrame > 0
-        else { return nil }
-        return AVAudioFormat(streamDescription: &description)
+        let status = AudioObjectGetPropertyData(streams[0], &formatAddress, 0, nil, &formatSize, &description)
+        guard status == noErr, description.mSampleRate > 0, description.mChannelsPerFrame > 0 else {
+            audioLogger.error(
+                "Device \(deviceID, privacy: .public) input format unreadable (OSStatus \(status, privacy: .public)): \(description.mSampleRate, privacy: .public) Hz, \(description.mChannelsPerFrame, privacy: .public) channels"
+            )
+            return nil
+        }
+        if let format = AVAudioFormat(streamDescription: &description) { return format }
+
+        // AVAudioFormat needs a channel layout for more than two channels, e.g. a microphone array
+        // exposing each microphone. The resampler mixes any number of channels down, so their
+        // order doesn't matter.
+        let discreteLayout = kAudioChannelLayoutTag_DiscreteInOrder | description.mChannelsPerFrame
+        if let layout = AVAudioChannelLayout(layoutTag: discreteLayout),
+           let format = AVAudioFormat(streamDescription: &description, channelLayout: layout) {
+            return format
+        }
+        audioLogger.error(
+            "Device \(deviceID, privacy: .public) input format unsupported: \(description.mSampleRate, privacy: .public) Hz, \(description.mChannelsPerFrame, privacy: .public) channels, format \(description.mFormatID, privacy: .public), flags \(description.mFormatFlags, privacy: .public), \(description.mBitsPerChannel, privacy: .public) bits"
+        )
+        return nil
     }
 
     /// Resolves a device UID to its current `AudioDeviceID`, or `nil` if it isn't connected.
@@ -107,7 +137,7 @@ enum CoreAudioHAL {
         try allDeviceIDs().first { self.uid(of: $0) == uid }
     }
 
-    private static func stringProperty(_ selector: AudioObjectPropertySelector, of objectID: AudioObjectID) -> String? {
+    static func stringProperty(_ selector: AudioObjectPropertySelector, of objectID: AudioObjectID) -> String? {
         var address = propertyAddress(selector)
         var value: Unmanaged<CFString>?
         var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
@@ -159,14 +189,16 @@ final class HALPropertyListener: @unchecked Sendable {
         }
     }
 
-    func remove() {
+    /// - Parameter logsFailures: Pass `false` when the object may be gone already, e.g. a process
+    ///   that has exited, which makes removing fail.
+    func remove(logsFailures: Bool = true) {
         isInstalled.withLockUnchecked { installed in
             guard installed else { return }
             installed = false
             for selector in selectors {
                 var address = CoreAudioHAL.propertyAddress(selector, scope: scope)
                 let status = AudioObjectRemovePropertyListenerBlock(objectID, &address, queue, block)
-                if status != noErr {
+                if status != noErr, logsFailures {
                     audioLogger.error("AudioObjectRemovePropertyListenerBlock failed: \(status, privacy: .public)")
                 }
             }

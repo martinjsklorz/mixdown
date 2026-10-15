@@ -22,16 +22,28 @@ enum Notifications {
         guard AppSettings().showsNotifications else { return }
         let center = UNUserNotificationCenter.current()
         do {
-            guard try await center.requestAuthorization(options: [.alert]) else { return }
+            guard try await center.requestAuthorization(options: [.alert]) else {
+                logger.info("Not posting “\(title, privacy: .public)”: notifications are turned off for Mixdown")
+                return
+            }
             let content = UNMutableNotificationContent()
             content.title = title
             content.body = body
             if let categoryIdentifier { content.categoryIdentifier = categoryIdentifier }
             content.userInfo = userInfo
             try await center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
+            // macOS shows it from here on, unless it holds it back, e.g. during a Focus.
+            logger.info("Posted “\(title, privacy: .public)”")
         } catch {
             logger.error("Couldn't post notification: \(error.localizedDescription)")
         }
+    }
+
+    /// Takes a notification posted with `id` out of Notification Center, or stops it from showing.
+    static func remove(id: String) {
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: [id])
+        center.removeDeliveredNotifications(withIdentifiers: [id])
     }
 
     /// Whether the user turned Mixdown's notifications off in System Settings, so none are shown

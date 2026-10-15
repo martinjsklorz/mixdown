@@ -3,8 +3,8 @@ import MixdownCore
 import SwiftUI
 
 /// Which inputs to record and how to label them. The same choice is in the menu bar; this tab adds
-/// the speaker names, explains how multi-source recordings are transcribed, and sets the global
-/// shortcut.
+/// the speaker names, explains how multi-source recordings are transcribed, sets the global
+/// shortcut, and decides what happens when a call starts.
 struct RecordingSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
 
@@ -49,6 +49,34 @@ struct RecordingSettingsView: View {
                 .foregroundStyle(.secondary)
             }
             .disabled(coordinator.isRecording)
+
+            Section {
+                Toggle(
+                    "Notify when calls start and end",
+                    isOn: Binding(
+                        get: { environment.notifiesAboutCalls },
+                        set: { environment.setNotifiesAboutCalls($0) }
+                    )
+                )
+                Toggle(
+                    "Record calls automatically",
+                    isOn: Binding(
+                        get: { environment.recordsCallsAutomatically },
+                        set: { environment.setRecordsCallsAutomatically($0) }
+                    )
+                )
+            } header: {
+                Text("Calls")
+            } footer: {
+                Text(
+                    "A call is a call app such as Zoom, Teams, FaceTime or Discord, or a browser, using a "
+                        + "microphone. Without automatic recording, the notifications ask whether to record and "
+                        + "whether to stop; with it, they say that recording started and stopped. Recording "
+                        + "turns on system audio."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
 
             Section {
                 TextField(

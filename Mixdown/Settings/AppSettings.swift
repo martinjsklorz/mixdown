@@ -28,6 +28,10 @@ struct AppSettings {
         static let summarizesNotes = "summarizesNotes"
         /// Whether Mixdown plays audio cues at all. Absent means yes.
         static let playsSounds = "playsSounds"
+        /// Whether to post notifications when calls start and end. Absent means yes.
+        static let notifiesAboutCalls = "notifiesAboutCalls"
+        /// Whether to start and stop recording with calls. Absent means no.
+        static let recordsCallsAutomatically = "recordsCallsAutomatically"
 
         /// The name of the sound played for `cue`; empty for none. Absent means the cue's default.
         static func sound(for cue: AudioCue) -> String { "sound.\(cue.rawValue)" }
@@ -106,4 +110,17 @@ struct AppSettings {
         get { defaults.string(forKey: Key.language) }
         nonmutating set { defaults.set(newValue, forKey: Key.language) }
     }
+
+    /// Whether to post notifications when calls start and end. On unless turned off.
+    var notifiesAboutCalls: Bool {
+        get { defaults.object(forKey: Key.notifiesAboutCalls) as? Bool ?? true }
+        nonmutating set { defaults.set(newValue, forKey: Key.notifiesAboutCalls) }
+    }
+
+    /// Whether to start and stop recording with calls, without asking. Off unless turned on.
+    var recordsCallsAutomatically: Bool {
+        get { defaults.bool(forKey: Key.recordsCallsAutomatically) }
+        nonmutating set { defaults.set(newValue, forKey: Key.recordsCallsAutomatically) }
+    }
 }
+
