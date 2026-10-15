@@ -1,4 +1,5 @@
 import AppKit
+import MixdownCore
 import SwiftUI
 
 struct GeneralSettingsView: View {
@@ -6,6 +7,7 @@ struct GeneralSettingsView: View {
     @State private var launchAtLogin = LaunchAtLogin()
     @AppStorage(AppSettings.Key.suppressesTrashConfirmation) private var suppressesTrashConfirmation = false
     @AppStorage(AppSettings.Key.showsNotifications) private var showsNotifications = true
+    @AppStorage(AppSettings.Key.playsSounds) private var playsSounds = true
     @State private var notificationsDeniedBySystem = false
 
     var body: some View {
@@ -65,6 +67,20 @@ struct GeneralSettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            Section {
+                Toggle("Play sounds", isOn: $playsSounds)
+                ForEach(AudioCue.allCases) { cue in
+                    AudioCuePicker(cue: cue)
+                        .disabled(!playsSounds)
+                }
+            } header: {
+                Text("Sounds")
+            } footer: {
+                Text("Choosing a sound plays it. Without headphones, the microphone can pick up the start sound.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Startup") {
                 Toggle(
                     "Launch Mixdown at login",
@@ -99,5 +115,27 @@ struct GeneralSettingsView: View {
     private func refresh() {
         launchAtLogin.refresh()
         Task { notificationsDeniedBySystem = await Notifications.isDeniedBySystem() }
+    }
+}
+
+/// Picks the sound for one cue, playing it on choosing.
+private struct AudioCuePicker: View {
+    let cue: AudioCue
+    @AppStorage private var sound: String
+
+    init(cue: AudioCue) {
+        self.cue = cue
+        _sound = AppStorage(wrappedValue: cue.defaultSound, AppSettings.Key.sound(for: cue))
+    }
+
+    var body: some View {
+        Picker(cue.title, selection: $sound) {
+            Text("None").tag("")
+            Divider()
+            ForEach(AudioCues.availableSounds, id: \.self) { name in
+                Text(name).tag(name)
+            }
+        }
+        .onChange(of: sound) { _, name in AudioCues.play(named: name) }
     }
 }

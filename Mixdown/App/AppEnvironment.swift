@@ -37,6 +37,8 @@ final class AppEnvironment {
     @ObservationIgnored private var recordingClock: Task<Void, Never>?
     @ObservationIgnored private var recordingClockStart: Date?
     @ObservationIgnored private var notifiedNoteURL: URL?
+    /// The phase `observePhaseForCues` saw last.
+    @ObservationIgnored private var cuedPhase: RecordingCoordinator.Phase = .idle
 
     init(navigation: MainNavigation, settings: AppSettings = AppSettings()) {
         let notesFolder = NotesFolderStore(settings: settings)
@@ -62,6 +64,7 @@ final class AppEnvironment {
         )
         startMonitoringDevices()
         observeRecording()
+        observePhaseForCues()
         observeNotesFolder()
         observeNewNotes()
         listenForRecordingShortcut(navigation: navigation)
@@ -126,6 +129,19 @@ final class AppEnvironment {
         }
     }
 
+    /// Plays the audio cue for each phase change, such as recording starting. Re-registers itself
+    /// after every change, including the coordinator being replaced, which starts out idle.
+    private func observePhaseForCues() {
+        let phase = withObservationTracking {
+            coordinator.phase
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.observePhaseForCues() }
+        }
+        defer { cuedPhase = phase }
+        guard let cue = AudioCue.cue(from: cuedPhase, to: phase) else { return }
+        AudioCues.play(cue, settings: settings)
+    }
+
     /// Points the coordinator at the notes folder whenever it's chosen, goes away or comes back.
     /// Without one, recording is disabled. Re-registers itself after every change.
     private func observeNotesFolder() {
@@ -137,8 +153,9 @@ final class AppEnvironment {
         coordinator.noteWriter = directory.map { MarkdownNoteWriter(directory: $0) }
     }
 
-    /// Posts "Note Ready" for every note the coordinator writes. Re-registers itself after every
-    /// change, including the coordinator being replaced, which starts out without a note.
+    /// Posts "Note Ready", and plays its cue, for every note the coordinator writes. Re-registers
+    /// itself after every change, including the coordinator being replaced, which starts out
+    /// without a note.
     private func observeNewNotes() {
         let url = withObservationTracking {
             coordinator.lastNoteURL
@@ -147,6 +164,7 @@ final class AppEnvironment {
         }
         guard let url, url != notifiedNoteURL else { return }
         notifiedNoteURL = url
+        AudioCues.play(.noteReady, settings: settings)
         Task { await noteReady.notify(noteAt: url) }
     }
 

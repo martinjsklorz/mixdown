@@ -26,6 +26,11 @@ struct AppSettings {
         static let recordingShortcutEnabled = "recordingShortcutEnabled"
         /// Whether notes get a summary. Absent means yes.
         static let summarizesNotes = "summarizesNotes"
+        /// Whether Mixdown plays audio cues at all. Absent means yes.
+        static let playsSounds = "playsSounds"
+
+        /// The name of the sound played for `cue`; empty for none. Absent means the cue's default.
+        static func sound(for cue: AudioCue) -> String { "sound.\(cue.rawValue)" }
     }
 
     var defaults: UserDefaults = .standard
@@ -83,6 +88,17 @@ struct AppSettings {
     var summarizesNotes: Bool {
         get { defaults.object(forKey: Key.summarizesNotes) as? Bool ?? true }
         nonmutating set { defaults.set(newValue, forKey: Key.summarizesNotes) }
+    }
+
+    var playsSounds: Bool {
+        get { defaults.object(forKey: Key.playsSounds) as? Bool ?? true }
+        nonmutating set { defaults.set(newValue, forKey: Key.playsSounds) }
+    }
+
+    /// The name of the sound for `cue`, or `nil` if the user chose none.
+    func sound(for cue: AudioCue) -> String? {
+        let name = defaults.string(forKey: Key.sound(for: cue)) ?? cue.defaultSound
+        return name.isEmpty ? nil : name
     }
 
     /// `nil` means auto-detect.

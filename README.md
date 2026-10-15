@@ -37,6 +37,12 @@ untick **Show notifications** under **Settings → General**; notes can then onl
 the Trash.
 **File → Open Notes Folder** and **Reveal Last Note in Finder** take you to the files.
 
+Short sounds mark recording starting and stopping, a note being ready, and something going wrong
+(recording couldn't start or stopped early, or a note couldn't be finished), so you can tell from
+the menu bar without looking. Pick a different macOS sound, or **None**, for each under
+**Settings → General → Sounds**, or untick **Play sounds**. They aren't recorded from system
+audio, but without headphones your microphone may hear the start sound.
+
 **View → Record / Notes** (⌘1, ⌘2) switch the window's section, and **Mixdown → Settings…** (⌘,)
 opens Settings. The waveform icon in the menu bar can start and stop recording and pick inputs
 without the window, and has **Settings…** too. Recording carries on there if
