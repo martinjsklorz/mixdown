@@ -103,19 +103,10 @@ final class SystemAudioCapture: AudioCapturing, @unchecked Sendable {
     private func consume(_ bufferList: UnsafePointer<AudioBufferList>, at time: AudioTimeStamp, format: AVAudioFormat) {
         // No copy needed: the resampler copies while downmixing, before the IO block returns.
         guard let buffer = AVAudioPCMBuffer(pcmFormat: format, bufferListNoCopy: bufferList, deallocator: nil),
-              let chunk = resampler.process(buffer, hostTime: Self.hostTime(of: time, buffer: buffer))
+              let chunk = resampler.process(buffer, hostTime: HostClock.captureTime(of: time, buffer: buffer))
         else { return }
         let continuation = state.withLockUnchecked { $0.continuation }
         continuation?.yield(chunk)
-    }
-
-    /// The HAL stamps IO cycles on the host clock. A timestamp that's missing or far off "now"
-    /// means that assumption broke, so fall back to the arrival time.
-    private static func hostTime(of time: AudioTimeStamp, buffer: AVAudioPCMBuffer) -> TimeInterval {
-        let arrival = HostClock.now() - Double(buffer.frameLength) / buffer.format.sampleRate
-        guard time.mFlags.contains(.hostTimeValid) else { return arrival }
-        let stamped = AVAudioTime.seconds(forHostTime: time.mHostTime)
-        return abs(stamped - arrival) < 2 ? stamped : arrival
     }
 
     /// Mixdown's own HAL process object, or `nil` if it has none yet (it hasn't touched audio).
