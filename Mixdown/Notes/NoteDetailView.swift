@@ -13,10 +13,9 @@ struct NoteDetailView: View {
         ScrollView {
             // Lazy, because a long meeting transcript has hundreds of paragraphs.
             LazyVStack(alignment: .leading, spacing: 0) {
-                Text(details)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
+                NoteMetadataView(note: note)
+                    .padding(.bottom, 16)
+                Divider()
                     .padding(.bottom, 20)
 
                 ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
@@ -46,25 +45,62 @@ struct NoteDetailView: View {
         }
     }
 
-    /// "October 14, 2026 at 3:52 AM · 12 min, 34 sec · MacBook Pro Microphone"
-    private var details: String {
-        var parts = [note.createdAt.formatted(date: .long, time: .shortened)]
-        if let duration = note.duration, duration >= 1 {
-            parts.append(
-                Duration.seconds(duration.rounded())
-                    .formatted(.units(allowed: [.hours, .minutes, .seconds], width: .abbreviated))
-            )
-        }
-        if !note.sources.isEmpty { parts.append(note.sources.formatted(.list(type: .and))) }
-        return parts.joined(separator: " · ")
-    }
-
     /// List items sit closer together than other blocks.
     private static func spacing(between previous: MarkdownBlock, and block: MarkdownBlock) -> CGFloat {
         switch (previous, block) {
         case (.listItem, .listItem): 4
         case (_, .heading): 20
         default: 12
+        }
+    }
+}
+
+/// When the note was recorded, how long it runs and what it was recorded from, each under its
+/// own label. Side by side, or stacked when the window is too narrow.
+private struct NoteMetadataView: View {
+    let note: NoteDocument
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: 32) { fields }
+            VStack(alignment: .leading, spacing: 12) { fields }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder private var fields: some View {
+        field("Date", systemImage: "calendar") {
+            Text(note.createdAt.formatted(date: .long, time: .shortened))
+        }
+        if let duration = note.duration, duration >= 1 {
+            field("Duration", systemImage: "clock") {
+                Text(
+                    Duration.seconds(duration.rounded())
+                        .formatted(.units(allowed: [.hours, .minutes, .seconds], width: .abbreviated))
+                )
+                .monospacedDigit()
+            }
+        }
+        if !note.sources.isEmpty {
+            field(note.sources.count == 1 ? "Input" : "Inputs", systemImage: "mic") {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(note.sources.indices, id: \.self) { Text(note.sources[$0]) }
+                }
+            }
+        }
+    }
+
+    private func field(
+        _ title: String,
+        systemImage: String,
+        @ViewBuilder value: () -> some View
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label(title, systemImage: systemImage)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            value()
+                .font(.callout)
         }
     }
 }
