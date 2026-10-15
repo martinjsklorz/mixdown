@@ -1,7 +1,7 @@
 import AppKit
 import MixdownCore
 
-/// Plays the sound chosen for each `AudioCue` under Settings → General, unless sounds are off.
+/// Plays the sound chosen for each `AudioCue` under Settings → Notifications, unless sounds are off.
 ///
 /// Uses `NSSound`, which plays from Mixdown's own process. The system audio tap leaves that
 /// process out, so cues don't end up in the Others track. A microphone near the speakers can
