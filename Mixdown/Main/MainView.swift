@@ -317,13 +317,10 @@ private struct RecorderStatusBadge: View {
             Text(startedAt, style: .timer)
                 .monospacedDigit()
                 .foregroundStyle(.red)
-        case .preparingModel(let progress):
+        case .preparingModel(let progress), .transcribing(let progress):
             Text(progress.formatted(.percent.precision(.fractionLength(0))))
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
-        case .transcribing:
-            ProgressView()
-                .controlSize(.small)
         case .failed:
             Image(systemName: "exclamationmark.triangle.fill")
                 .symbolRenderingMode(.multicolor)

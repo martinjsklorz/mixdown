@@ -70,9 +70,9 @@ struct TranscriptionSettingsView: View {
                 Text("Downloading \(environment.model.displayName)…")
             } currentValueLabel: {
                 Text(
-                    DownloadProgressText.detail(
+                    ProgressText.detail(
                         progress: progress,
-                        remaining: environment.coordinator.preparationTimeRemaining
+                        remaining: environment.coordinator.timeRemaining
                     )
                 )
                 .monospacedDigit()

@@ -22,7 +22,7 @@ struct MenuBarContent: View {
             engineName: coordinator.engineInfo.displayName,
             isModelDownloaded: coordinator.isModelDownloaded,
             notesFolder: environment.notesFolder.status,
-            timeRemaining: coordinator.preparationTimeRemaining
+            timeRemaining: coordinator.timeRemaining
         )
         if !coordinator.silentDevices.isEmpty {
             ForEach(coordinator.silentDevices) { device in
