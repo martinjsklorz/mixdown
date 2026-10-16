@@ -584,8 +584,8 @@ public final class RecordingCoordinator {
     }
 
     /// Stops every capture of `session`, then transcribes and saves what they recorded. If capture
-    /// ended with `interruption`, the partial recording is still saved and the error is surfaced
-    /// afterwards.
+    /// ended with `interruption`, a note of the partial recording is still saved and the error is
+    /// surfaced afterwards.
     private func end(_ session: Session, interruption: (any Error)?) async {
         guard self.session === session else { return }
         // Clearing the session first makes repeated stops and the end-of-stream handlers no-ops.
@@ -938,7 +938,8 @@ public final class RecordingCoordinator {
         silentDevices = []
     }
 
+    /// Shown only once the note is written; the audio itself is never kept.
     nonisolated static func interruptedMessage(for error: any Error) -> String {
-        "Recording stopped early. \(error.localizedDescription) The audio captured until then was saved."
+        "Recording stopped early. \(error.localizedDescription) The note has what was recorded until then."
     }
 }
