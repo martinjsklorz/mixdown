@@ -38,7 +38,8 @@ struct MixdownApp: App {
         } label: {
             MenuBarLabel(
                 coordinator: environment.coordinator,
-                recordingElapsed: environment.recordingElapsed
+                // The notch island shows the time instead.
+                recordingElapsed: environment.showsRecordingInNotch ? nil : environment.recordingElapsed
             )
         }
         .menuBarExtraStyle(.menu)

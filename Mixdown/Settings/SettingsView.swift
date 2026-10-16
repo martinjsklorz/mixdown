@@ -17,6 +17,9 @@ struct SettingsView: View {
             TranscriptionSettingsView()
                 .tabItem { tabLabel(.transcription) }
                 .tag(MainNavigation.SettingsTab.transcription)
+            DesignSettingsView()
+                .tabItem { tabLabel(.design) }
+                .tag(MainNavigation.SettingsTab.design)
         }
         .frame(width: 520, height: height(for: navigation.settingsTab))
     }
@@ -27,6 +30,7 @@ struct SettingsView: View {
         case .general: 520
         case .recording: 680
         case .transcription: 490
+        case .design: 200
         }
     }
 

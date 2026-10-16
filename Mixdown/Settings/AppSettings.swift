@@ -32,6 +32,9 @@ struct AppSettings {
         static let notifiesAboutCalls = "notifiesAboutCalls"
         /// Whether to start and stop recording with calls. Absent means no.
         static let recordsCallsAutomatically = "recordsCallsAutomatically"
+        /// Whether a recording's time and input levels show around the notch instead of in the
+        /// menu bar. Absent means yes.
+        static let showsRecordingInNotch = "showsRecordingInNotch"
 
         /// The name of the sound played for `cue`; empty for none. Absent means the cue's default.
         static func sound(for cue: AudioCue) -> String { "sound.\(cue.rawValue)" }
@@ -121,6 +124,12 @@ struct AppSettings {
     var recordsCallsAutomatically: Bool {
         get { defaults.bool(forKey: Key.recordsCallsAutomatically) }
         nonmutating set { defaults.set(newValue, forKey: Key.recordsCallsAutomatically) }
+    }
+
+    /// Whether to show a recording around the notch. On unless turned off.
+    var showsRecordingInNotch: Bool {
+        get { defaults.object(forKey: Key.showsRecordingInNotch) as? Bool ?? true }
+        nonmutating set { defaults.set(newValue, forKey: Key.showsRecordingInNotch) }
     }
 }
 
