@@ -7,22 +7,26 @@ struct RecordingCoordinatorTests {
     private func makeCoordinator(
         devices: [AudioInputDevice] = Fixtures.devices,
         updates: [[AudioInputDevice]] = [],
+        deviceProvider: (any AudioDeviceProvider)? = nil,
         capture: MockCapture = MockCapture(),
         captures: [String: MockCapture] = [:],
+        queuedCaptures: [String: [MockCapture]] = [:],
         engine: MockEngine = MockEngine(),
         writer: InMemoryNoteWriter = InMemoryNoteWriter(),
         summarizer: MockSummarizer? = nil,
         preferredDeviceIDs: [String] = []
     ) -> RecordingCoordinator {
-        RecordingCoordinator(
-            deviceProvider: MockDeviceProvider(devices: devices, updates: updates),
-            captureFactory: MockCaptureFactory(capture: capture, captures: captures),
+        let coordinator = RecordingCoordinator(
+            deviceProvider: deviceProvider ?? MockDeviceProvider(devices: devices, updates: updates),
+            captureFactory: MockCaptureFactory(capture: capture, captures: captures, queuedCaptures: queuedCaptures),
             engine: engine,
             noteWriter: writer,
             summarizer: summarizer,
             preferredDeviceIDs: preferredDeviceIDs,
             now: { Fixtures.startDate }
         )
+        coordinator.deviceSwitchDelay = .zero
+        return coordinator
     }
 
     // MARK: - Device selection
@@ -97,7 +101,36 @@ struct RecordingCoordinatorTests {
         #expect(comeback.selectedDevices == [Fixtures.usbMic])
     }
 
-    @Test func selectDevicesIsIgnoredWhileRecordingOrEmpty() async {
+    @Test func systemDefaultFollowsTheDefaultMicrophone() async {
+        let coordinator = makeCoordinator(
+            updates: [[Fixtures.usbMicAsDefault, Fixtures.builtInMicNotDefault, .systemAudio]],
+            preferredDeviceIDs: [AudioInputDevice.defaultMicrophoneID, AudioInputDevice.systemAudioID]
+        )
+        #expect(coordinator.followsDefaultMicrophone)
+
+        await coordinator.monitorDevices()
+
+        #expect(coordinator.selectedDevices == [Fixtures.usbMicAsDefault, .systemAudio])
+    }
+
+    @Test func choosingSystemDefaultOrADevice() async {
+        let coordinator = makeCoordinator(preferredDeviceIDs: [Fixtures.usbMic.id])
+        await coordinator.monitorDevices()
+        #expect(!coordinator.followsDefaultMicrophone)
+
+        #expect(coordinator.selectDevices([.defaultMicrophone, .systemAudio]))
+        #expect(coordinator.followsDefaultMicrophone)
+        #expect(coordinator.selectedDevices == [Fixtures.builtInMic, .systemAudio])
+
+        coordinator.selectDevices([.systemAudio])
+        #expect(!coordinator.followsDefaultMicrophone)
+        #expect(coordinator.selectedDevices == [.systemAudio])
+
+        // Nothing chosen yet behaves as System Default.
+        #expect(makeCoordinator().followsDefaultMicrophone)
+    }
+
+    @Test func selectDevicesIsIgnoredWhenEmpty() async {
         let coordinator = makeCoordinator()
         await coordinator.monitorDevices()
         #expect(coordinator.selectDevices([Fixtures.usbMic]))
@@ -106,8 +139,7 @@ struct RecordingCoordinatorTests {
         #expect(coordinator.selectedDevices == [Fixtures.usbMic])
 
         await coordinator.startRecording()
-        #expect(coordinator.isRecording)
-        #expect(!coordinator.selectDevices([Fixtures.builtInMic]))
+        #expect(!coordinator.selectDevices([]))
         #expect(coordinator.selectedDevices == [Fixtures.usbMic])
 
         await coordinator.stopRecording()
@@ -246,7 +278,8 @@ struct RecordingCoordinatorTests {
         let error = AudioCaptureError.deviceNotFound("USB Microphone")
         let capture = MockCapture(chunks: [Fixtures.chunk(seconds: 1)], streamError: error)
         let writer = InMemoryNoteWriter()
-        let coordinator = makeCoordinator(capture: capture, writer: writer)
+        // No other microphone to switch to.
+        let coordinator = makeCoordinator(devices: [Fixtures.builtInMic], capture: capture, writer: writer)
         await coordinator.monitorDevices()
 
         await coordinator.startRecording()
@@ -266,7 +299,7 @@ struct RecordingCoordinatorTests {
         let error = AudioCaptureError.deviceNotFound("USB Microphone")
         let capture = MockCapture(streamError: error)
         let writer = InMemoryNoteWriter()
-        let coordinator = makeCoordinator(capture: capture, writer: writer)
+        let coordinator = makeCoordinator(devices: [Fixtures.builtInMic], capture: capture, writer: writer)
         await coordinator.monitorDevices()
 
         await coordinator.startRecording()
@@ -505,6 +538,213 @@ struct RecordingCoordinatorTests {
         let note = try #require(await writer.notes.first)
         #expect(note.sources == [Fixtures.builtInMic, .systemAudio])
         #expect(note.transcript.speakers == ["Me"])
+    }
+
+    // MARK: - Switching inputs
+
+    @Test func switchesToDefaultMicrophoneWhenDeviceGoesAway() async throws {
+        let error = AudioCaptureError.deviceNotFound("USB Microphone")
+        let usb = MockCapture(chunks: [Fixtures.chunk(seconds: 1, hostTime: 100)], streamError: error)
+        let builtIn = MockCapture(chunks: [Fixtures.chunk(seconds: 1, hostTime: 102)])
+        let engine = MockEngine()
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            captures: [Fixtures.usbMic.id: usb, Fixtures.builtInMic.id: builtIn],
+            engine: engine,
+            writer: writer,
+            preferredDeviceIDs: [Fixtures.usbMic.id]
+        )
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        try await waitUntil { coordinator.inputLevels[Fixtures.builtInMic.id] != nil }
+        #expect(coordinator.isRecording)
+        #expect(coordinator.selectedDevices == [Fixtures.builtInMic])
+        #expect(coordinator.inputLevels[Fixtures.usbMic.id] == nil)
+        #expect(usb.stopCount == 1)
+
+        await coordinator.stopRecording()
+
+        #expect(coordinator.phase == .idle)
+        #expect(builtIn.stopCount == 1)
+        // One track, with the second it took to switch left silent.
+        #expect(await engine.receivedSampleCounts == [48_000])
+        let note = try #require(await writer.notes.first)
+        #expect(note.sources == [Fixtures.usbMic, Fixtures.builtInMic])
+        #expect(note.duration == 3)
+    }
+
+    @Test func switchesWhenDeviceLeavesTheListAndBackWhenItReturns() async throws {
+        let provider = LiveDeviceProvider(devices: [Fixtures.usbMic, Fixtures.builtInMic])
+        let firstUSB = MockCapture()
+        let builtIn = MockCapture()
+        let secondUSB = MockCapture()
+        let coordinator = makeCoordinator(
+            deviceProvider: provider,
+            captures: [Fixtures.builtInMic.id: builtIn],
+            queuedCaptures: [Fixtures.usbMic.id: [firstUSB, secondUSB]],
+            preferredDeviceIDs: [Fixtures.usbMic.id]
+        )
+        let monitor = Task { await coordinator.monitorDevices() }
+        defer { monitor.cancel() }
+        try await waitUntil { coordinator.selectedDevices == [Fixtures.usbMic] }
+
+        await coordinator.startRecording()
+        provider.send([Fixtures.builtInMic])
+        try await waitUntil { firstUSB.stopCount == 1 }
+        #expect(coordinator.selectedDevices == [Fixtures.builtInMic])
+
+        provider.send([Fixtures.builtInMic, Fixtures.usbMic])
+        try await waitUntil { builtIn.stopCount == 1 }
+        #expect(coordinator.selectedDevices == [Fixtures.usbMic])
+        #expect(coordinator.isRecording)
+
+        await coordinator.stopRecording()
+        #expect(secondUSB.stopCount == 1)
+        #expect(coordinator.phase == .idle)
+    }
+
+    @Test func followsNewDefaultMicrophoneWhileRecording() async throws {
+        let provider = LiveDeviceProvider(devices: [Fixtures.usbMic, Fixtures.builtInMic])
+        let usb = MockCapture()
+        let builtIn = MockCapture()
+        let coordinator = makeCoordinator(
+            deviceProvider: provider,
+            captures: [Fixtures.builtInMic.id: builtIn, Fixtures.usbMic.id: usb],
+            preferredDeviceIDs: [AudioInputDevice.defaultMicrophoneID]
+        )
+        let monitor = Task { await coordinator.monitorDevices() }
+        defer { monitor.cancel() }
+        try await waitUntil { coordinator.selectedDevices == [Fixtures.builtInMic] }
+
+        await coordinator.startRecording()
+        // Connecting AirPods makes them the default input.
+        provider.send([Fixtures.usbMicAsDefault, Fixtures.builtInMicNotDefault])
+        try await waitUntil { builtIn.stopCount == 1 }
+        #expect(coordinator.selectedDevices == [Fixtures.usbMicAsDefault])
+        #expect(coordinator.isRecording)
+
+        await coordinator.stopRecording()
+        #expect(usb.stopCount == 1)
+    }
+
+    @Test func keepsOtherInputsWhenNoMicrophoneIsLeft() async throws {
+        let error = AudioCaptureError.deviceNotFound("USB Microphone")
+        let usb = MockCapture(chunks: [Fixtures.chunk(seconds: 1, hostTime: 100)], streamError: error)
+        let systemAudio = MockCapture(chunks: [Fixtures.chunk(seconds: 2, hostTime: 100)])
+        let engine = MockEngine()
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            devices: [Fixtures.usbMic, .systemAudio],
+            captures: [Fixtures.usbMic.id: usb, AudioInputDevice.systemAudioID: systemAudio],
+            engine: engine,
+            writer: writer,
+            preferredDeviceIDs: [Fixtures.usbMic.id, AudioInputDevice.systemAudioID]
+        )
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        try await waitUntil { coordinator.selectedDevices == [.systemAudio] }
+        #expect(coordinator.isRecording)
+
+        await coordinator.stopRecording()
+        #expect(coordinator.phase == .idle)
+        #expect(await engine.receivedSampleCounts.sorted() == [16_000, 32_000])
+        #expect(await writer.notes.first?.sources == [Fixtures.usbMic, .systemAudio])
+    }
+
+    @Test func otherCaptureErrorsStillEndTheRecording() async throws {
+        let error = AudioCaptureError.microphonePermissionDenied
+        let usb = MockCapture(chunks: [Fixtures.chunk(seconds: 1)], streamError: error)
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            captures: [Fixtures.usbMic.id: usb],
+            writer: writer,
+            preferredDeviceIDs: [Fixtures.usbMic.id]
+        )
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        try await waitUntil { coordinator.lastNoteURL != nil }
+
+        #expect(coordinator.phase == .failed(message: RecordingCoordinator.interruptedMessage(for: error)))
+        #expect(await writer.notes.first?.sources == [Fixtures.usbMic])
+    }
+
+    @Test func userSwitchesMicrophoneWhileRecording() async throws {
+        let builtIn = MockCapture(chunks: [Fixtures.chunk(seconds: 1, hostTime: 100)])
+        let usb = MockCapture(chunks: [Fixtures.chunk(seconds: 1, hostTime: 101)])
+        let transcript = Transcript(segments: [TranscriptSegment(start: 0, end: 1, text: "Hello.")])
+        let engine = MockEngine(transcript: transcript)
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            captures: [Fixtures.builtInMic.id: builtIn, Fixtures.usbMic.id: usb],
+            engine: engine,
+            writer: writer
+        )
+        await coordinator.monitorDevices()
+        await coordinator.startRecording()
+
+        #expect(coordinator.selectDevices([Fixtures.usbMic]))
+        #expect(coordinator.selectedDevices == [Fixtures.usbMic])
+        try await waitUntil { coordinator.inputLevels[Fixtures.usbMic.id] != nil }
+        #expect(builtIn.stopCount == 1)
+
+        await coordinator.stopRecording()
+        #expect(usb.stopCount == 1)
+        #expect(await engine.receivedSampleCounts == [32_000])
+        let note = try #require(await writer.notes.first)
+        #expect(note.sources == [Fixtures.builtInMic, Fixtures.usbMic])
+        // Still one input, so no speaker labels.
+        #expect(note.transcript == transcript)
+    }
+
+    @Test func userTurnsSystemAudioOnAndOffWhileRecording() async throws {
+        let microphone = MockCapture(chunks: [Fixtures.chunk(seconds: 3, hostTime: 100)])
+        let systemAudio = MockCapture(chunks: [Fixtures.chunk(seconds: 1, hostTime: 101)])
+        let engine = MockEngine()
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            captures: [Fixtures.builtInMic.id: microphone, AudioInputDevice.systemAudioID: systemAudio],
+            engine: engine,
+            writer: writer
+        )
+        await coordinator.monitorDevices()
+        await coordinator.startRecording()
+
+        coordinator.selectDevices([Fixtures.builtInMic, .systemAudio])
+        try await waitUntil { coordinator.inputLevels[AudioInputDevice.systemAudioID] != nil }
+        coordinator.selectDevices([Fixtures.builtInMic])
+        try await waitUntil { systemAudio.stopCount == 1 }
+        #expect(coordinator.isRecording)
+        #expect(microphone.stopCount == 0)
+
+        await coordinator.stopRecording()
+        #expect(await engine.receivedSampleCounts.sorted() == [16_000, 48_000])
+        let note = try #require(await writer.notes.first)
+        #expect(note.sources == [Fixtures.builtInMic, .systemAudio])
+        #expect(note.duration == 3)
+    }
+
+    @Test func failedSwitchFallsBackToDefaultMicrophone() async throws {
+        let error = AudioCaptureError.deviceUnavailable("Couldn't start “USB Microphone”")
+        let first = MockCapture()
+        let second = MockCapture()
+        let coordinator = makeCoordinator(
+            captures: [Fixtures.usbMic.id: MockCapture(startError: error)],
+            queuedCaptures: [Fixtures.builtInMic.id: [first, second]]
+        )
+        await coordinator.monitorDevices()
+        await coordinator.startRecording()
+
+        coordinator.selectDevices([Fixtures.usbMic])
+        try await waitUntil { coordinator.selectedDevices == [Fixtures.builtInMic] }
+        try await waitUntil { first.stopCount == 1 }
+        #expect(coordinator.isRecording)
+
+        await coordinator.stopRecording()
+        #expect(second.stopCount == 1)
+        #expect(coordinator.phase == .idle)
     }
 
     // MARK: - Levels

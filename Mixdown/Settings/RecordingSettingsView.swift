@@ -16,12 +16,22 @@ struct RecordingSettingsView: View {
                 Picker(
                     "Microphone",
                     selection: Binding(
-                        get: { environment.selectedMicrophone?.id },
-                        set: { id in environment.selectMicrophone(microphones.first { $0.id == id }) }
+                        get: {
+                            environment.followsDefaultMicrophone
+                                ? AudioInputDevice.defaultMicrophoneID : environment.selectedMicrophone?.id
+                        },
+                        set: { id in
+                            environment.selectMicrophone(
+                                id == AudioInputDevice.defaultMicrophoneID
+                                    ? .defaultMicrophone : microphones.first(where: { $0.id == id })
+                            )
+                        }
                     )
                 ) {
                     Text("None").tag(String?.none)
                     Divider()
+                    Text(DevicePicker.defaultTitle(among: microphones))
+                        .tag(Optional(AudioInputDevice.defaultMicrophoneID))
                     ForEach(microphones) { device in
                         Text(DevicePicker.title(for: device)).tag(Optional(device.id))
                     }
@@ -41,12 +51,13 @@ struct RecordingSettingsView: View {
             } footer: {
                 Text(
                     "Record your microphone and system audio together to capture both sides of a call. "
-                        + "At least one input stays on. Inputs can't change while recording."
+                        + "At least one input stays on. Changes apply right away, even while recording, "
+                        + "and if the microphone is disconnected, recording continues with the default one. "
+                        + "System Default always uses the Mac's input, so connecting AirPods switches to them."
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
-            .disabled(coordinator.isRecording)
 
             Section {
                 Toggle(

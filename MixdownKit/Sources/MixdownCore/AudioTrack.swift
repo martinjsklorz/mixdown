@@ -32,6 +32,12 @@ public struct AudioTrack: Sendable, Equatable {
         samples.append(contentsOf: chunk.samples)
     }
 
+    /// Appends a later recording of the same source, e.g. from the device it switched to, with
+    /// the time between the two filled with silence.
+    public mutating func append(_ track: AudioTrack) {
+        append(AudioChunk(samples: track.samples, startTime: 0, hostTime: track.startHostTime))
+    }
+
     /// Seconds from the earliest track's first sample to each track's first sample. Tracks
     /// without a host time start at 0.
     public static func startOffsets(of tracks: [AudioTrack]) -> [TimeInterval] {

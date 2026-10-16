@@ -12,6 +12,8 @@ public enum AudioSourceKind: String, Codable, Sendable, CaseIterable {
 public struct AudioInputDevice: Identifiable, Hashable, Sendable, Codable {
     /// Identifier for the system-audio pseudo device.
     public static let systemAudioID = "mixdown.system-audio"
+    /// Identifier for the default-microphone pseudo device.
+    public static let defaultMicrophoneID = "mixdown.default-microphone"
 
     /// Stable identifier. The CoreAudio device UID for microphones, `systemAudioID` for system audio.
     public let id: String
@@ -31,6 +33,15 @@ public struct AudioInputDevice: Identifiable, Hashable, Sendable, Codable {
         id: systemAudioID,
         name: "System Audio",
         kind: .systemAudio
+    )
+
+    /// Stands for whichever microphone macOS uses as its default input. Selecting it makes the
+    /// selection follow the default, also mid-recording, e.g. to AirPods when they connect. Never
+    /// in a device list; the selection holds the actual default microphone instead.
+    public static let defaultMicrophone = AudioInputDevice(
+        id: defaultMicrophoneID,
+        name: "System Default",
+        kind: .microphone
     )
 }
 
