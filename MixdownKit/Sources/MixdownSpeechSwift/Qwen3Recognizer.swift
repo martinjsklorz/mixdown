@@ -56,6 +56,10 @@ final class Qwen3Recognizer: SpeechRecognizer, @unchecked Sendable {
         return [RecognizedSegment(text: text)]
     }
 
+    func unload() {
+        model.unload()
+    }
+
     /// Qwen3-ASR's prompt takes the English language name ("language German<asr_text>", the same form it
     /// emits when auto-detecting). These are the 30 languages on the Qwen3-ASR model card; Cantonese has
     /// no ISO 639-1 code, so its 639-3 code is accepted too.

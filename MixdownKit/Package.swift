@@ -15,6 +15,9 @@ let package = Package(
     dependencies: [
         // Pre-1.0 and its API still moves between releases, so pin exactly and bump deliberately.
         .package(url: "https://github.com/soniqo/speech-swift.git", exact: "0.0.28"),
+        // Only for `Memory.clearCache()` after unloading a model. speech-swift's requirement
+        // (and mlx-swift-lm's pin) decides the version; this one just has to allow it.
+        .package(url: "https://github.com/ml-explore/mlx-swift", from: "0.30.0"),
     ],
     targets: [
         // Domain models and protocols. No third-party dependencies, no platform frameworks
@@ -32,6 +35,7 @@ let package = Package(
             dependencies: [
                 "MixdownCore",
                 .product(name: "AudioCommon", package: "speech-swift"),
+                .product(name: "MLX", package: "mlx-swift"),
                 .product(name: "MossTranscribe", package: "speech-swift"),
                 .product(name: "Qwen3ASR", package: "speech-swift"),
                 .product(name: "SpeechVAD", package: "speech-swift"),

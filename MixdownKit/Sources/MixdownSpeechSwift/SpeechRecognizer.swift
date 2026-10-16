@@ -42,6 +42,10 @@ protocol SpeechRecognizer: AnyObject, Sendable {
 
     /// Transcribes 16 kHz mono samples. Synchronous and GPU-bound; may throw `CancellationError`.
     func recognize(_ samples: [Float], languageHint: String?) throws -> [RecognizedSegment]
+
+    /// Frees the weights it can right away. The instance is unusable afterwards; the rest of its
+    /// memory goes with it.
+    func unload()
 }
 
 extension SpeechPiece {

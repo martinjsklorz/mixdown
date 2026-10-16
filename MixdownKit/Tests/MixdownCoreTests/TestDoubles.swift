@@ -182,6 +182,7 @@ actor MockEngine: TranscriptionEngine {
     private let transcribeError: (any Error)?
     private let progressBySampleCount: [Int: Double]
     private let transcriptionGate: Gate?
+    private let ungatedSampleCounts: Set<Int>
     private let prepareError: (any Error)?
     private let preparesUntilCancelled: Bool
     private let deleteError: (any Error)?
@@ -199,12 +200,14 @@ actor MockEngine: TranscriptionEngine {
     ///   - progressBySampleCount: Progress `transcribe` reports for a given sample count before
     ///     waiting for `transcriptionGate`.
     ///   - transcriptionGate: `transcribe` returns once it opens.
+    ///   - ungatedSampleCounts: Sample counts `transcribe` returns for right away, gate or not.
     init(
         transcript: Transcript = Transcript(segments: []),
         transcriptsBySampleCount: [Int: Transcript] = [:],
         transcribeError: (any Error)? = nil,
         progressBySampleCount: [Int: Double] = [:],
         transcriptionGate: Gate? = nil,
+        ungatedSampleCounts: Set<Int> = [],
         isDownloaded: Bool = true,
         prepareError: (any Error)? = nil,
         preparesUntilCancelled: Bool = false,
@@ -215,6 +218,7 @@ actor MockEngine: TranscriptionEngine {
         self.transcribeError = transcribeError
         self.progressBySampleCount = progressBySampleCount
         self.transcriptionGate = transcriptionGate
+        self.ungatedSampleCounts = ungatedSampleCounts
         self.downloaded = LockedValue(isDownloaded)
         self.prepareError = prepareError
         self.preparesUntilCancelled = preparesUntilCancelled
@@ -250,7 +254,7 @@ actor MockEngine: TranscriptionEngine {
     ) async throws -> Transcript {
         receivedSampleCounts.append(samples.count)
         if let fraction = progressBySampleCount[samples.count] { progress?(fraction) }
-        await transcriptionGate?.wait()
+        if !ungatedSampleCounts.contains(samples.count) { await transcriptionGate?.wait() }
         if let transcribeError { throw transcribeError }
         return transcriptsBySampleCount[samples.count] ?? transcript
     }

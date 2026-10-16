@@ -517,6 +517,27 @@ struct RecordingCoordinatorTests {
         #expect(coordinator.phase == .idle)
     }
 
+    @Test func sourceFinishedWithoutProgressCountsAsDone() async throws {
+        let gate = Gate()
+        let microphone = MockCapture(chunks: [Fixtures.chunk(seconds: 3, hostTime: 100)])
+        let systemAudio = MockCapture(chunks: [Fixtures.chunk(seconds: 1, hostTime: 100)])
+        let coordinator = makeCoordinator(
+            captures: [Fixtures.builtInMic.id: microphone, AudioInputDevice.systemAudioID: systemAudio],
+            // The short source finishes without reporting any progress, as for one without speech.
+            engine: MockEngine(progressBySampleCount: [48_000: 0], transcriptionGate: gate, ungatedSampleCounts: [16_000]),
+            preferredDeviceIDs: [Fixtures.builtInMic.id, AudioInputDevice.systemAudioID]
+        )
+        await coordinator.monitorDevices()
+        await coordinator.startRecording()
+
+        let stopping = Task { await coordinator.stopRecording() }
+        try await waitUntil { coordinator.phase == .transcribing(progress: 0.25) }
+        await gate.open()
+        await stopping.value
+
+        #expect(coordinator.phase == .idle)
+    }
+
     @Test func silentSourceIsNotTranscribed() async throws {
         let engine = MockEngine(
             transcript: Transcript(segments: [TranscriptSegment(start: 0, end: 1, text: "Just me.")])
