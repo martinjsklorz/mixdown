@@ -32,6 +32,8 @@ struct AppSettings {
         static let notifiesAboutCalls = "notifiesAboutCalls"
         /// Whether to start and stop recording with calls. Absent means no.
         static let recordsCallsAutomatically = "recordsCallsAutomatically"
+        /// An `Appearance` raw value. Absent means `.auto`. Read with `@AppStorage`.
+        static let appearance = "appearance"
         /// Whether a recording's time and input levels show around the notch instead of in the
         /// menu bar. Absent means yes.
         static let showsRecordingInNotch = "showsRecordingInNotch"
@@ -124,6 +126,11 @@ struct AppSettings {
     var recordsCallsAutomatically: Bool {
         get { defaults.bool(forKey: Key.recordsCallsAutomatically) }
         nonmutating set { defaults.set(newValue, forKey: Key.recordsCallsAutomatically) }
+    }
+
+    /// Light or dark mode for the app. Follows the system unless set.
+    var appearance: Appearance {
+        defaults.string(forKey: Key.appearance).flatMap(Appearance.init(rawValue:)) ?? .auto
     }
 
     /// Whether to show a recording around the notch. On unless turned off.
