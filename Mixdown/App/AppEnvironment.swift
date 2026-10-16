@@ -109,7 +109,8 @@ final class AppEnvironment {
             summarizer: summarizer,
             options: TranscriptionOptions(language: settings.language),
             sourceLabels: settings.sourceLabels,
-            preferredDeviceIDs: settings.selectedDeviceIDs
+            preferredDeviceIDs: settings.selectedDeviceIDs,
+            playbackMonitor: CoreAudioPlaybackMonitor()
         )
     }
 
