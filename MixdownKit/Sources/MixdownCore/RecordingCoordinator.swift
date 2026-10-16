@@ -136,6 +136,8 @@ public final class RecordingCoordinator {
         let id: UUID
         let sources: [Source]
         let startedAt: Date
+        /// Whether the recording was started for a call, from a notification or automatically.
+        var isCall = false
 
         var devices: [AudioInputDevice] { sources.map(\.device) }
     }
@@ -537,7 +539,12 @@ public final class RecordingCoordinator {
             }
             let summary = await summarize(transcript)
             let note = Note(
-                title: Self.noteTitle(for: session.startedAt),
+                title: NoteTitle.make(
+                    for: session.startedAt,
+                    summaryTitle: summary?.title,
+                    isCall: session.isCall,
+                    language: summary?.language ?? transcript.language
+                ),
                 createdAt: session.startedAt,
                 duration: duration,
                 sources: session.devices,
@@ -657,6 +664,12 @@ public final class RecordingCoordinator {
         phase = .transcribing(progress: total)
     }
 
+    /// Marks the recording in progress as a call, so its note is titled as one, e.g. "Call about …".
+    /// Ignored when not recording.
+    public func markRecordingAsCall() {
+        session?.isCall = true
+    }
+
     public func toggleRecording() async {
         if isRecording {
             await stopRecording()
@@ -718,9 +731,5 @@ public final class RecordingCoordinator {
 
     nonisolated static func interruptedMessage(for error: any Error) -> String {
         "Recording stopped early. \(error.localizedDescription) The audio captured until then was saved."
-    }
-
-    nonisolated static func noteTitle(for date: Date) -> String {
-        "Recording \(date.formatted(date: .abbreviated, time: .shortened))"
     }
 }

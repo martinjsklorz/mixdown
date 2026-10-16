@@ -79,6 +79,7 @@ final class AppEnvironment {
             isRecording: { [weak self] in self?.coordinator.isRecording ?? false },
             startRecording: { [weak self] in self?.startRecordingCall() ?? false },
             stopRecording: { [weak self] in self?.stopRecordingCall() },
+            markRecordingAsCall: { [weak self] in self?.coordinator.markRecordingAsCall() },
             showRecorder: { [weak navigation] in
                 guard let navigation, let openWindow = navigation.openWindow else { return }
                 navigation.show(.recorder, using: openWindow)
