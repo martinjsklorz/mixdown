@@ -37,8 +37,13 @@ public final class CoreAudioDeviceProvider: AudioDeviceProvider {
                       let uid = CoreAudioHAL.uid(of: deviceID)
                 else { return nil }
                 let name = CoreAudioHAL.name(of: deviceID) ?? uid
-                // Private aggregates created by AVAudioEngine/CoreAudio aren't user-selectable.
-                guard !name.hasPrefix("CADefaultDeviceAggregate") else { return nil }
+                // Private aggregates only exist for the process that created them and aren't
+                // user-selectable: Mixdown's own system-audio device while it records, and those
+                // AVAudioEngine/CoreAudio create, which are also caught by name in case they
+                // aren't marked private.
+                guard !CoreAudioHAL.isPrivateAggregate(deviceID),
+                      !name.hasPrefix("CADefaultDeviceAggregate")
+                else { return nil }
                 return AudioInputDevice(id: uid, name: name, kind: .microphone, isDefault: deviceID == defaultID)
             }
             .sorted { lhs, rhs in
