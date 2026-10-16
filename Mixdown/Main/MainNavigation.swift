@@ -17,6 +17,7 @@ final class MainNavigation {
         case recording = "Recording"
         case transcription = "Transcription"
         case notifications = "Notifications"
+        case design = "Design"
 
         var id: Self { self }
 
@@ -26,6 +27,7 @@ final class MainNavigation {
             case .recording: "mic"
             case .transcription: "waveform"
             case .notifications: "bell.badge"
+            case .design: "paintbrush"
             }
         }
     }

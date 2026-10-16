@@ -32,6 +32,8 @@ struct AppSettings {
         static let notifiesAboutCalls = "notifiesAboutCalls"
         /// Whether to start and stop recording with calls. Absent means no.
         static let recordsCallsAutomatically = "recordsCallsAutomatically"
+        /// An `Appearance` raw value. Absent means `.auto`. Read with `@AppStorage`.
+        static let appearance = "appearance"
 
         /// The name of the sound played for `cue`; empty for none. Absent means the cue's default.
         static func sound(for cue: AudioCue) -> String { "sound.\(cue.rawValue)" }
@@ -121,6 +123,11 @@ struct AppSettings {
     var recordsCallsAutomatically: Bool {
         get { defaults.bool(forKey: Key.recordsCallsAutomatically) }
         nonmutating set { defaults.set(newValue, forKey: Key.recordsCallsAutomatically) }
+    }
+
+    /// Light or dark mode for the app. Follows the system unless set.
+    var appearance: Appearance {
+        defaults.string(forKey: Key.appearance).flatMap(Appearance.init(rawValue:)) ?? .auto
     }
 }
 
