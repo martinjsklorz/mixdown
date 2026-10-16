@@ -14,7 +14,8 @@ struct RecordingCoordinatorTests {
         engine: MockEngine = MockEngine(),
         writer: InMemoryNoteWriter = InMemoryNoteWriter(),
         summarizer: MockSummarizer? = nil,
-        preferredDeviceIDs: [String] = []
+        preferredDeviceIDs: [String] = [],
+        playbackMonitor: MockPlaybackMonitor? = nil
     ) -> RecordingCoordinator {
         let coordinator = RecordingCoordinator(
             deviceProvider: deviceProvider ?? MockDeviceProvider(devices: devices, updates: updates),
@@ -23,6 +24,7 @@ struct RecordingCoordinatorTests {
             noteWriter: writer,
             summarizer: summarizer,
             preferredDeviceIDs: preferredDeviceIDs,
+            playbackMonitor: playbackMonitor,
             now: { Fixtures.startDate }
         )
         coordinator.deviceSwitchDelay = .zero
@@ -772,6 +774,31 @@ struct RecordingCoordinatorTests {
         await coordinator.stopRecording()
         #expect(coordinator.inputLevels.isEmpty)
         #expect(coordinator.silentDevices.isEmpty)
+    }
+
+    @Test func silentSystemAudioIsOnlyFlaggedWhileSomethingPlays() async throws {
+        let microphone = MockCapture(chunks: [Fixtures.chunk(seconds: 1, amplitude: 0)])
+        let systemAudio = MockCapture(chunks: [Fixtures.chunk(seconds: 1, amplitude: 0)])
+        let playback = MockPlaybackMonitor()
+        let coordinator = makeCoordinator(
+            captures: [Fixtures.builtInMic.id: microphone, AudioInputDevice.systemAudioID: systemAudio],
+            preferredDeviceIDs: [Fixtures.builtInMic.id, AudioInputDevice.systemAudioID],
+            playbackMonitor: playback
+        )
+        coordinator.silenceWarningDelay = .milliseconds(50)
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        // A muted microphone is flagged whether or not anything plays.
+        try await waitUntil { coordinator.silentDevices == [Fixtures.builtInMic] }
+        // Nothing plays, so silent system audio is no sign of a missing permission.
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(coordinator.silentDevices == [Fixtures.builtInMic])
+
+        playback.isPlaying.update { $0 = true }
+        try await waitUntil { coordinator.silentDevices == [Fixtures.builtInMic, .systemAudio] }
+
+        await coordinator.stopRecording()
     }
 
     @Test func sourceThatIsHeardLeavesSilentList() async throws {

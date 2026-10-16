@@ -36,11 +36,9 @@ struct MixdownApp: App {
                 .environment(navigation)
                 .capturesOpenWindow(for: appDelegate, navigation: navigation)
         } label: {
-            MenuBarLabel(
-                coordinator: environment.coordinator,
-                // The notch island shows the time instead.
-                recordingElapsed: environment.showsRecordingInNotch ? nil : environment.recordingElapsed
-            )
+            // Reads the environment itself: read here, the elapsed time ticking every second
+            // would rebuild every scene.
+            MenuBarLabel(environment: environment)
         }
         .menuBarExtraStyle(.menu)
 

@@ -5,13 +5,15 @@ import SwiftUI
 /// model downloads or a recording is transcribed, or the time elapsed while recording (unless the
 /// notch island shows it).
 struct MenuBarLabel: View {
-    let coordinator: RecordingCoordinator
-    /// Whole seconds recorded so far, while recording; `nil` while the notch island shows them.
-    let recordingElapsed: Int?
+    let environment: AppEnvironment
 
+    private var coordinator: RecordingCoordinator { environment.coordinator }
     private var hasSilentInput: Bool { !coordinator.silentDevices.isEmpty }
 
     var body: some View {
+        // Whole seconds recorded so far, while recording; `nil` while the notch island shows them,
+        // which also spares the label redrawing every second.
+        let recordingElapsed = environment.showsRecordingInNotch ? nil : environment.recordingElapsed
         let phase = coordinator.phase
         let remaining = coordinator.timeRemaining
         HStack(spacing: 4) {
