@@ -37,6 +37,10 @@ struct AppSettings {
         /// Whether a recording's time and input levels show around the notch instead of in the
         /// menu bar. Absent means yes.
         static let showsRecordingInNotch = "showsRecordingInNotch"
+        /// A `NotchIsland.Side` raw value for the recording time. Absent means left.
+        static let islandTimeSide = "islandTimeSide"
+        /// Whether the notch island shows the input levels. Absent means yes.
+        static let islandShowsLevels = "islandShowsLevels"
 
         /// The name of the sound played for `cue`; empty for none. Absent means the cue's default.
         static func sound(for cue: AudioCue) -> String { "sound.\(cue.rawValue)" }
@@ -137,6 +141,21 @@ struct AppSettings {
     var showsRecordingInNotch: Bool {
         get { defaults.object(forKey: Key.showsRecordingInNotch) as? Bool ?? true }
         nonmutating set { defaults.set(newValue, forKey: Key.showsRecordingInNotch) }
+    }
+
+    /// What the notch island shows, and where.
+    var islandLayout: NotchIsland.Layout {
+        get {
+            NotchIsland.Layout(
+                timeSide: defaults.string(forKey: Key.islandTimeSide).flatMap(NotchIsland.Side.init(rawValue:))
+                    ?? .left,
+                showsLevels: defaults.object(forKey: Key.islandShowsLevels) as? Bool ?? true
+            )
+        }
+        nonmutating set {
+            defaults.set(newValue.timeSide.rawValue, forKey: Key.islandTimeSide)
+            defaults.set(newValue.showsLevels, forKey: Key.islandShowsLevels)
+        }
     }
 }
 

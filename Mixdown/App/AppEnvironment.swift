@@ -37,6 +37,8 @@ final class AppEnvironment {
     private(set) var isRecordingShortcutEnabled: Bool
     /// Whether a recording shows in the notch island rather than the menu bar. See `NotchIsland`.
     private(set) var showsRecordingInNotch: Bool
+    /// What the notch island shows, and where.
+    private(set) var islandLayout: NotchIsland.Layout
 
     private let settings: AppSettings
     @ObservationIgnored private var deviceMonitor: Task<Void, Never>?
@@ -76,6 +78,7 @@ final class AppEnvironment {
         self.notifiesAboutCalls = settings.notifiesAboutCalls
         self.recordsCallsAutomatically = settings.recordsCallsAutomatically
         self.showsRecordingInNotch = settings.showsRecordingInNotch
+        self.islandLayout = settings.islandLayout
         let showRecorder: () -> Void = { [weak navigation] in
             guard let navigation, let openWindow = navigation.openWindow else { return }
             navigation.show(.recorder, using: openWindow)
@@ -161,18 +164,19 @@ final class AppEnvironment {
         }
     }
 
-    /// Shows the notch island while recording, if it's turned on. Re-registers itself after every
-    /// change, including the coordinator being replaced.
+    /// Shows the notch island while recording, if it's turned on, and lays it out again when its
+    /// settings change. Re-registers itself after every change, including the coordinator being
+    /// replaced.
     private func observeNotchIsland() {
-        let shows = withObservationTracking {
-            coordinator.isRecording && showsRecordingInNotch
+        let (shows, layout) = withObservationTracking {
+            (coordinator.isRecording && showsRecordingInNotch, islandLayout)
         } onChange: { [weak self] in
             Task { @MainActor in self?.observeNotchIsland() }
         }
         if shows {
             let island = notchIsland ?? NotchIsland(environment: self, openRecorder: showRecorder)
             notchIsland = island
-            island.show()
+            island.show(layout)
         } else {
             notchIsland?.hide()
         }
@@ -326,6 +330,11 @@ final class AppEnvironment {
     func setShowsRecordingInNotch(_ enabled: Bool) {
         settings.showsRecordingInNotch = enabled
         showsRecordingInNotch = enabled
+    }
+
+    func setIslandLayout(_ layout: NotchIsland.Layout) {
+        settings.islandLayout = layout
+        islandLayout = layout
     }
 
     // MARK: Transcription

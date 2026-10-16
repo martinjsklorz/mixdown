@@ -34,7 +34,7 @@ struct SettingsView: View {
         case .recording: 420
         case .transcription: 630
         case .notifications: 400
-        case .design: 290
+        case .design: 360
         }
     }
 

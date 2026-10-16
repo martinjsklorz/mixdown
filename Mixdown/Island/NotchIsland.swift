@@ -8,19 +8,48 @@ import SwiftUI
 /// placed over the notch. On a screen without one, it hangs from the top center of the menu bar.
 @MainActor
 final class NotchIsland {
+    enum Side: String, CaseIterable, Identifiable {
+        case left
+        case right
+
+        var id: Self { self }
+
+        var title: String {
+            switch self {
+            case .left: "Left of Notch"
+            case .right: "Right of Notch"
+            }
+        }
+    }
+
+    /// What the island shows, and where.
+    struct Layout: Equatable {
+        /// The side of the notch for the recording time. The input levels go on the other side.
+        var timeSide: Side = .left
+        /// Without levels, the island only reaches out on the time's side.
+        var showsLevels = true
+    }
+
     private let environment: AppEnvironment
     private let openRecorder: () -> Void
     /// Created on first `show()`, as windows shouldn't be made before the app has launched.
     private var panel: IslandPanel?
     private(set) var isShown = false
+    private var layout = Layout()
 
     init(environment: AppEnvironment, openRecorder: @escaping () -> Void) {
         self.environment = environment
         self.openRecorder = openRecorder
     }
 
-    func show() {
-        guard !isShown else { return }
+    /// Shows the island laid out as `layout`, or lays it out again if it's already showing.
+    func show(_ layout: Layout) {
+        let layoutChanged = layout != self.layout
+        self.layout = layout
+        if isShown {
+            if layoutChanged, let panel { place(panel) }
+            return
+        }
         isShown = true
         let panel = panel ?? makePanel()
         place(panel)
@@ -65,17 +94,28 @@ final class NotchIsland {
     }
 
     /// Sizes `panel` around the notch of the screen that has one, else the main screen, and gives it
-    /// a view laid out for that notch.
+    /// a view laid out for that notch and `layout`.
     private func place(_ panel: IslandPanel) {
         guard let screen = NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.screens.first
         else { return }
         let notch = Self.notch(on: screen)
         let wing = NotchIslandView.wingWidth
-        let frame = NSRect(x: notch.minX - wing, y: notch.minY, width: notch.width + 2 * wing, height: notch.height)
+        let width = notch.width + (layout.showsLevels ? 2 : 1) * wing
+        let x =
+            if notch.width == 0 {
+                // No notch to grow out of: centered.
+                notch.midX - width / 2
+            } else if layout.showsLevels || layout.timeSide == .left {
+                notch.minX - wing
+            } else {
+                notch.minX
+            }
+        let frame = NSRect(x: x, y: notch.minY, width: width, height: notch.height)
         let hostingView = NSHostingView(
             rootView: NotchIslandView(
                 environment: environment,
                 notchWidth: notch.width,
+                layout: layout,
                 openRecorder: openRecorder
             )
         )

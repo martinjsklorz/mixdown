@@ -1,8 +1,8 @@
 import MixdownCore
 import SwiftUI
 
-/// The notch island's content: the recording time left of the notch, a waveform per input right
-/// of it, on black that runs into the notch.
+/// The notch island's content: the recording time on one side of the notch and, unless turned off,
+/// a waveform per input on the other, on black that runs into the notch.
 struct NotchIslandView: View {
     /// How far the island reaches out on either side of the notch.
     static let wingWidth: CGFloat = 80
@@ -10,16 +10,15 @@ struct NotchIslandView: View {
     let environment: AppEnvironment
     /// Left empty in the middle, behind the notch. Zero on screens without one.
     let notchWidth: CGFloat
+    let layout: NotchIsland.Layout
     let openRecorder: () -> Void
 
     var body: some View {
         HStack(spacing: 0) {
-            ElapsedWing(environment: environment)
-                .frame(width: Self.wingWidth)
+            wing(on: .left)
             Color.clear
                 .frame(width: notchWidth)
-            LevelsWing(coordinator: environment.coordinator)
-                .frame(width: Self.wingWidth)
+            wing(on: .right)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.black, in: UnevenRoundedRectangle(bottomLeadingRadius: 10, bottomTrailingRadius: 10))
@@ -28,11 +27,33 @@ struct NotchIslandView: View {
         .onTapGesture { openRecorder() }
         .help("Open Record")
     }
+
+    @ViewBuilder
+    private func wing(on side: NotchIsland.Side) -> some View {
+        if side == layout.timeSide {
+            ElapsedWing(environment: environment, side: side)
+                .frame(width: Self.wingWidth)
+        } else if layout.showsLevels {
+            LevelsWing(coordinator: environment.coordinator, side: side)
+                .frame(width: Self.wingWidth)
+        }
+    }
+}
+
+extension View {
+    /// Aligns a wing's content to the island's outer edge on `side`, leaving more room there than
+    /// next to the notch.
+    fileprivate func wingAlignment(_ side: NotchIsland.Side) -> some View {
+        frame(maxWidth: .infinity, alignment: side == .left ? .leading : .trailing)
+            .padding(side == .left ? .leading : .trailing, 12)
+            .padding(side == .left ? .trailing : .leading, 6)
+    }
 }
 
 /// A pulsing red dot and the time recorded so far.
 private struct ElapsedWing: View {
     let environment: AppEnvironment
+    let side: NotchIsland.Side
 
     var body: some View {
         let elapsed = environment.recordingElapsed ?? 0
@@ -48,8 +69,7 @@ private struct ElapsedWing: View {
                 .lineLimit(1)
                 .fixedSize()
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.leading, 12)
+        .wingAlignment(side)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Recording, \(Duration.seconds(elapsed).formatted(.units(width: .wide)))")
     }
@@ -60,6 +80,7 @@ private struct ElapsedWing: View {
 /// turns orange. With two inputs, the microphone is on the left.
 private struct LevelsWing: View {
     let coordinator: RecordingCoordinator
+    let side: NotchIsland.Side
 
     var body: some View {
         let silent = Set(coordinator.silentDevices.map(\.id))
@@ -72,8 +93,7 @@ private struct LevelsWing: View {
                     .accessibilityLabel("\(device.name) level")
             }
         }
-        .frame(maxWidth: .infinity, alignment: .trailing)
-        .padding(.trailing, 12)
+        .wingAlignment(side)
     }
 }
 
