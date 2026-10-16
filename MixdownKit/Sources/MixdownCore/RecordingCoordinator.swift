@@ -60,10 +60,13 @@ public final class RecordingCoordinator {
     /// `silenceWarningDelay` has passed. A source leaves the list as soon as it's heard.
     ///
     /// Without the System Audio Recording permission the tap keeps running but delivers silence,
-    /// so this is the only way a denial shows up before the note comes out empty.
+    /// so this is the only way a denial shows up before the note comes out empty. As the tap is
+    /// just as silent when nothing plays, system audio only counts as silent while another app
+    /// plays audio, if there's a `playbackMonitor` to tell.
     public private(set) var silentDevices: [AudioInputDevice] = []
 
-    /// How long a source may stay silent before it's listed in `silentDevices`.
+    /// How long a source may stay silent before it's listed in `silentDevices`. For system audio,
+    /// the time other apps play audio.
     var silenceWarningDelay: Duration = .seconds(10)
 
     /// How long to wait after a device goes away mid-recording before picking its replacement,
@@ -121,6 +124,7 @@ public final class RecordingCoordinator {
     private let deviceProvider: any AudioDeviceProvider
     private let captureFactory: any AudioCaptureFactory
     private let engine: any TranscriptionEngine
+    private let playbackMonitor: (any AudioPlaybackMonitoring)?
     private let now: @Sendable () -> Date
     private let logger = Logger(subsystem: "app.mixdown", category: "coordinator")
 
@@ -259,6 +263,8 @@ public final class RecordingCoordinator {
 
     /// - Parameters:
     ///   - preferredDeviceIDs: Devices to select when they're available, e.g. the user's last choice.
+    ///   - playbackMonitor: Tells silent system audio with nothing playing from a missing permission.
+    ///     Without one, system audio is flagged like a microphone.
     ///   - now: Clock used for recording start times. Injectable for tests.
     public init(
         deviceProvider: any AudioDeviceProvider,
@@ -269,6 +275,7 @@ public final class RecordingCoordinator {
         options: TranscriptionOptions = .init(),
         sourceLabels: SourceLabels = .init(),
         preferredDeviceIDs: [String] = [],
+        playbackMonitor: (any AudioPlaybackMonitoring)? = nil,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.deviceProvider = deviceProvider
@@ -280,6 +287,7 @@ public final class RecordingCoordinator {
         self.options = options
         self.sourceLabels = sourceLabels
         self.preferredDeviceIDs = preferredDeviceIDs
+        self.playbackMonitor = playbackMonitor
         self.now = now
     }
 
@@ -900,16 +908,27 @@ public final class RecordingCoordinator {
         else { return }
         inputLevels[deviceID] = level
         if !level.isSilent, heardDeviceIDs.insert(deviceID).inserted {
+            silenceChecks.removeValue(forKey: deviceID)?.cancel()
             silentDevices.removeAll { $0.id == deviceID }
         }
     }
 
     /// Lists `device` in `silentDevices` if it's still recording but hasn't been heard once
-    /// `silenceWarningDelay` has passed.
+    /// `silenceWarningDelay` has passed. For system audio, only the time other apps play audio
+    /// counts, so a recording with nothing playing isn't flagged.
     private func scheduleSilenceCheck(of device: AudioInputDevice, in session: Session) {
         silenceChecks[device.id]?.cancel()
+        let playbackMonitor = device.kind == .systemAudio ? playbackMonitor : nil
         silenceChecks[device.id] = Task { [weak self, silenceWarningDelay] in
-            try? await Task.sleep(for: silenceWarningDelay)
+            let step = silenceWarningDelay / 10
+            var silentFor = Duration.zero
+            while silentFor < silenceWarningDelay {
+                try? await Task.sleep(for: step)
+                guard !Task.isCancelled else { return }
+                if await playbackMonitor?.isOtherAudioPlaying() ?? true {
+                    silentFor += step
+                }
+            }
             guard !Task.isCancelled else { return }
             self?.flagIfSilent(device, in: session)
         }

@@ -39,11 +39,7 @@ struct RecorderView: View {
                     "Download the Speech Model",
                     detail: "Recording starts once \(environment.model.displayName) is on this Mac."
                 )
-                Button("Download Model", systemImage: "arrow.down.circle") {
-                    Task { await coordinator.prepareEngine() }
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
+                downloadButton(for: coordinator)
 
             case .preparingModel(let progress):
                 headline("Downloading Model…", detail: environment.model.displayName)
@@ -91,7 +87,12 @@ struct RecorderView: View {
                     .symbolRenderingMode(.multicolor)
                     .multilineTextAlignment(.center)
                 Button("Dismiss") { coordinator.dismissError() }
-                startButton(for: coordinator)
+                // After a failed download, recording still needs the model.
+                if coordinator.isModelDownloaded {
+                    startButton(for: coordinator)
+                } else {
+                    downloadButton(for: coordinator)
+                }
 
             case .idle:
                 headline("Ready to Record", detail: nil)
@@ -100,6 +101,15 @@ struct RecorderView: View {
         }
         .multilineTextAlignment(.center)
         .animation(.default, value: coordinator.isRecording)
+    }
+
+    private func downloadButton(for coordinator: RecordingCoordinator) -> some View {
+        Button("Download Model", systemImage: "arrow.down.circle") {
+            Task { await coordinator.prepareEngine() }
+        }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.large)
+        .disabled(!coordinator.isIdle)
     }
 
     private func startButton(for coordinator: RecordingCoordinator) -> some View {

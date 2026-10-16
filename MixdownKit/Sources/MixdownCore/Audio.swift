@@ -74,6 +74,13 @@ public protocol AudioDeviceProvider: Sendable {
     func deviceUpdates() -> AsyncStream<[AudioInputDevice]>
 }
 
+/// Tells whether other apps are playing audio. A system audio tap delivers silence both when
+/// nothing plays and when the permission is missing; this tells the two apart.
+public protocol AudioPlaybackMonitoring: Sendable {
+    /// Whether a process other than Mixdown is playing audio right now.
+    func isOtherAudioPlaying() async -> Bool
+}
+
 /// A single capture session for one device. Instances are single-use: start once, stop once.
 public protocol AudioCapturing: AnyObject, Sendable {
     /// Starts capturing and returns a stream of 16 kHz mono chunks.

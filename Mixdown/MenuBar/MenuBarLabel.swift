@@ -4,13 +4,14 @@ import SwiftUI
 /// The status item: an icon reflecting the coordinator's phase, plus the time left while a
 /// model downloads or a recording is transcribed, or the time elapsed while recording.
 struct MenuBarLabel: View {
-    let coordinator: RecordingCoordinator
-    /// Whole seconds recorded so far, while recording.
-    let recordingElapsed: Int?
+    let environment: AppEnvironment
 
+    private var coordinator: RecordingCoordinator { environment.coordinator }
     private var hasSilentInput: Bool { !coordinator.silentDevices.isEmpty }
 
     var body: some View {
+        // Whole seconds recorded so far, while recording.
+        let recordingElapsed = environment.recordingElapsed
         let phase = coordinator.phase
         let remaining = coordinator.timeRemaining
         HStack(spacing: 4) {

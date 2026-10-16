@@ -172,6 +172,13 @@ struct MockCaptureFactory: AudioCaptureFactory {
     }
 }
 
+/// Reports whether other apps play audio as `isPlaying` says.
+struct MockPlaybackMonitor: AudioPlaybackMonitoring {
+    let isPlaying = LockedValue(false)
+
+    func isOtherAudioPlaying() async -> Bool { isPlaying.current }
+}
+
 actor MockEngine: TranscriptionEngine {
     nonisolated let info = TranscriptionEngineInfo(id: "mock", displayName: "Mock Engine")
     nonisolated var isDownloaded: Bool { downloaded.current }
