@@ -62,6 +62,15 @@ Turn on both your microphone and **System Audio** to capture both sides of a cal
 through the microphone, everyone else through your Mac's speakers. Choosing a microphone in the
 menu replaces the current one; choosing it again turns it off, as long as System Audio stays on.
 
+**System Default**, the first microphone in the list and the choice until you pick another, always
+records from the Mac's current input: connect AirPods and Mixdown switches to them, take them out
+and it's back on the built-in microphone. Pick a specific microphone instead to stay on it.
+
+Inputs can change while recording, too: switch microphones or turn System Audio on and off from
+the menu, and the recording carries on. If a microphone you picked disappears, Mixdown moves to
+the default one and returns to yours when it's back. The note keeps one track per input and lists
+every device it was recorded from.
+
 Each input is recorded and transcribed on its own, then the lines are merged by time and labeled
 **Me** and **Others**. Change the names under **Settings → Recording**.
 
