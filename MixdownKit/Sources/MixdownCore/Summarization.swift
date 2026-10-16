@@ -2,23 +2,37 @@ import Foundation
 
 /// What a summarizer makes of a transcript. Any part may be empty.
 public struct NoteSummary: Sendable, Codable, Equatable {
+    /// The topic in a few words, to name the note after.
+    public var title: String
     /// A few sentences on what the recording was about.
     public var overview: String
     public var keyPoints: [String]
     /// Tasks someone agreed to do, naming the person where the transcript does.
     public var actionItems: [String]
+    /// ISO 639-1 code of the language the summary is written in, if known.
+    public var language: String?
 
-    public init(overview: String = "", keyPoints: [String] = [], actionItems: [String] = []) {
+    public init(
+        title: String = "",
+        overview: String = "",
+        keyPoints: [String] = [],
+        actionItems: [String] = [],
+        language: String? = nil
+    ) {
+        self.title = title
         self.overview = overview
         self.keyPoints = keyPoints
         self.actionItems = actionItems
+        self.language = language
     }
 
     public var isEmpty: Bool {
-        Self.isBlank(overview) && keyPoints.allSatisfy(Self.isBlank) && actionItems.allSatisfy(Self.isBlank)
+        Self.isBlank(title) && Self.isBlank(overview) && keyPoints.allSatisfy(Self.isBlank)
+            && actionItems.allSatisfy(Self.isBlank)
     }
 
-    /// The summary as plain text, for handing it back to a model.
+    /// The summary as plain text, for handing it back to a model. Leaves out the title, which the
+    /// overview covers.
     public var plainText: String {
         var blocks: [String] = []
         if !Self.isBlank(overview) {
@@ -124,9 +138,9 @@ public struct ChunkedSummarizer: Sendable {
             var parts: [String] = []
             for (index, piece) in pieces.enumerated() {
                 try Task.checkCancellation()
-                let summary = try await step(piece, kind)
-                if !summary.isEmpty {
-                    parts.append("Part \(index + 1) of \(pieces.count):\n\(summary.plainText)")
+                let text = try await step(piece, kind).plainText
+                if !text.isEmpty {
+                    parts.append("Part \(index + 1) of \(pieces.count):\n\(text)")
                 }
             }
             pieces = Self.chunks(of: parts, maxTokens: maxTokens, separator: "\n\n")

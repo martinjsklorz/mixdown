@@ -333,7 +333,8 @@ struct RecordingCoordinatorTests {
     /// Records a second of audio that `MockEngine` turns into `transcript`, and returns the note.
     private func recordNote(
         transcript: Transcript = Transcript(segments: [TranscriptSegment(start: 0, end: 1, text: "Hello.")]),
-        summarizer: MockSummarizer?
+        summarizer: MockSummarizer?,
+        isCall: Bool = false
     ) async throws -> (RecordingCoordinator, Note) {
         let writer = InMemoryNoteWriter()
         let coordinator = makeCoordinator(
@@ -344,6 +345,7 @@ struct RecordingCoordinatorTests {
         )
         await coordinator.monitorDevices()
         await coordinator.startRecording()
+        if isCall { coordinator.markRecordingAsCall() }
         await coordinator.stopRecording()
         return (coordinator, try #require(await writer.notes.first))
     }
@@ -395,6 +397,38 @@ struct RecordingCoordinatorTests {
     @Test func noSummarizerMeansNoSummary() async throws {
         let (_, note) = try await recordNote(summarizer: nil)
         #expect(note.summary == nil)
+        #expect(note.title.hasPrefix("Recording "))
+    }
+
+    @Test func noteIsNamedAfterSummaryTitle() async throws {
+        let summary = NoteSummary(title: "Release timeline", overview: "The release moves.")
+
+        let (_, note) = try await recordNote(summarizer: MockSummarizer(summary: summary))
+        #expect(note.title == "Release timeline")
+
+        let (_, call) = try await recordNote(summarizer: MockSummarizer(summary: summary), isCall: true)
+        #expect(call.title == "Call about Release timeline")
+
+        var german = summary
+        german.language = "de"
+        let (_, germanCall) = try await recordNote(summarizer: MockSummarizer(summary: german), isCall: true)
+        #expect(germanCall.title == "Anruf zu Release timeline")
+    }
+
+    @Test func markingAsCallOutsideARecordingIsIgnored() async throws {
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            capture: MockCapture(chunks: [Fixtures.chunk(seconds: 1)]),
+            engine: MockEngine(transcript: Transcript(segments: [TranscriptSegment(start: 0, end: 1, text: "Hi.")])),
+            writer: writer,
+            summarizer: MockSummarizer(summary: NoteSummary(title: "Hello"))
+        )
+        await coordinator.monitorDevices()
+        coordinator.markRecordingAsCall()
+        await coordinator.startRecording()
+        await coordinator.stopRecording()
+
+        #expect(try #require(await writer.notes.first).title == "Hello")
     }
 
     // MARK: - Multiple sources

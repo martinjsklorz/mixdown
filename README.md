@@ -20,7 +20,7 @@ collapsible sections by day. The cog above the sidebar, next to the sidebar butt
 3. Pick your inputs in the **Recording** menu (a microphone, **System Audio**, or both), or with
    **Change…** next to the setup summary.
 4. Click the red button (or press ⌘R) to record, and again to stop. From any other app, press
-   ⌃⌥⌘R. Change that shortcut or turn it off under **Settings → Recording**.
+   ⌃⌥⌘R. Change that shortcut or turn it off under **Settings → General**.
 
 A few seconds later the note appears under **Today** in the sidebar and opens, rendered much like
 Apple Notes. A **Note Ready** notification says so too, with **Open** to show the note in Mixdown
@@ -33,14 +33,14 @@ for the note that's open.
 Mixdown asks before moving a note to the Trash (tick **Do not ask again**, or turn it back on under
 **Settings → General**), then shows a notification with **Restore** to put the note back. Copying
 a transcript is confirmed with a notification too. To turn all of Mixdown's notifications off,
-untick **Show notifications** under **Settings → General**; notes can then only be restored from
+untick **Show notifications** under **Settings → Notifications**; notes can then only be restored from
 the Trash.
 **File → Open Notes Folder** and **Reveal Last Note in Finder** take you to the files.
 
 Short sounds mark recording starting and stopping, a note being ready, and something going wrong
 (recording couldn't start or stopped early, or a note couldn't be finished), so you can tell from
 the menu bar without looking. Pick a different macOS sound, or **None**, for each under
-**Settings → General → Sounds**, or untick **Play sounds**. They aren't recorded from system
+**Settings → Notifications → Sounds**, or untick **Play sounds**. They aren't recorded from system
 audio, but without headphones your microphone may hear the start sound.
 
 **View → Record / Notes** (⌘1, ⌘2) switch the window's section, and **Mixdown → Settings…** (⌘,)
@@ -72,7 +72,7 @@ the default one and returns to yours when it's back. The note keeps one track pe
 every device it was recorded from.
 
 Each input is recorded and transcribed on its own, then the lines are merged by time and labeled
-**Me** and **Others**. Change the names under **Settings → Recording**.
+**Me** and **Others**. Change the names under **Settings → Transcription**.
 
 Wear headphones if you can. Without them your microphone also hears the other people, and while
 Mixdown drops lines it recognizes as that echo, it can't catch all of it.
@@ -95,7 +95,7 @@ Two switches under **Settings → Recording → Calls** decide what happens:
   Recording Stopped** say so instead of asking, and if Mixdown can't record yet, it asks with
   **Record This Call?** after all. With notifications off, the menu bar icon is the only sign.
 
-With both off, calls aren't watched. Turning off **Show notifications** under **Settings → General**
+With both off, calls aren't watched. Turning off **Show notifications** under **Settings → Notifications**
 turns off the call notifications too, but not automatic recording.
 
 ## Speech models
@@ -127,9 +127,15 @@ Intelligence writes it on your Mac after the transcript is ready, so the note ta
 longer to appear. Nothing extra is downloaded, and the transcript doesn't leave your Mac. Long
 recordings are summarized in parts, which are then combined.
 
+The summary also names the note after its topic, e.g. "Release timeline". A call recorded from
+Mixdown's call notification, or automatically (see **Settings → Recording**), is titled as one in
+the language of the recording, e.g. "Call about Release timeline" or "Anruf zu Budgetplanung".
+Recordings started any other way aren't, even during a call. Without a summary, a note is titled
+with the date and time it was recorded.
+
 Turn summaries off under **Settings → Transcription**, which also says why summaries aren't
 available on this Mac if they aren't. Without them, or if summarizing fails, the note is saved
-with just the transcript.
+with just the transcript and the date as its title.
 
 ## Notes
 
@@ -147,7 +153,7 @@ A note looks like this:
 
 ```markdown
 ---
-title: "Recording Oct 13, 2026 at 2:02 PM"
+title: "Release timeline"
 created: 2026-10-13T14:02:11+02:00
 duration: 754
 source: "MacBook Pro Microphone"
@@ -157,7 +163,7 @@ speakers: ["Speaker 1", "Speaker 2"]
 tags: [mixdown]
 ---
 
-# Recording Oct 13, 2026 at 2:02 PM
+# Release timeline
 
 ## Summary
 

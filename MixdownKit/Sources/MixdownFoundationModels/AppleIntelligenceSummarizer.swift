@@ -68,9 +68,11 @@ enum SystemModelSummary {
         while true {
             do {
                 let summarizer = ChunkedSummarizer(maxTokens: maxTokens)
-                return try await summarizer.summarize(transcript) { text, kind in
+                var summary = try await summarizer.summarize(transcript) { text, kind in
                     try await respond(to: text, kind: kind, model: model, language: language)
                 }
+                summary.language = language
+                return summary
             } catch let error where isContextOverflow(error) && maxTokens / 2 >= minimumPieceTokens {
                 maxTokens /= 2
                 logger.info("Context overflowed, retrying with pieces of \(maxTokens) tokens")
@@ -144,7 +146,7 @@ enum SystemModelSummary {
 @available(macOS 26, *)
 @Generable
 struct GeneratedSummary {
-    // Generated in this order, so the overview can draw on the points before it.
+    // Generated in this order, so the overview and the title can draw on what comes before them.
     @Guide(
         description: "The most important points, decisions and conclusions, one short sentence each",
         .maximumCount(8)
@@ -160,8 +162,12 @@ struct GeneratedSummary {
     @Guide(description: "Two to four sentences on what the recording is about")
     var overview: String
 
+    @Guide(description: "The topic in two to six words, as a title. Not a sentence; no \"Meeting about\" or similar")
+    var title: String
+
     var noteSummary: NoteSummary {
         NoteSummary(
+            title: title.trimmingCharacters(in: .whitespacesAndNewlines),
             overview: overview.trimmingCharacters(in: .whitespacesAndNewlines),
             keyPoints: keyPoints.map(Self.listItem),
             actionItems: actionItems.map(Self.listItem)
