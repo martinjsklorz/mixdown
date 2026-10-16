@@ -274,7 +274,7 @@ struct RecordingCoordinatorTests {
         #expect(coordinator.phase == .idle)
     }
 
-    @Test func captureErrorMidRecordingSavesPartialAudio() async throws {
+    @Test func captureErrorMidRecordingSavesNoteOfPartialRecording() async throws {
         let error = AudioCaptureError.deviceNotFound("USB Microphone")
         let capture = MockCapture(chunks: [Fixtures.chunk(seconds: 1)], streamError: error)
         let writer = InMemoryNoteWriter()
