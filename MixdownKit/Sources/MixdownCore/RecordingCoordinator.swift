@@ -738,6 +738,9 @@ public final class RecordingCoordinator {
                 let progress = progressHandler(track: index, sessionID: session.id)
                 group.addTask {
                     var transcript = try await engine.transcribe(track.samples, options: options, progress: progress)
+                    // Engines needn't report progress (e.g. for a source without speech), but the
+                    // bar mustn't wait on a source that's done.
+                    progress(1)
                     for i in transcript.segments.indices {
                         transcript.segments[i].start += track.offset
                         transcript.segments[i].end += track.offset

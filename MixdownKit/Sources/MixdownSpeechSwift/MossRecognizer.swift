@@ -91,6 +91,9 @@ final class MossRecognizer: SpeechRecognizer, @unchecked Sendable {
         }
     }
 
+    /// `MossMLXModel` has no `unload()`; its weights are freed with the instance.
+    func unload() {}
+
     /// `S01` → `Speaker 1`. Unknown formats are kept as-is.
     static func speakerName(for label: String) -> String {
         guard label.first == "S", let number = Int(label.dropFirst()) else { return label }

@@ -53,6 +53,17 @@ extension SpeechSwiftModel {
         }
     }
 
+    /// Seconds of audio a piece takes per second of recognition, for the progress estimate until
+    /// the engine has timed this Mac. On the slow side, so the first estimate doesn't overshoot.
+    /// MOSS INT5 measured 15.5× with diarization on an M5 Pro (docs/benchmarks/moss-mlx.md).
+    var expectedSpeed: Double {
+        switch self {
+        case .qwen3ASRSmall: 20
+        case .qwen3ASRLarge: 10
+        case .mossTranscribeDiarize: 6
+        }
+    }
+
     /// The backend that loads and runs this model.
     var recognizerType: any SpeechRecognizer.Type {
         switch self {
