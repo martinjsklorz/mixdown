@@ -20,6 +20,9 @@ struct SettingsView: View {
             NotificationsSettingsView()
                 .tabItem { tabLabel(.notifications) }
                 .tag(MainNavigation.SettingsTab.notifications)
+            DesignSettingsView()
+                .tabItem { tabLabel(.design) }
+                .tag(MainNavigation.SettingsTab.design)
         }
         .frame(width: 520, height: height(for: navigation.settingsTab))
     }
@@ -31,6 +34,7 @@ struct SettingsView: View {
         case .recording: 420
         case .transcription: 630
         case .notifications: 400
+        case .design: 160
         }
     }
 
