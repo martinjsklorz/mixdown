@@ -127,7 +127,9 @@ struct ChunkedSummarizerTests {
                     combined.update { $0.append(text) }
                     return NoteSummary(overview: "All")
                 }
-                return text.hasPrefix("S2") ? NoteSummary() : NoteSummary(keyPoints: [String(text.prefix(2))])
+                // A title alone doesn't make a part worth combining.
+                return text.hasPrefix("S2")
+                    ? NoteSummary(title: "Second") : NoteSummary(keyPoints: [String(text.prefix(2))])
             }
         )
 
@@ -159,9 +161,15 @@ struct ChunkedSummarizerTests {
     // MARK: - Summary text
 
     @Test func plainTextListsNonEmptyParts() {
-        let summary = NoteSummary(overview: " Planning. ", keyPoints: ["Ship Friday", " "], actionItems: [])
+        let summary = NoteSummary(
+            title: "Release",
+            overview: " Planning. ",
+            keyPoints: ["Ship Friday", " "],
+            actionItems: []
+        )
         #expect(summary.plainText == "Planning.\n\nKey points:\n- Ship Friday")
         #expect(!summary.isEmpty)
-        #expect(NoteSummary(overview: "\n", keyPoints: [" "], actionItems: [""]).isEmpty)
+        #expect(NoteSummary(title: " ", overview: "\n", keyPoints: [" "], actionItems: [""]).isEmpty)
+        #expect(!NoteSummary(title: "Release").isEmpty)
     }
 }

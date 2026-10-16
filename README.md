@@ -118,9 +118,15 @@ Intelligence writes it on your Mac after the transcript is ready, so the note ta
 longer to appear. Nothing extra is downloaded, and the transcript doesn't leave your Mac. Long
 recordings are summarized in parts, which are then combined.
 
+The summary also names the note after its topic, e.g. "Release timeline". A call recorded from
+Mixdown's call notification, or automatically (see **Settings → Recording**), is titled as one in
+the language of the recording, e.g. "Call about Release timeline" or "Anruf zu Budgetplanung".
+Recordings started any other way aren't, even during a call. Without a summary, a note is titled
+with the date and time it was recorded.
+
 Turn summaries off under **Settings → Transcription**, which also says why summaries aren't
 available on this Mac if they aren't. Without them, or if summarizing fails, the note is saved
-with just the transcript.
+with just the transcript and the date as its title.
 
 ## Notes
 
@@ -138,7 +144,7 @@ A note looks like this:
 
 ```markdown
 ---
-title: "Recording Oct 13, 2026 at 2:02 PM"
+title: "Release timeline"
 created: 2026-10-13T14:02:11+02:00
 duration: 754
 source: "MacBook Pro Microphone"
@@ -148,7 +154,7 @@ speakers: ["Speaker 1", "Speaker 2"]
 tags: [mixdown]
 ---
 
-# Recording Oct 13, 2026 at 2:02 PM
+# Release timeline
 
 ## Summary
 
