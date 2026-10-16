@@ -48,7 +48,7 @@ struct MenuBarContent: View {
         DevicePicker(
             devices: coordinator.devices,
             selectedIDs: Set(coordinator.selectedDevices.map(\.id)),
-            isEnabled: !coordinator.isRecording,
+            followsDefaultMicrophone: environment.followsDefaultMicrophone,
             onSelectMicrophone: environment.selectMicrophone,
             onSetSystemAudio: environment.setRecordsSystemAudio
         )

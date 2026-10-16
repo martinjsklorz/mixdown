@@ -167,7 +167,7 @@ struct RecorderView: View {
     private var setup: some View {
         GroupBox {
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 8) {
-                row("mic", "Microphone", environment.selectedMicrophone?.name ?? "Off")
+                row("mic", "Microphone", microphoneName)
                 row("speaker.wave.2", "System audio", environment.recordsSystemAudio ? "On" : "Off")
                 row("waveform", "Model", environment.model.displayName)
                 row("globe", "Language", languageName)
@@ -209,6 +209,11 @@ struct RecorderView: View {
         case .available: return status.name ?? ""
         case .unavailable: return status.name.map { "\($0) (not available)" } ?? "Not available"
         }
+    }
+
+    private var microphoneName: String {
+        guard let microphone = environment.selectedMicrophone else { return "Off" }
+        return environment.followsDefaultMicrophone ? "System Default (\(microphone.name))" : microphone.name
     }
 
     private var summaryName: String {

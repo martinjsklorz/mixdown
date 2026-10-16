@@ -95,6 +95,7 @@ final class AppEnvironment {
             isRecording: { [weak self] in self?.coordinator.isRecording ?? false },
             startRecording: { [weak self] in self?.startRecordingCall() ?? false },
             stopRecording: { [weak self] in self?.stopRecordingCall() },
+            markRecordingAsCall: { [weak self] in self?.coordinator.markRecordingAsCall() },
             showRecorder: showRecorder
         )
         callPrompt.notifies = notifiesAboutCalls
@@ -233,8 +234,20 @@ final class AppEnvironment {
         coordinator.selectedDevices.contains { $0.kind == .systemAudio }
     }
 
+    /// Whether the microphone is **System Default**, following the Mac's default input.
+    var followsDefaultMicrophone: Bool {
+        coordinator.followsDefaultMicrophone && selectedMicrophone != nil
+    }
+
+    /// The microphone as chosen: `AudioInputDevice.defaultMicrophone` for System Default, else
+    /// the selected device.
+    private var chosenMicrophone: AudioInputDevice? {
+        followsDefaultMicrophone ? .defaultMicrophone : selectedMicrophone
+    }
+
     /// Switches to `device` (replacing the current microphone) or, with `nil`, records without a
-    /// microphone. Ignored if that would leave no input selected.
+    /// microphone. `AudioInputDevice.defaultMicrophone` follows the Mac's default input. Ignored if
+    /// that would leave no input selected.
     func selectMicrophone(_ device: AudioInputDevice?) {
         var selection = coordinator.selectedDevices.filter { $0.kind != .microphone }
         if let device { selection.insert(device, at: 0) }
@@ -243,7 +256,7 @@ final class AppEnvironment {
 
     /// Adds or removes system audio. Ignored if that would leave no input selected.
     func setRecordsSystemAudio(_ enabled: Bool) {
-        var selection = coordinator.selectedDevices.filter { $0.kind != .systemAudio }
+        var selection = chosenMicrophone.map { [$0] } ?? []
         if enabled, let systemAudio = coordinator.devices.first(where: { $0.kind == .systemAudio }) {
             selection.append(systemAudio)
         }

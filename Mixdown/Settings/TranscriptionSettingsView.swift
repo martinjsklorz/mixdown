@@ -207,8 +207,8 @@ struct TranscriptionSettingsView: View {
         let summarizer = environment.summarizer
         switch summarizer.availability {
         case .available:
-            return "Adds an overview, key points and action items above the transcript. "
-                + "\(summarizer.info.displayName) makes them on this Mac."
+            return "Adds an overview, key points and action items above the transcript, and names the note "
+                + "after its topic. \(summarizer.info.displayName) makes them on this Mac."
         case .unavailable(let reason):
             return reason
         }

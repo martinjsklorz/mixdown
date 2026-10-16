@@ -9,6 +9,9 @@ enum Fixtures {
     )
     static let usbMic = AudioInputDevice(id: "usb", name: "USB Microphone", kind: .microphone)
     static let devices = [usbMic, builtInMic, AudioInputDevice.systemAudio]
+    /// The same microphones after the USB one became the default input.
+    static let usbMicAsDefault = AudioInputDevice(id: "usb", name: "USB Microphone", kind: .microphone, isDefault: true)
+    static let builtInMicNotDefault = AudioInputDevice(id: "builtin", name: "MacBook Pro Microphone", kind: .microphone)
 
     static func chunk(
         seconds: Double,
@@ -64,6 +67,32 @@ struct MockDeviceProvider: AudioDeviceProvider {
     func deviceUpdates() -> AsyncStream<[AudioInputDevice]> { updates }
 }
 
+/// A device list that changes while the test runs, like devices being plugged in and out.
+final class LiveDeviceProvider: AudioDeviceProvider {
+    private let devices: LockedValue<[AudioInputDevice]>
+    private let subscribers = LockedValue<[AsyncStream<[AudioInputDevice]>.Continuation]>([])
+
+    init(devices: [AudioInputDevice]) {
+        self.devices = LockedValue(devices)
+    }
+
+    func availableDevices() async -> [AudioInputDevice] { devices.current }
+
+    func deviceUpdates() -> AsyncStream<[AudioInputDevice]> {
+        let (stream, continuation) = AsyncStream<[AudioInputDevice]>.makeStream()
+        subscribers.update { $0.append(continuation) }
+        return stream
+    }
+
+    /// Changes the device list and reports it to subscribers.
+    func send(_ list: [AudioInputDevice]) {
+        devices.update { $0 = list }
+        for subscriber in subscribers.current {
+            subscriber.yield(list)
+        }
+    }
+}
+
 /// Yields `chunks` on start, then finishes on `stop()` (or immediately with `streamError`, or
 /// immediately without error when `finishesOnStart`, like a capture the system ended).
 final class MockCapture: AudioCapturing {
@@ -116,15 +145,30 @@ final class MockCapture: AudioCapturing {
     }
 }
 
-/// Hands out the capture registered for a device's ID, else `capture`.
+/// Hands out the next of the captures queued for a device's ID, then the capture registered for
+/// it, else `capture`. Queue several for a device that's recorded from more than once, as
+/// captures are single-use.
 struct MockCaptureFactory: AudioCaptureFactory {
     let capture: MockCapture
     var captures: [String: MockCapture] = [:]
+    let queuedCaptures: LockedValue<[String: [MockCapture]]>
     let requestedDevices = LockedValue<[AudioInputDevice]>([])
+
+    init(capture: MockCapture, captures: [String: MockCapture] = [:], queuedCaptures: [String: [MockCapture]] = [:]) {
+        self.capture = capture
+        self.captures = captures
+        self.queuedCaptures = LockedValue(queuedCaptures)
+    }
 
     func makeCapture(for device: AudioInputDevice) throws -> any AudioCapturing {
         requestedDevices.update { $0.append(device) }
-        return captures[device.id] ?? capture
+        var queued: MockCapture?
+        queuedCaptures.update { queue in
+            if queue[device.id]?.isEmpty == false {
+                queued = queue[device.id]?.removeFirst()
+            }
+        }
+        return queued ?? captures[device.id] ?? capture
     }
 }
 
