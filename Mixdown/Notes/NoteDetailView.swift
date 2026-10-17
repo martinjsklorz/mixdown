@@ -67,7 +67,11 @@ private struct NoteMetadataView: View {
 
     @ViewBuilder private var fields: some View {
         field("Date", systemImage: "calendar") {
-            Text(note.createdAt.formatted(date: .long, time: .shortened))
+            // Two-digit hours keep the width steady between notes ("02:35", not "2:35").
+            let date = note.createdAt.formatted(date: .long, time: .omitted)
+            let time = note.createdAt.formatted(.dateTime.hour(.twoDigits(amPM: .abbreviated)).minute(.twoDigits))
+            Text("\(date) at \(time)")
+                .monospacedDigit()
         }
         if let duration = note.duration, duration >= 1 {
             field("Duration", systemImage: "clock") {
