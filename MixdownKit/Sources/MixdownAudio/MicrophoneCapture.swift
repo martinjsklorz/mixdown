@@ -196,8 +196,8 @@ private final class DeviceInput: @unchecked Sendable {
         self.listener = listener
 
         let block: AudioDeviceIOBlock = { [weak self] _, inputData, inputTime, _, _ in
-            guard let self, let format = self.format.withLockUnchecked({ $0 }) else { return }
-            self.deliver(inputData, at: inputTime.pointee, format: format, to: ioBlock)
+            guard let format = self?.format.withLockUnchecked({ $0 }) else { return }
+            CoreAudioHAL.withFirstInputStream(inputData, matching: format) { ioBlock($0, inputTime.pointee, format) }
         }
         try CoreAudioHAL.check(
             AudioDeviceCreateIOProcIDWithBlock(&ioProcID, deviceID, queue, block),
@@ -216,21 +216,6 @@ private final class DeviceInput: @unchecked Sendable {
         }
         ioProcID = nil
         deviceID = AudioObjectID(kAudioObjectUnknown)
-    }
-
-    /// Hands the first input stream's buffer to `ioBlock`. A device with several input streams
-    /// (some audio interfaces) delivers one buffer per stream; the first is the main input.
-    private func deliver(
-        _ inputData: UnsafePointer<AudioBufferList>,
-        at time: AudioTimeStamp,
-        format: AVAudioFormat,
-        to ioBlock: IOBlock
-    ) {
-        guard inputData.pointee.mNumberBuffers > 0 else { return }
-        var firstStream = AudioBufferList(mNumberBuffers: 1, mBuffers: inputData.pointee.mBuffers)
-        // Right after a format change the IO proc can run before the listener has caught up.
-        guard firstStream.mBuffers.mNumberChannels == format.channelCount else { return }
-        withUnsafePointer(to: &firstStream) { ioBlock($0, time, format) }
     }
 
     /// A Bluetooth headset changes sample rate and streams when its microphone opens, and an
