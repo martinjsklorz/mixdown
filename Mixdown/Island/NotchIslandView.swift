@@ -8,6 +8,8 @@ struct NotchIslandView: View {
     fileprivate static let outerPadding: CGFloat = 10
     /// A wing's margin next to the notch.
     fileprivate static let innerPadding: CGFloat = 6
+    /// The rounding of the island's bottom corners.
+    fileprivate static let cornerRadius: CGFloat = 10
     /// How far the input levels reach out from the notch.
     static let levelsWingWidth = LevelWaveform.width() + outerPadding + innerPadding
 
@@ -15,6 +17,7 @@ struct NotchIslandView: View {
     /// Left empty in the middle, behind the notch. Zero on screens without one.
     let notchWidth: CGFloat
     let layout: NotchIsland.Layout
+    let presence: NotchIsland.Presence
     let openRecorder: () -> Void
     /// Called with how far the time reaches out from the notch, whenever that changes.
     let timeWingWidthChanged: (CGFloat) -> Void
@@ -22,17 +25,25 @@ struct NotchIslandView: View {
     var body: some View {
         HStack(spacing: 0) {
             wing(on: .left)
-            Color.clear
-                .frame(width: notchWidth)
+            // Behind the notch, joining the wings. Rounded like the notch where no wing is out.
+            UnevenRoundedRectangle(
+                bottomLeadingRadius: hasWing(on: .left) && presence.isExpanded ? 0 : Self.cornerRadius,
+                bottomTrailingRadius: hasWing(on: .right) && presence.isExpanded ? 0 : Self.cornerRadius
+            )
+            .fill(.black)
+            .frame(width: notchWidth)
             wing(on: .right)
         }
         // Pinned to the time's edge, which the panel's frame is worked out from.
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: layout.timeSide == .left ? .leading : .trailing)
-        .background(.black, in: UnevenRoundedRectangle(bottomLeadingRadius: 10, bottomTrailingRadius: 10))
         .environment(\.colorScheme, .dark)
         .contentShape(Rectangle())
         .onTapGesture { openRecorder() }
         .help("Open Record")
+    }
+
+    private func hasWing(on side: NotchIsland.Side) -> Bool {
+        side == layout.timeSide || layout.showsLevels
     }
 
     @ViewBuilder
@@ -40,10 +51,34 @@ struct NotchIslandView: View {
         if side == layout.timeSide {
             ElapsedWing(environment: environment, side: side)
                 .onGeometryChange(for: CGFloat.self, of: { $0.size.width }, action: timeWingWidthChanged)
+                .wingBackground(side, isExpanded: presence.isExpanded)
         } else if layout.showsLevels {
             LevelsWing(coordinator: environment.coordinator, side: side)
                 .frame(width: Self.levelsWingWidth)
+                .wingBackground(side, isExpanded: presence.isExpanded)
         }
+    }
+}
+
+/// A wing's black, `progress` of the way out from the notch, which is on the side opposite `side`.
+private struct WingShape: Shape {
+    let side: NotchIsland.Side
+    var progress: CGFloat
+
+    var animatableData: CGFloat {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let width = rect.width * min(max(progress, 0), 1)
+        let x = side == .left ? rect.maxX - width : rect.minX
+        let radius = min(NotchIslandView.cornerRadius, width)
+        return UnevenRoundedRectangle(
+            bottomLeadingRadius: side == .left ? radius : 0,
+            bottomTrailingRadius: side == .right ? radius : 0
+        )
+        .path(in: CGRect(x: x, y: rect.minY, width: width, height: rect.height))
     }
 }
 
@@ -53,6 +88,15 @@ extension View {
     fileprivate func wingPadding(_ side: NotchIsland.Side) -> some View {
         padding(side == .left ? .leading : .trailing, NotchIslandView.outerPadding)
             .padding(side == .left ? .trailing : .leading, NotchIslandView.innerPadding)
+    }
+
+    /// Puts a wing on black that grows out of the notch while `isExpanded`, revealing the content
+    /// as it goes, and shrinks back into it otherwise.
+    fileprivate func wingBackground(_ side: NotchIsland.Side, isExpanded: Bool) -> some View {
+        opacity(isExpanded ? 1 : 0)
+            .frame(maxHeight: .infinity)
+            .background(.black)
+            .clipShape(WingShape(side: side, progress: isExpanded ? 1 : 0))
     }
 }
 

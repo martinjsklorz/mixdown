@@ -21,8 +21,8 @@ struct LevelWaveform: View {
     private var barSpacing: CGFloat { Self.barSpacing * scale }
     private var maxBarHeight: CGFloat { 16 * scale }
 
-    private static let barWidth: CGFloat = 3
-    private static let barSpacing: CGFloat = 2
+    private static let barWidth: CGFloat = 2.5
+    private static let barSpacing: CGFloat = 1.5
 
     /// How wide the waveform is at `scale`.
     static func width(scale: CGFloat = 1) -> CGFloat {
