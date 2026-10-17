@@ -27,13 +27,21 @@ struct NoteListView<Footer: View>: View {
     /// Where the headers in view sit, from the top of the list's visible area.
     @State private var headerOffsets: [NoteSection.Group: CGFloat] = [:]
     @State private var stickyHeaderHeight: CGFloat = 0
+    /// How tall the pinned notes' rows are unfolded, for folding them away.
+    @State private var pinnedRowHeights: [NoteDocument.ID: CGFloat] = [:]
+    /// Whether the pinned rows are laid out folded, once that's changed while the list is shown.
+    /// Follows `collapsesPinned` without animating, so the pinned notes never move.
+    @State private var foldsPinnedRows: Bool?
+    /// How far the rows below the pinned notes are drawn from their place, while they slide over
+    /// the pinned notes or off them.
+    @State private var foldSlide: CGFloat = 0
 
     var body: some View {
         let rows = self.rows
 
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 2) {
+                LazyVStack(alignment: .leading, spacing: 0) {
                     // One flat list rather than one per section, so a note that's pinned or
                     // unpinned moves to its new place instead of leaving one list and appearing
                     // in another, which could leave a stale copy of its row behind.
@@ -46,12 +54,19 @@ struct NoteListView<Footer: View>: View {
                                 } action: {
                                     headerOffsets[group] = $0
                                 }
+                                .padding(.vertical, 1)
+                                .offset(y: group == .pinned ? 0 : foldSlide)
+                        case .note(let note, let dateFormat) where row.group == .pinned:
+                            pinnedNoteButton(note, dateFormat: dateFormat)
                         case .note(let note, let dateFormat):
                             noteButton(note, dateFormat: dateFormat)
+                                .padding(.vertical, 1)
+                                .offset(y: foldSlide)
                         }
                     }
                     .transition(.noteRow)
                     footer
+                        .offset(y: foldSlide)
                 }
                 .scrollTargetLayout()
                 .padding(.horizontal, 10)
@@ -59,9 +74,7 @@ struct NoteListView<Footer: View>: View {
             }
             .onScrollTargetVisibilityChange(idType: Row.ID.self) { visibleRows = $0 }
             .overlay(alignment: .top) { stickyHeader(in: rows) }
-            // Folding slides the pinned notes away. Here rather than with `withAnimation` where
-            // it's toggled, as the setting is `@AppStorage` and may change from outside the list.
-            .animation(.snappy, value: collapsesPinned)
+            .onChange(of: collapsesPinned) { _, isFolded in slideRows(folding: isFolded) }
             .focusable()
             .focused($isFocused)
             .focusEffectDisabled()
@@ -77,14 +90,68 @@ struct NoteListView<Footer: View>: View {
         }
     }
 
-    /// The section headers and the notes under them, without the pinned ones while they're
-    /// folded away.
+    /// The section headers and the notes under them, the pinned ones too while they're folded
+    /// away.
     private var rows: [Row] {
         sections.flatMap { section -> [Row] in
-            let notes = section.group == .pinned && collapsesPinned ? [] : section.notes
-            return [.header(section.group)]
-                + notes.map { .note($0, dateFormat: section.group.rowDateFormat(for: $0)) }
+            [.header(section.group)]
+                + section.notes.map { .note($0, dateFormat: section.group.rowDateFormat(for: $0)) }
         }
+    }
+
+    /// Whether `row` is a pinned note folded away under its header.
+    private func isFolded(_ row: Row) -> Bool {
+        collapsesPinned && row.noteID != nil && row.group == .pinned
+    }
+
+    private var pinnedNotes: [NoteDocument] {
+        sections.first { $0.group == .pinned }?.notes ?? []
+    }
+
+    /// Folds the pinned notes away under the rows below as they slide up over them, or opens them
+    /// as the rows slide back down. The rows are laid out folded or not at once and drawn where
+    /// they were, and only that offset animates: the lazy stack moves the pinned notes when it
+    /// animates their rows shrinking or growing.
+    private func slideRows(folding: Bool) {
+        let height = pinnedNotes.reduce(0) { $0 + (pinnedRowHeights[$1.id] ?? 0) }
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            foldsPinnedRows = folding
+            foldSlide = folding ? height : -height
+        }
+        // Once drawn there, so the slide starts from it.
+        Task { @MainActor in
+            withAnimation(.snappy) { foldSlide = 0 }
+        }
+    }
+
+    /// A pinned note's row. Folded, it takes no room, and its note stays where it was and fades
+    /// under the rows below as they slide over it. Kept in the list while folded, as a row
+    /// removed from a lazy stack doesn't hold still while it fades out.
+    private func pinnedNoteButton(_ note: NoteDocument, dateFormat: Date.FormatStyle) -> some View {
+        let isFolded = collapsesPinned
+        let isLaidOutFolded = foldsPinnedRows ?? collapsesPinned
+        // Under the pinned notes above it, which take no room either.
+        let heightAbove = pinnedNotes.prefix { $0.id != note.id }.reduce(0) { $0 + (pinnedRowHeights[$1.id] ?? 0) }
+
+        return noteButton(note, dateFormat: dateFormat)
+            .padding(.vertical, 1)
+            .fixedSize(horizontal: false, vertical: true)
+            .onGeometryChange(for: CGFloat.self) {
+                $0.size.height
+            } action: {
+                pinnedRowHeights[note.id] = $0
+            }
+            // Out before the notes sliding over it reach it, and in once they've moved off it.
+            .animation(isFolded ? .easeOut(duration: 0.15) : .easeIn(duration: 0.2).delay(0.15)) {
+                $0.opacity(isFolded ? 0 : 1)
+            }
+            .offset(y: isLaidOutFolded ? heightAbove : 0)
+            .frame(height: isLaidOutFolded ? 0 : nil, alignment: .top)
+            .zIndex(-1)
+            .allowsHitTesting(!isFolded)
+            .accessibilityHidden(isFolded)
     }
 
     private func header(for group: NoteSection.Group) -> SectionHeader {
@@ -97,9 +164,10 @@ struct NoteListView<Footer: View>: View {
     @ViewBuilder
     private func stickyHeader(in rows: [Row]) -> some View {
         // Stale for rows out of view, so only the offsets of headers in view count.
-        if let top = visibleRows.first, let group = rows.first(where: { $0.id == top })?.group,
-            top != .header(group) || headerOffsets[group, default: 0] < 0
-        {
+        // Folded rows count as in view at the top of their section, but take no room.
+        let shownRows = visibleRows.compactMap { id in rows.first { $0.id == id } }.filter { !isFolded($0) }
+        if let top = shownRows.first, top.id != .header(top.group) || headerOffsets[top.group, default: 0] < 0 {
+            let group = top.group
             let groups = sections.map(\.group)
             let next = zip(groups, groups.dropFirst()).first { $0.0 == group }?.1
             let nextOffset = next.flatMap { visibleRows.contains(.header($0)) ? headerOffsets[$0] : nil }
@@ -148,7 +216,7 @@ struct NoteListView<Footer: View>: View {
 
     /// Moves the selection among the notes shown, skipping folded-away ones.
     private func moveSelection(by offset: Int, in rows: [Row], proxy: ScrollViewProxy) -> KeyPress.Result {
-        let ids = rows.compactMap(\.noteID)
+        let ids = rows.filter { !isFolded($0) }.compactMap(\.noteID)
         guard !ids.isEmpty else { return .ignored }
         let current = showsSelection ? selection : nil
         let index = current.flatMap(ids.firstIndex(of:)).map { $0 + offset } ?? 0
@@ -234,6 +302,7 @@ private struct SectionHeader: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .rotationEffect(.degrees(isCollapsed.wrappedValue ? 0 : 90))
+                        .animation(.snappy, value: isCollapsed.wrappedValue)
                 }
                 .contentShape(Rectangle())
             }
