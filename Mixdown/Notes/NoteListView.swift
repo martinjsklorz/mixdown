@@ -22,42 +22,19 @@ struct NoteListView<Footer: View>: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 2) {
+                // The header of the section at the top stays there while its notes scroll under it.
+                LazyVStack(alignment: .leading, spacing: 2, pinnedViews: .sectionHeaders) {
                     ForEach(sections) { section in
-                        SectionHeader(title: section.group.title)
-                            .transition(.noteRow)
-                        ForEach(section.notes) { note in
-                            // A button, so VoiceOver announces it and Space or Return opens it
-                            // once it has keyboard focus.
-                            Button {
-                                selection = note.id
-                                isFocused = true
-                            } label: {
-                                NoteRow(
-                                    note: note,
-                                    dateFormat: section.group.rowDateFormat,
-                                    isSelected: showsSelection && note.id == selection
-                                )
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityAddTraits(showsSelection && note.id == selection ? .isSelected : [])
-                            .contextMenu {
-                                Button("Rename…") { actions.rename(note) }
-                                Button("Copy Transcript") { NoteActions.copyTranscript(of: note) }
-                                ShareLink(item: note.url, preview: SharePreview(note.title))
-                                Divider()
-                                Button("Open in Default App") { NSWorkspace.shared.open(note.url) }
-                                Divider()
-                                Button("Delete") { actions.moveToTrash(note) }
-                            }
-                            .id(note.id)
-                            .transition(.noteRow)
+                        Section {
+                            rows(for: section)
+                        } header: {
+                            SectionHeader(title: section.group.title)
+                                .transition(.noteRow)
                         }
                     }
                     footer
+                        .padding(.horizontal, 10)
                 }
-                .padding(.horizontal, 10)
                 .padding(.bottom, 8)
             }
             .focusable()
@@ -73,6 +50,38 @@ struct NoteListView<Footer: View>: View {
                 actions.moveToTrash(note)
             }
         }
+    }
+
+    private func rows(for section: NoteSection) -> some View {
+        ForEach(section.notes) { note in
+            // A button, so VoiceOver announces it and Space or Return opens it
+            // once it has keyboard focus.
+            Button {
+                selection = note.id
+                isFocused = true
+            } label: {
+                NoteRow(
+                    note: note,
+                    dateFormat: section.group.rowDateFormat,
+                    isSelected: showsSelection && note.id == selection
+                )
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(showsSelection && note.id == selection ? .isSelected : [])
+            .contextMenu {
+                Button("Rename…") { actions.rename(note) }
+                Button("Copy Transcript") { NoteActions.copyTranscript(of: note) }
+                ShareLink(item: note.url, preview: SharePreview(note.title))
+                Divider()
+                Button("Open in Default App") { NSWorkspace.shared.open(note.url) }
+                Divider()
+                Button("Delete") { actions.moveToTrash(note) }
+            }
+            .id(note.id)
+            .transition(.noteRow)
+        }
+        .padding(.horizontal, 10)
     }
 
     private func moveSelection(by offset: Int, proxy: ScrollViewProxy) -> KeyPress.Result {
@@ -98,12 +107,17 @@ private struct SectionHeader: View {
     let title: String
 
     var body: some View {
-        Text(title)
-            .font(.body.weight(.semibold))
-            .padding(.horizontal, 10)
-            .padding(.top, 14)
-            .padding(.bottom, 4)
-            .accessibilityAddTraits(.isHeader)
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.title2.weight(.bold))
+                .accessibilityAddTraits(.isHeader)
+            Divider()
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 20)
+        .padding(.bottom, 6)
+        // Covers the notes scrolling under it while it's pinned to the top.
+        .background(.bar)
     }
 }
 
