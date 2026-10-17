@@ -8,7 +8,8 @@ import os
 ///
 /// Silero VAD finds the speech; each `SpeechSwiftModel` decides how to cut it and how to turn a piece
 /// into timed segments (see `SpeechRecognizer`). Transcriptions run one at a time. The models are
-/// loaded on first use and unloaded again once the engine has been idle for `idleUnloadDelay`.
+/// loaded on first use or when a recording starts, and unloaded again once no recording or
+/// transcription has needed them for `idleUnloadDelay`.
 ///
 /// To use a different engine, add a module with a type conforming to `TranscriptionEngine` and construct
 /// it in `AppEnvironment.makeCoordinator` instead of this one. Nothing else refers to speech-swift.
@@ -28,6 +29,9 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
     private var lastTranscription: Task<Void, Never>?
     /// Transcriptions running or queued. The models stay loaded while there are any.
     private var activeTranscriptions = 0
+    /// Recordings between `recordingWillStart()` and `recordingDidFinish()`. The models stay loaded
+    /// while there are any. Outside the actor, so starting a recording never waits on it.
+    private nonisolated let activeRecordings = Mutex(0)
     private var pendingUnload: Task<Void, Never>?
     /// Seconds of audio per second of recognition, as last measured on this Mac.
     private var measuredSpeed: Double?
@@ -36,8 +40,9 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
     /// - Parameters:
     ///   - modelDirectory: Where weights are cached. Defaults to `Application Support/Mixdown/Models`
     ///     (inside the container when sandboxed).
-    ///   - idleUnloadDelay: How long the models stay in memory after the last transcription (or
-    ///     `prepare`). Loading them again from disk takes seconds; keeping them costs 1–2.5 GB.
+    ///   - idleUnloadDelay: How long the models stay in memory after the last recording or
+    ///     transcription (or `prepare`). Loading them again from disk takes seconds; keeping them
+    ///     costs 1–2.5 GB.
     public init(
         model: SpeechSwiftModel = .default,
         modelDirectory: URL? = nil,
@@ -57,6 +62,19 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
     public func prepare(progress: (@Sendable (Double) -> Void)?) async throws {
         _ = try await loadedModels(progress: progress)
         scheduleUnload()
+    }
+
+    /// Loads the models in the background, if they aren't already, and keeps them loaded until
+    /// `recordingDidFinish()`. Otherwise a recording longer than `idleUnloadDelay` would find them
+    /// unloaded when it stops, and the transcription would wait on a load from disk.
+    public nonisolated func recordingWillStart() {
+        activeRecordings.withLock { $0 += 1 }
+        Task { await self.loadForRecording() }
+    }
+
+    public nonisolated func recordingDidFinish() {
+        activeRecordings.withLock { $0 = max($0 - 1, 0) }
+        Task { await self.scheduleUnload() }
     }
 
     /// Transcribes a whole recording of 16 kHz mono samples. Segments follow the VAD's speech regions
@@ -174,12 +192,25 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
         return (task, relay)
     }
 
+    private func loadForRecording() async {
+        pendingUnload?.cancel()
+        pendingUnload = nil
+        // `startLoading()` logs a failure, and the transcription tries again.
+        guard (try? await loadedModels(progress: nil)) != nil else { return }
+        // In case the recording finished while loading.
+        scheduleUnload()
+    }
+
     // MARK: - Unloading
 
-    /// Unloads the models after `idleUnloadDelay`, unless a transcription comes first.
+    private var isInUse: Bool {
+        activeTranscriptions > 0 || activeRecordings.withLock { $0 } > 0
+    }
+
+    /// Unloads the models after `idleUnloadDelay`, unless a recording or transcription comes first.
     private func scheduleUnload() {
         pendingUnload?.cancel()
-        guard activeTranscriptions == 0, models != nil else { return }
+        guard !isInUse, models != nil else { return }
         let delay = idleUnloadDelay
         pendingUnload = Task { [weak self] in
             try? await Task.sleep(for: delay)
@@ -189,7 +220,7 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
     }
 
     private func unloadIfIdle() {
-        guard activeTranscriptions == 0, loading == nil, models != nil else { return }
+        guard !isInUse, loading == nil, models != nil else { return }
         unload()
         transcriptionLogger.info("Unloaded \(self.model.displayName, privacy: .public) after being idle")
     }
