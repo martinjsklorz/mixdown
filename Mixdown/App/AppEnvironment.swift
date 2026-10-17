@@ -95,7 +95,7 @@ final class AppEnvironment {
             isRecording: { [weak self] in self?.coordinator.isRecording ?? false },
             startRecording: { [weak self] in self?.startRecordingCall() ?? false },
             stopRecording: { [weak self] in self?.stopRecordingCall() },
-            markRecordingAsCall: { [weak self] in self?.coordinator.markRecordingAsCall() },
+            markRecordingAsCall: { [weak self] in self?.coordinator.markRecordingAsCall(automatically: $0) },
             showRecorder: showRecorder
         )
         callPrompt.notifies = notifiesAboutCalls

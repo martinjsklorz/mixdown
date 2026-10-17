@@ -1,4 +1,5 @@
 import AppKit
+import MixdownCore
 import MixdownNotes
 import SwiftUI
 
@@ -31,6 +32,7 @@ struct NoteListView<Header: View, Footer: View>: View {
                         SectionHeader(section: section, isCollapsed: isCollapsed) {
                             withAnimation(.snappy) { collapsed.formSymmetricDifference([section.group]) }
                         }
+                        .transition(.noteRow)
                         ForEach(isCollapsed ? [] : section.notes) { note in
                             // A button, so VoiceOver announces it and Space or Return opens it
                             // once it has keyboard focus.
@@ -49,13 +51,11 @@ struct NoteListView<Header: View, Footer: View>: View {
                                 ShareLink(item: note.url, preview: SharePreview(note.title))
                                 Divider()
                                 Button("Open in Default App") { NSWorkspace.shared.open(note.url) }
-                                Button("Show in Finder") {
-                                    NSWorkspace.shared.activateFileViewerSelecting([note.url])
-                                }
                                 Divider()
-                                Button("Move to Trash") { actions.moveToTrash(note) }
+                                Button("Delete") { actions.moveToTrash(note) }
                             }
                             .id(note.id)
+                            .transition(.noteRow)
                         }
                     }
                     footer
@@ -97,6 +97,12 @@ struct NoteListView<Header: View, Footer: View>: View {
     }
 }
 
+extension AnyTransition {
+    /// A note slides down into its place as it's added and up out of it as it's removed, while
+    /// the rows below move to make room or close the gap.
+    fileprivate static var noteRow: AnyTransition { .move(edge: .top).combined(with: .opacity) }
+}
+
 /// A day's title, which collapses or expands its notes.
 private struct SectionHeader: View {
     let section: NoteSection
@@ -136,9 +142,15 @@ private struct NoteRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(note.title)
-                .font(.body.weight(.medium))
-                .lineLimit(1)
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(note.title)
+                    .font(.body.weight(.medium))
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                if let trigger = note.trigger {
+                    TriggerIcon(trigger: trigger)
+                }
+            }
             HStack(spacing: 6) {
                 Text(note.createdAt, format: .dateTime.hour().minute())
                 Text(note.snippet.isEmpty ? "No additional text" : note.snippet)
@@ -146,12 +158,37 @@ private struct NoteRow: View {
                     .lineLimit(1)
             }
             .font(.subheadline)
+            if let folder = note.folder {
+                Label(folder, systemImage: "folder")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.head)
+            }
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         // The light orange of the app icon's tracks (a darker icon orange in Dark Mode).
         .background(isSelected ? Color("NoteSelection") : .clear, in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+/// A small mark for how the recording was started. Notes that don't say show none.
+private struct TriggerIcon: View {
+    let trigger: RecordingTrigger
+
+    var body: some View {
+        let (symbol, label) =
+            switch trigger {
+            case .manual: ("hand.tap", "Started manually")
+            case .automatic: ("autostartstop", "Started automatically for a call")
+            }
+        Image(systemName: symbol)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .help(label)
+            .accessibilityLabel(label)
     }
 }
 

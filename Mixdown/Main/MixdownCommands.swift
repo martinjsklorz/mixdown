@@ -4,8 +4,8 @@ import MixdownNotes
 import SwiftUI
 
 /// The main menu. The View menu's sections switch what the main window shows; the File menu has
-/// the notes files and the shown note, the Recording menu recording and inputs. Settings… comes
-/// with the `Settings` scene.
+/// the notes files and the shown note, the Recording menu recording and inputs, the Help menu
+/// Mixdown Help. Settings… comes with the `Settings` scene.
 struct MixdownCommands: Commands {
     let environment: AppEnvironment
     let navigation: MainNavigation
@@ -36,6 +36,11 @@ struct MixdownCommands: Commands {
             RecordingMenuItems()
                 .environment(environment)
         }
+        // Replaces Mixdown Help, which looks for an Apple Help Book. The search field stays.
+        CommandGroup(replacing: .help) {
+            HelpMenuItems()
+                .environment(navigation)
+        }
     }
 }
 
@@ -53,6 +58,17 @@ private struct SectionMenuItem: View {
 
     var body: some View {
         Button(title) { navigation.show(destination, using: openWindow) }
+    }
+}
+
+private struct HelpMenuItems: View {
+    @Environment(MainNavigation.self) private var navigation
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Button("Mixdown Help") { navigation.showHelp(using: openWindow) }
+            .keyboardShortcut("?", modifiers: .command)
+        Button("Keyboard Shortcuts") { navigation.showHelp(.shortcuts, using: openWindow) }
     }
 }
 
@@ -82,7 +98,7 @@ private struct NotesFileMenuItems: View {
 
         Divider()
 
-        Button("Move to Trash", action: moveToTrash)
+        Button("Delete", action: moveToTrash)
             .keyboardShortcut(.delete, modifiers: .command)
             .disabled(shownNote == nil)
     }

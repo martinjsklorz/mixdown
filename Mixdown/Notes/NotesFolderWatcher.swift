@@ -13,8 +13,9 @@ enum NotesFolderWatcher {
     private static let logger = Logger(subsystem: "app.mixdown", category: "NotesFolderWatcher")
 
     /// An element per batch of changes, at most one per `latency` seconds, until the task
-    /// iterating it is cancelled. Changes to files that aren't notes, like `.DS_Store` or an
-    /// editor's temporary files, are left out. Batches that arrive while the last one is still
+    /// iterating it is cancelled. Covers subfolders too. Changes to files that aren't notes, like
+    /// `.DS_Store` or an editor's temporary files, and to hidden folders like `.obsidian` are
+    /// left out. Batches that arrive while the last one is still
     /// being handled are merged into one.
     static func changes(in directory: URL, latency: TimeInterval = 0.3) -> AsyncStream<Void> {
         AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
@@ -34,12 +35,14 @@ enum NotesFolderWatcher {
 /// doesn't retain it.
 private final class EventStream: @unchecked Sendable {
     private let continuation: AsyncStream<Void>.Continuation
+    private let directory: URL
     private let queue = DispatchQueue(label: "app.mixdown.NotesFolderWatcher")
     /// Only touched on `queue` once started.
     private var stream: FSEventStreamRef?
 
     init?(directory: URL, latency: TimeInterval, continuation: AsyncStream<Void>.Continuation) {
         self.continuation = continuation
+        self.directory = directory
         var context = FSEventStreamContext(
             version: 0,
             info: Unmanaged.passUnretained(self).toOpaque(),
@@ -90,9 +93,15 @@ private final class EventStream: @unchecked Sendable {
         let paths = Unmanaged<CFArray>.fromOpaque(paths).takeUnretainedValue() as? [String] ?? []
         // Events were dropped or coalesced, so the folder has to be read again whatever the paths.
         let mustRescan = FSEventStreamEventFlags(kFSEventStreamEventFlagMustScanSubDirs)
+        let isDirectory = FSEventStreamEventFlags(kFSEventStreamEventFlagItemIsDir)
         let changesNotes = (0..<count).contains { index in
-            flags[index] & mustRescan != 0
-                || (paths.indices.contains(index) && NoteLibrary.isNote(URL(fileURLWithPath: paths[index])))
+            guard flags[index] & mustRescan == 0 else { return true }
+            guard paths.indices.contains(index) else { return false }
+            return NoteLibrary.affectsNotes(
+                URL(fileURLWithPath: paths[index]),
+                isDirectory: flags[index] & isDirectory != 0,
+                in: directory
+            )
         }
         if changesNotes { continuation.yield() }
     }

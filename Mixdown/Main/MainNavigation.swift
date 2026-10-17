@@ -2,8 +2,8 @@ import AppKit
 import Observation
 import SwiftUI
 
-/// What the main window shows, and which Settings tab is open. Shared with the menus and the
-/// menu bar extra, which open the window at a particular section.
+/// What the main window shows, and which Settings tab and Help topic are open. Shared with the
+/// menus and the menu bar extra, which open the window at a particular section.
 @MainActor @Observable
 final class MainNavigation {
     enum Destination: Hashable {
@@ -39,6 +39,9 @@ final class MainNavigation {
     /// its notification. The window clears it when it takes it.
     var noteToShow: URL?
     var settingsTab: SettingsTab = .general
+    var helpTopic: HelpTopic = .gettingStarted
+    /// What the Help window's sidebar is filtered by.
+    var helpSearchText = ""
 
     /// SwiftUI only hands `openWindow` to views, so `capturesOpenWindow(for:navigation:)` stores
     /// it here for the Dock icon and notifications. The main window opens at launch, so it's set
@@ -73,5 +76,25 @@ final class MainNavigation {
         // The app isn't active when the menu bar extra is used.
         NSApp.activate()
         openSettings()
+    }
+
+    /// Opens the Help window at `topic` if given. With `search`, filters its topics by it and
+    /// shows the first match.
+    func showHelp(
+        _ topic: HelpTopic? = nil,
+        searching search: String? = nil,
+        using openWindow: OpenWindowAction? = nil
+    ) {
+        if let search {
+            helpSearchText = search
+            if let match = HelpTopic.search(search).first { helpTopic = match }
+        }
+        if let topic {
+            helpTopic = topic
+            // Keep it in the sidebar.
+            if !HelpTopic.search(helpSearchText).contains(topic) { helpSearchText = "" }
+        }
+        NSApp.activate()
+        (openWindow ?? self.openWindow)?(id: HelpView.windowID)
     }
 }

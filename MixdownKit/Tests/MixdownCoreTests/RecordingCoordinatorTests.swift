@@ -145,7 +145,8 @@ struct RecordingCoordinatorTests {
         #expect(coordinator.selectedDevices == [Fixtures.usbMic])
 
         await coordinator.stopRecording()
-        #expect(coordinator.phase == .idle)
+        // The mocks record nothing.
+        #expect(coordinator.phase == .failed(message: RecordingCoordinator.tooShortMessage))
     }
 
     // MARK: - Recording
@@ -233,11 +234,16 @@ struct RecordingCoordinatorTests {
         await coordinator.startRecording()
         await coordinator.stopRecording()
 
-        #expect(coordinator.phase == .idle)
+        #expect(coordinator.phase == .failed(message: RecordingCoordinator.tooShortMessage))
+        #expect(coordinator.modelError == nil)
         #expect(coordinator.lastNoteURL == nil)
         #expect(await engine.receivedSampleCounts.isEmpty)
         #expect(await writer.notes.isEmpty)
         #expect(engine.recordingsInProgress.current == 0)
+        #expect(coordinator.canStartRecording)
+
+        coordinator.dismissError()
+        #expect(coordinator.phase == .idle)
     }
 
     @Test func engineErrorFails() async {
@@ -353,6 +359,7 @@ struct RecordingCoordinatorTests {
         transcript: Transcript = Transcript(segments: [TranscriptSegment(start: 0, end: 1, text: "Hello.")]),
         summarizer: MockSummarizer?,
         isCall: Bool = false,
+        automatically: Bool = false,
         configure: (RecordingCoordinator) -> Void = { _ in },
         whileRecording: (RecordingCoordinator) -> Void = { _ in }
     ) async throws -> (RecordingCoordinator, Note) {
@@ -366,7 +373,7 @@ struct RecordingCoordinatorTests {
         configure(coordinator)
         await coordinator.monitorDevices()
         await coordinator.startRecording()
-        if isCall { coordinator.markRecordingAsCall() }
+        if isCall { coordinator.markRecordingAsCall(automatically: automatically) }
         whileRecording(coordinator)
         await coordinator.stopRecording()
         return (coordinator, try #require(await writer.notes.first))
@@ -491,6 +498,17 @@ struct RecordingCoordinatorTests {
         german.language = "de"
         let (_, germanCall) = try await recordNote(summarizer: MockSummarizer(summary: german), isCall: true)
         #expect(germanCall.title == "Anruf zu Release timeline")
+    }
+
+    @Test func notesSayHowTheRecordingWasStarted() async throws {
+        let (_, manual) = try await recordNote(summarizer: nil)
+        #expect(manual.trigger == .manual)
+
+        let (_, prompted) = try await recordNote(summarizer: nil, isCall: true)
+        #expect(prompted.trigger == .manual)
+
+        let (_, automatic) = try await recordNote(summarizer: nil, isCall: true, automatically: true)
+        #expect(automatic.trigger == .automatic)
     }
 
     @Test func markingAsCallOutsideARecordingIsIgnored() async throws {
@@ -700,7 +718,8 @@ struct RecordingCoordinatorTests {
 
         await coordinator.stopRecording()
         #expect(secondUSB.stopCount == 1)
-        #expect(coordinator.phase == .idle)
+        // The mocks record nothing.
+        #expect(coordinator.phase == .failed(message: RecordingCoordinator.tooShortMessage))
     }
 
     @Test func followsNewDefaultMicrophoneWhileRecording() async throws {
@@ -843,7 +862,8 @@ struct RecordingCoordinatorTests {
 
         await coordinator.stopRecording()
         #expect(second.stopCount == 1)
-        #expect(coordinator.phase == .idle)
+        // The mocks record nothing.
+        #expect(coordinator.phase == .failed(message: RecordingCoordinator.tooShortMessage))
     }
 
     // MARK: - Levels

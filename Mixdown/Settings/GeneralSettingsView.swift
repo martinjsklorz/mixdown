@@ -37,7 +37,7 @@ struct GeneralSettingsView: View {
                         .disabled(notesFolder.directory == nil)
                 }
                 Toggle(
-                    "Ask before moving a note to the Trash",
+                    "Ask before deleting a note",
                     isOn: Binding(
                         get: { !suppressesTrashConfirmation },
                         set: { suppressesTrashConfirmation = !$0 }

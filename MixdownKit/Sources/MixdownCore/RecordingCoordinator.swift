@@ -30,7 +30,7 @@ public final class RecordingCoordinator {
         case failed(message: String)
     }
 
-    /// Recordings shorter than this are discarded without transcribing.
+    /// Recordings shorter than this are discarded without transcribing, with `tooShortMessage`.
     nonisolated static let minimumRecordingDuration: TimeInterval = 0.5
 
     public private(set) var phase: Phase = .idle {
@@ -50,7 +50,7 @@ public final class RecordingCoordinator {
     public var summarizer: (any Summarizer)?
     /// The summary template for recordings started by hand.
     public var summaryTemplate: SummaryTemplate
-    /// The summary template for recordings started for a call. See `markRecordingAsCall()`.
+    /// The summary template for recordings started for a call. See `markRecordingAsCall(automatically:)`.
     public var callSummaryTemplate: SummaryTemplate
     /// The summary template of the recording in progress, from its start until its summary is
     /// begun; `nil` otherwise. Starts as `summaryTemplate`, or `callSummaryTemplate` once the
@@ -169,6 +169,7 @@ public final class RecordingCoordinator {
         let startedAt: Date
         /// Whether the recording was started for a call, from a notification or automatically.
         var isCall = false
+        var trigger = RecordingTrigger.manual
         private(set) var lanes: [Lane] = []
         /// Devices that went away or failed to start during this recording. They aren't picked
         /// again until they leave the device list or the user chooses them.
@@ -658,7 +659,8 @@ public final class RecordingCoordinator {
         let duration = tracks.map(\.end).max() ?? 0
         guard duration >= Self.minimumRecordingDuration else {
             logger.info("Discarding \(duration, format: .fixed(precision: 2)) s recording as too short")
-            phase = interruption.map { Phase.failed(message: $0.localizedDescription) } ?? .idle
+            // An interruption this early explains itself, like capture failing to start.
+            phase = .failed(message: interruption?.localizedDescription ?? Self.tooShortMessage)
             return
         }
 
@@ -693,7 +695,8 @@ public final class RecordingCoordinator {
                 sources: session.devices,
                 engine: engine.info,
                 transcript: transcript,
-                summary: summary
+                summary: summary,
+                trigger: session.trigger
             )
             // The folder can go away mid-recording, e.g. when its drive is disconnected.
             guard let noteWriter else { throw NoteWritingError.noFolder }
@@ -810,11 +813,12 @@ public final class RecordingCoordinator {
         phase = .transcribing(progress: total)
     }
 
-    /// Marks the recording in progress as a call, so its note is titled as one, e.g. "Call about …".
-    /// Ignored when not recording.
-    public func markRecordingAsCall() {
+    /// Marks the recording in progress as a call, so its note is titled as one, e.g. "Call about …",
+    /// and, if Mixdown started it by itself, as started automatically. Ignored when not recording.
+    public func markRecordingAsCall(automatically: Bool = false) {
         guard let session else { return }
         session.isCall = true
+        if automatically { session.trigger = .automatic }
         if !isRecordingSummaryTemplateChosen {
             recordingSummaryTemplate = callSummaryTemplate
         }
@@ -1000,4 +1004,7 @@ public final class RecordingCoordinator {
     nonisolated static func interruptedMessage(for error: any Error) -> String {
         "Recording stopped early. \(error.localizedDescription) The note has what was recorded until then."
     }
+
+    nonisolated static let tooShortMessage =
+        "The recording was too short to save. Record for at least half a second."
 }

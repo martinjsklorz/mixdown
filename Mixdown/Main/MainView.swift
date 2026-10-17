@@ -67,11 +67,11 @@ struct MainView: View {
         }
         .focusedSceneValue(\.shownNote, shownNote.map { ShownNote(note: $0, actions: noteActions) })
         .confirmationDialog(
-            "Move “\(noteToTrash?.title ?? "")” to the Trash?",
+            "Delete “\(noteToTrash?.title ?? "")”?",
             isPresented: isPresent($noteToTrash),
             presenting: noteToTrash
         ) { note in
-            Button("Move to Trash", role: .destructive) { moveToTrash(note) }
+            Button("Delete", role: .destructive) { moveToTrash(note) }
                 .keyboardShortcut(.defaultAction)
             Button("Cancel", role: .cancel) {}
         } message: { _ in
@@ -251,7 +251,7 @@ struct MainView: View {
             try environment.noteTrash.moveToTrash(note)
             library.didRemove(note)
         } catch {
-            failure = Failure(title: "Couldn't Move Note to Trash", message: error.localizedDescription)
+            failure = Failure(title: "Couldn't Delete Note", message: error.localizedDescription)
             return
         }
         if navigation.selectedNoteID == note.id, let index {
@@ -266,6 +266,7 @@ struct MainView: View {
         guard !query.isEmpty else { return library.notes }
         return library.notes.filter {
             $0.title.localizedStandardContains(query) || $0.body.localizedStandardContains(query)
+                || $0.folder?.localizedStandardContains(query) == true
         }
     }
 
@@ -274,8 +275,14 @@ struct MainView: View {
     private func reload(selecting url: URL? = nil) async {
         await library.reload(from: environment.notesFolder.directory)
         let notes = library.notes
-        // By name: the writer's URL and the directory listing's can differ in form.
-        if let url, let note = notes.first(where: { $0.url.lastPathComponent == url.lastPathComponent }) {
+        // By name: the writer's URL and the directory listing's can differ in form. Notes in
+        // different subfolders can share a name, so then by resolved path.
+        let named = url.map { url in notes.filter { $0.url.lastPathComponent == url.lastPathComponent } } ?? []
+        let resolvedPath = { (url: URL) in url.resolvingSymlinksInPath().path(percentEncoded: false) }
+        if let url,
+            let note = named.count > 1
+                ? named.first(where: { resolvedPath($0.url) == resolvedPath(url) }) ?? named.first : named.first
+        {
             navigation.selectedNoteID = note.id
         } else if !notes.contains(where: { $0.id == navigation.selectedNoteID }) {
             navigation.selectedNoteID = notes.first?.id
