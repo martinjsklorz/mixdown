@@ -49,11 +49,8 @@ struct NoteListView<Header: View, Footer: View>: View {
                                 ShareLink(item: note.url, preview: SharePreview(note.title))
                                 Divider()
                                 Button("Open in Default App") { NSWorkspace.shared.open(note.url) }
-                                Button("Show in Finder") {
-                                    NSWorkspace.shared.activateFileViewerSelecting([note.url])
-                                }
                                 Divider()
-                                Button("Move to Trash") { actions.moveToTrash(note) }
+                                Button("Delete") { actions.moveToTrash(note) }
                             }
                             .id(note.id)
                         }

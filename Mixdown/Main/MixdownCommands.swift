@@ -82,7 +82,7 @@ private struct NotesFileMenuItems: View {
 
         Divider()
 
-        Button("Move to Trash", action: moveToTrash)
+        Button("Delete", action: moveToTrash)
             .keyboardShortcut(.delete, modifiers: .command)
             .disabled(shownNote == nil)
     }
