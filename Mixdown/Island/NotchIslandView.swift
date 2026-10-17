@@ -4,14 +4,20 @@ import SwiftUI
 /// The notch island's content: the recording time on one side of the notch and, unless turned off,
 /// one waveform for all inputs on the other, on black that runs into the notch.
 struct NotchIslandView: View {
-    /// How far the island reaches out on either side of the notch.
-    static let wingWidth: CGFloat = 80
+    /// A wing's margin at the island's outer edge.
+    fileprivate static let outerPadding: CGFloat = 10
+    /// A wing's margin next to the notch.
+    fileprivate static let innerPadding: CGFloat = 6
+    /// How far the input levels reach out from the notch.
+    static let levelsWingWidth = LevelWaveform.width() + outerPadding + innerPadding
 
     let environment: AppEnvironment
     /// Left empty in the middle, behind the notch. Zero on screens without one.
     let notchWidth: CGFloat
     let layout: NotchIsland.Layout
     let openRecorder: () -> Void
+    /// Called with how far the time reaches out from the notch, whenever that changes.
+    let timeWingWidthChanged: (CGFloat) -> Void
 
     var body: some View {
         HStack(spacing: 0) {
@@ -20,7 +26,8 @@ struct NotchIslandView: View {
                 .frame(width: notchWidth)
             wing(on: .right)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Pinned to the time's edge, which the panel's frame is worked out from.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: layout.timeSide == .left ? .leading : .trailing)
         .background(.black, in: UnevenRoundedRectangle(bottomLeadingRadius: 10, bottomTrailingRadius: 10))
         .environment(\.colorScheme, .dark)
         .contentShape(Rectangle())
@@ -32,21 +39,20 @@ struct NotchIslandView: View {
     private func wing(on side: NotchIsland.Side) -> some View {
         if side == layout.timeSide {
             ElapsedWing(environment: environment, side: side)
-                .frame(width: Self.wingWidth)
+                .onGeometryChange(for: CGFloat.self, of: { $0.size.width }, action: timeWingWidthChanged)
         } else if layout.showsLevels {
             LevelsWing(coordinator: environment.coordinator, side: side)
-                .frame(width: Self.wingWidth)
+                .frame(width: Self.levelsWingWidth)
         }
     }
 }
 
 extension View {
-    /// Aligns a wing's content to the island's outer edge on `side`, leaving more room there than
-    /// next to the notch.
-    fileprivate func wingAlignment(_ side: NotchIsland.Side) -> some View {
-        frame(maxWidth: .infinity, alignment: side == .left ? .leading : .trailing)
-            .padding(side == .left ? .leading : .trailing, 12)
-            .padding(side == .left ? .trailing : .leading, 6)
+    /// Pads a wing's content, leaving more room at the island's outer edge on `side` than next to
+    /// the notch.
+    fileprivate func wingPadding(_ side: NotchIsland.Side) -> some View {
+        padding(side == .left ? .leading : .trailing, NotchIslandView.outerPadding)
+            .padding(side == .left ? .trailing : .leading, NotchIslandView.innerPadding)
     }
 }
 
@@ -57,7 +63,7 @@ private struct ElapsedWing: View {
 
     var body: some View {
         let elapsed = environment.recordingElapsed ?? 0
-        HStack(spacing: 6) {
+        HStack(spacing: 5) {
             Image(systemName: "circle.fill")
                 .font(.system(size: 8))
                 .foregroundStyle(.red)
@@ -69,7 +75,8 @@ private struct ElapsedWing: View {
                 .lineLimit(1)
                 .fixedSize()
         }
-        .wingAlignment(side)
+        .fixedSize()
+        .wingPadding(side)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Recording, \(Duration.seconds(elapsed).formatted(.units(width: .wide)))")
     }
@@ -87,6 +94,6 @@ private struct LevelsWing: View {
             .help(silent.isEmpty ? "Input level" : "No sound from \(silent.map(\.name).formatted(.list(type: .and)))")
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Input level")
-            .wingAlignment(side)
+            .wingPadding(side)
     }
 }

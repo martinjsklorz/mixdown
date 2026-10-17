@@ -17,8 +17,17 @@ struct LevelWaveform: View {
     var scale: CGFloat = 1
     @State private var history = Array(repeating: 0.0, count: barCount)
 
-    private var barWidth: CGFloat { 3 * scale }
+    private var barWidth: CGFloat { Self.barWidth * scale }
+    private var barSpacing: CGFloat { Self.barSpacing * scale }
     private var maxBarHeight: CGFloat { 16 * scale }
+
+    private static let barWidth: CGFloat = 3
+    private static let barSpacing: CGFloat = 2
+
+    /// How wide the waveform is at `scale`.
+    static func width(scale: CGFloat = 1) -> CGFloat {
+        (CGFloat(barCount) * barWidth + CGFloat(barCount - 1) * barSpacing) * scale
+    }
 
     /// The loudest selected input right now, system audio included.
     private var combinedLevel: Double {
@@ -27,7 +36,7 @@ struct LevelWaveform: View {
     }
 
     var body: some View {
-        HStack(spacing: 2 * scale) {
+        HStack(spacing: barSpacing) {
             ForEach(history.indices, id: \.self) { index in
                 Capsule()
                     .frame(width: barWidth, height: max(barWidth, history[index] * maxBarHeight))
