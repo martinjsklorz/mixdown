@@ -99,6 +99,11 @@ public final class RecordingCoordinator {
     /// True while `deleteModel()` removes the model's files.
     public private(set) var isDeletingModel = false
 
+    /// True while `.preparingModel` downloads the model again for a finished recording, because it
+    /// went away while recording, e.g. macOS removed Apple's speech model. The recording waits on
+    /// it, so `cancelPreparation()` can't stop it.
+    public private(set) var isPreparingModelForRecording = false
+
     public var isRecording: Bool {
         switch phase {
         case .recording: true
@@ -461,7 +466,8 @@ public final class RecordingCoordinator {
     }
 
     /// Stops an in-progress model download. Files already fetched are kept, so the next
-    /// `prepareEngine()` (or recording) resumes from them.
+    /// `prepareEngine()` (or recording) resumes from them. Ignored while
+    /// `isPreparingModelForRecording`.
     public func cancelPreparation() {
         guard case .preparingModel = phase, let preparation else { return }
         preparation.cancel()
@@ -683,6 +689,7 @@ public final class RecordingCoordinator {
         progressEstimator.add(progress: 0, at: now())
         phase = .transcribing(progress: 0)
         do {
+            try await prepareModelIfMissing()
             let transcript: Transcript
             if let track = tracks.first, tracks.count == 1 {
                 transcriptionProgress = TranscriptionProgress(sessionID: session.id, tracks: tracks)
@@ -731,6 +738,35 @@ public final class RecordingCoordinator {
                 phase = .failed(message: error.localizedDescription)
             }
         }
+    }
+
+    /// Downloads the model again if it went away while recording, as macOS may remove its own
+    /// speech model at any time. Shown as `.preparingModel` with its progress, rather than as a
+    /// transcription stuck at 0% while the engine fetches the model by itself. Returns to
+    /// `.transcribing` once it's back.
+    private func prepareModelIfMissing() async throws {
+        await engine.refreshDownloadStatus()
+        isModelDownloaded = engine.isDownloaded
+        guard !isModelDownloaded else { return }
+
+        logger.info("Model went away while recording; downloading it again")
+        progressEstimator = RemainingTimeEstimator()
+        progressEstimator.add(progress: 0, at: now())
+        phase = .preparingModel(progress: 0)
+        isPreparingModelForRecording = true
+        defer {
+            isPreparingModelForRecording = false
+            isModelDownloaded = engine.isDownloaded
+        }
+        try await engine.prepare { [weak self] progress in
+            Task { @MainActor [weak self] in
+                self?.updatePreparationProgress(progress)
+            }
+        }
+
+        progressEstimator = RemainingTimeEstimator()
+        progressEstimator.add(progress: 0, at: now())
+        phase = .transcribing(progress: 0)
     }
 
     /// The transcript's summary, or `nil` if there's no summarizer, it isn't available or it
