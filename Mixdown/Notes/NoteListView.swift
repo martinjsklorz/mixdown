@@ -4,7 +4,8 @@ import MixdownNotes
 import SwiftUI
 
 /// The sidebar list of notes in sections: pinned notes, then today, the previous seven days and
-/// by month. The pinned section folds away under its header.
+/// by month. The pinned section folds away under its header, and the header of the section
+/// scrolled to the top stays there while its notes scroll under it.
 ///
 /// Drawn by hand rather than with `List(selection:)`: macOS paints a list's selection in the
 /// system accent color, and this highlights the selected note in Mixdown's orange like Apple
@@ -21,6 +22,11 @@ struct NoteListView<Footer: View>: View {
     /// Shown instead of the notes when there are none, e.g. an empty or error state.
     @ViewBuilder var footer: Footer
     @FocusState private var isFocused: Bool
+    /// The rows at least partly in view, top to bottom.
+    @State private var visibleRows: [Row.ID] = []
+    /// Where the headers in view sit, from the top of the list's visible area.
+    @State private var headerOffsets: [NoteSection.Group: CGFloat] = [:]
+    @State private var stickyHeaderHeight: CGFloat = 0
 
     var body: some View {
         let rows = self.rows
@@ -34,10 +40,12 @@ struct NoteListView<Footer: View>: View {
                     ForEach(rows) { row in
                         switch row {
                         case .header(let group):
-                            SectionHeader(
-                                title: group.title,
-                                isCollapsed: group == .pinned ? $collapsesPinned : nil
-                            )
+                            header(for: group)
+                                .onGeometryChange(for: CGFloat.self) {
+                                    $0.frame(in: .scrollView).minY
+                                } action: {
+                                    headerOffsets[group] = $0
+                                }
                         case .note(let note, let dateFormat):
                             noteButton(note, dateFormat: dateFormat)
                         }
@@ -45,9 +53,12 @@ struct NoteListView<Footer: View>: View {
                     .transition(.noteRow)
                     footer
                 }
+                .scrollTargetLayout()
                 .padding(.horizontal, 10)
                 .padding(.bottom, 8)
             }
+            .onScrollTargetVisibilityChange(idType: Row.ID.self) { visibleRows = $0 }
+            .overlay(alignment: .top) { stickyHeader(in: rows) }
             .focusable()
             .focused($isFocused)
             .focusEffectDisabled()
@@ -70,6 +81,41 @@ struct NoteListView<Footer: View>: View {
             let notes = section.group == .pinned && collapsesPinned ? [] : section.notes
             return [.header(section.group)]
                 + notes.map { .note($0, dateFormat: section.group.rowDateFormat(for: $0)) }
+        }
+    }
+
+    private func header(for group: NoteSection.Group) -> SectionHeader {
+        SectionHeader(title: group.title, isCollapsed: group == .pinned ? $collapsesPinned : nil)
+    }
+
+    /// The header of the section at the top of the list once its own has scrolled up out of
+    /// view. Drawn over the flat list rather than with pinned `Section` headers, which would split
+    /// it into one list per section. The next section's header pushes it up and out as it arrives.
+    @ViewBuilder
+    private func stickyHeader(in rows: [Row]) -> some View {
+        // Stale for rows out of view, so only the offsets of headers in view count.
+        if let top = visibleRows.first, let group = rows.first(where: { $0.id == top })?.group,
+            top != .header(group) || headerOffsets[group, default: 0] < 0
+        {
+            let groups = sections.map(\.group)
+            let next = zip(groups, groups.dropFirst()).first { $0.0 == group }?.1
+            let nextOffset = next.flatMap { visibleRows.contains(.header($0)) ? headerOffsets[$0] : nil }
+            let push = nextOffset.map { min(0, $0 - stickyHeaderHeight) } ?? 0
+
+            ZStack {
+                header(for: group)
+                    .padding(.horizontal, 10)
+                    .background(.bar)
+                    .onGeometryChange(for: CGFloat.self) {
+                        $0.size.height
+                    } action: {
+                        stickyHeaderHeight = $0
+                    }
+                    .offset(y: push)
+            }
+            .clipped()
+            // Lets clicks and scrolling through to the list, except on a header that folds.
+            .allowsHitTesting(group == .pinned)
         }
     }
 
@@ -131,6 +177,14 @@ private enum Row: Identifiable {
         guard case .note(let note, _) = self else { return nil }
         return note.id
     }
+
+    /// The section the row belongs to.
+    var group: NoteSection.Group {
+        switch self {
+        case .header(let group): group
+        case .note(let note, _): note.isPinned ? .pinned : .date(NoteDateGroup(date: note.createdAt))
+        }
+    }
 }
 
 extension AnyTransition {
@@ -146,6 +200,15 @@ private struct SectionHeader: View {
     var isCollapsed: Binding<Bool>?
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            heading
+            Divider()
+        }
+        .padding(EdgeInsets(top: 20, leading: 10, bottom: 6, trailing: 10))
+    }
+
+    @ViewBuilder
+    private var heading: some View {
         if let isCollapsed {
             Button {
                 withAnimation(.snappy) { isCollapsed.wrappedValue.toggle() }
@@ -158,7 +221,6 @@ private struct SectionHeader: View {
                         .rotationEffect(.degrees(isCollapsed.wrappedValue ? 0 : 90))
                     Spacer(minLength: 0)
                 }
-                .padding(Self.padding)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -166,15 +228,12 @@ private struct SectionHeader: View {
             .accessibilityHint(isCollapsed.wrappedValue ? "Shows the notes" : "Hides the notes")
         } else {
             text
-                .padding(Self.padding)
         }
     }
 
-    private static let padding = EdgeInsets(top: 14, leading: 10, bottom: 4, trailing: 10)
-
     private var text: some View {
         Text(title)
-            .font(.body.weight(.semibold))
+            .font(.title2.weight(.bold))
             .accessibilityAddTraits(.isHeader)
     }
 }

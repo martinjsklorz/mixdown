@@ -144,6 +144,9 @@ struct MainView: View {
             .padding(.top, 8)
             .padding(.bottom, 2)
 
+            if !library.notes.isEmpty {
+                noteCount(shown: notes.count)
+            }
             noteList(notes)
         }
         // Toolbar items on the sidebar sit above it, next to the sidebar toggle.
@@ -170,6 +173,24 @@ struct MainView: View {
         ) {
             notesPlaceholder(isEmptyAfterSearch: notes.isEmpty)
         }
+    }
+
+    /// "49 notes", or "3 of 49 notes" while searching.
+    private func noteCount(shown: Int) -> some View {
+        let total = library.notes.count
+        return Group {
+            if searchText.trimmingCharacters(in: .whitespaces).isEmpty {
+                Text("^[\(total) note](inflect: true)")
+            } else {
+                Text("\(shown) of ^[\(total) note](inflect: true)")
+            }
+        }
+        .font(.subheadline)
+        .foregroundStyle(.secondary)
+        .monospacedDigit()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 20)
+        .padding(.top, 6)
     }
 
     private var isSidebarCollapsed: Bool { columnVisibility == .detailOnly }
