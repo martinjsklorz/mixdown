@@ -36,7 +36,10 @@ struct MenuBarContent: View {
             Button("Choose Notes Folder…") { environment.chooseNotesFolder() }
         }
         if case .preparingModel = coordinator.phase {
-            Button("Cancel Download") { coordinator.cancelPreparation() }
+            // A download for a finished recording can't be cancelled.
+            if !coordinator.isPreparingModelForRecording {
+                Button("Cancel Download") { coordinator.cancelPreparation() }
+            }
         } else if !coordinator.isModelDownloaded && coordinator.isIdle {
             Button("Download Model") {
                 Task { await coordinator.prepareEngine() }

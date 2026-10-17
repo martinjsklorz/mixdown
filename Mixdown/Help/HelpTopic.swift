@@ -153,8 +153,9 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
 
             - **Record** shows a level meter for each input.
             - The elapsed time shows in the menu bar. With **Settings → Design → Show recording in \
-            the notch** on, the time and levels appear around the camera notch instead (at the top \
-            center of the screen on Macs without one). Click them to open Record.
+            the Dynamic Island** on, the time and levels appear in a Dynamic Island around the camera \
+            notch instead (at the top center of the screen on Macs without one). Click it to open \
+            Record.
             - If an input makes no sound for 10 seconds, Mixdown warns on Record and in the menu \
             bar. See [Troubleshooting](mixdown-help:troubleshooting).
 
@@ -191,13 +192,16 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
         case .notes:
             """
             Your recordings are listed in the sidebar under **Today**, **Previous 7 Days** and then \
-            each month. Search the sidebar (⌘F) to find older recordings.
+            each month. Pinned notes stay at the top under **Pinned**; click that heading to fold \
+            them away or show them again. Search the sidebar (⌘F) to find older recordings.
 
             ## Working with a note
 
             The buttons above a note, right-clicking it in the sidebar, and the File and Edit menus \
             can:
 
+            - **Pin** it to keep it at the top of the sidebar, and **Unpin** it again. This sets \
+            `pinned: true` in the note's frontmatter.
             - **Rename** it. This changes both the title inside the note and its file name.
             - **Copy Transcript** as plain text.
             - **Share** it.

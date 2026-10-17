@@ -5,7 +5,7 @@ import SwiftUI
 /// iPhone's Dynamic Island: the loudest input's last few levels as rounded bars, newest on the
 /// right, that shrink to dots in silence. Orange while `isSilent`.
 ///
-/// Shown in the notch island and in the Record view.
+/// Shown in the Dynamic Island and in the Record view.
 struct LevelWaveform: View {
     static let barCount = 5
 
@@ -13,7 +13,7 @@ struct LevelWaveform: View {
     let isSilent: Bool
     /// The bars' colour while there is sound.
     var color: Color = .secondary
-    /// Multiplies the bars' size and spacing, 1 being the notch island's.
+    /// Multiplies the bars' size and spacing, 1 being the Dynamic Island's.
     var scale: CGFloat = 1
     @State private var history = Array(repeating: 0.0, count: barCount)
 

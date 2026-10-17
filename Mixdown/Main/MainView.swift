@@ -4,9 +4,9 @@ import MixdownCore
 import MixdownNotes
 import SwiftUI
 
-/// The main window: search and Record at the top of the sidebar, the notes folder by date below
-/// it, and the recorder or the selected note on the right. Above the sidebar are the notes folder
-/// and Settings.
+/// The main window: search and Record at the top of the sidebar, the notes folder below it (pinned
+/// notes, then by date), and the recorder or the selected note on the right. Above the sidebar
+/// are the notes folder and Settings.
 struct MainView: View {
     static let windowID = "main"
 
@@ -20,6 +20,7 @@ struct MainView: View {
     @State private var noteToTrash: NoteDocument?
     @AppStorage(AppSettings.Key.suppressesTrashConfirmation) private var suppressesTrashConfirmation = false
     @AppStorage(AppSettings.Key.showsNotifications) private var showsNotifications = true
+    @AppStorage(AppSettings.Key.collapsesPinnedNotes) private var collapsesPinnedNotes = false
     @State private var titleDraft = ""
     @State private var failure: Failure?
 
@@ -143,6 +144,9 @@ struct MainView: View {
             .padding(.top, 8)
             .padding(.bottom, 2)
 
+            if !library.notes.isEmpty {
+                noteCount(shown: notes.count)
+            }
             noteList(notes)
         }
         // Toolbar items on the sidebar sit above it, next to the sidebar toggle.
@@ -164,10 +168,29 @@ struct MainView: View {
                 }
             ),
             showsSelection: navigation.destination == .notes,
+            collapsesPinned: $collapsesPinnedNotes,
             actions: noteActions
         ) {
             notesPlaceholder(isEmptyAfterSearch: notes.isEmpty)
         }
+    }
+
+    /// "49 notes", or "3 of 49 notes" while searching.
+    private func noteCount(shown: Int) -> some View {
+        let total = library.notes.count
+        return Group {
+            if searchText.trimmingCharacters(in: .whitespaces).isEmpty {
+                Text("^[\(total) note](inflect: true)")
+            } else {
+                Text("\(shown) of ^[\(total) note](inflect: true)")
+            }
+        }
+        .font(.subheadline)
+        .foregroundStyle(.secondary)
+        .monospacedDigit()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 20)
+        .padding(.top, 6)
     }
 
     private var isSidebarCollapsed: Bool { columnVisibility == .detailOnly }
@@ -236,6 +259,9 @@ struct MainView: View {
 
     private var noteActions: NoteActions {
         NoteActions(
+            togglePinned: { note in
+                Task { await setPinned(!note.isPinned, note) }
+            },
             rename: { note in
                 titleDraft = note.title
                 noteToRename = note
@@ -263,10 +289,23 @@ struct MainView: View {
         }
     }
 
+    private func setPinned(_ isPinned: Bool, _ note: NoteDocument) async {
+        do {
+            try await library.setPinned(isPinned, note)
+        } catch {
+            failure = Failure(
+                title: isPinned ? "Couldn't Pin Note" : "Couldn't Unpin Note",
+                message: error.localizedDescription
+            )
+            return
+        }
+        await reload()
+    }
+
     /// Moves the note to the Trash and, if it was selected, selects the one below it in the
     /// sidebar, or the one above if it was the last.
     private func moveToTrash(_ note: NoteDocument) {
-        let index = filteredNotes.firstIndex { $0.id == note.id }
+        let index = sidebarNotes.firstIndex { $0.id == note.id }
         do {
             try environment.noteTrash.moveToTrash(note)
             library.didRemove(note)
@@ -275,10 +314,18 @@ struct MainView: View {
             return
         }
         if navigation.selectedNoteID == note.id, let index {
-            let remaining = filteredNotes
+            let remaining = sidebarNotes
             navigation.selectedNoteID = remaining.isEmpty ? nil : remaining[min(index, remaining.count - 1)].id
         }
         Task { await reload() }
+    }
+
+    /// The `filteredNotes` the sidebar shows, in its order: pinned ones first, unless they're
+    /// folded away.
+    private var sidebarNotes: [NoteDocument] {
+        NoteSection.sections(for: filteredNotes)
+            .filter { !(collapsesPinnedNotes && $0.group == .pinned) }
+            .flatMap(\.notes)
     }
 
     private var filteredNotes: [NoteDocument] {

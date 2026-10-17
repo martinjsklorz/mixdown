@@ -33,8 +33,10 @@ and **Show in Finder** for its file, so you can stop from the menu bar and carry
 Search the sidebar (⌘F) to find older recordings. Notes you file into
 subfolders of the notes folder are listed too, with their folder under the title; hidden folders
 like Obsidian's `.obsidian` and `.trash` are skipped.
-The buttons above a note, or right-clicking it in the sidebar, rename it, copy its transcript as
-plain text, share it, or move it to the Trash (⌘⌫, or Delete in the sidebar). Renaming changes
+The buttons above a note, or right-clicking it in the sidebar, pin it, rename it, copy its
+transcript as plain text, share it, or move it to the Trash (⌘⌫, or Delete in the sidebar). Pinned
+notes stay at the top of the sidebar under **Pinned** (click the heading to fold them away);
+pinning sets `pinned: true` in the note's frontmatter, so it travels with the file. Renaming changes
 both the title inside the note and its file name. File names leave out characters that break
 Obsidian links: `[ ]` become `( )`, `|` becomes `-`, and `#` and `^` are dropped. The File and Edit menus have the same commands
 for the note that's open.

@@ -24,6 +24,8 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
     /// The subfolder of the notes folder the note is in, like `Clients/Acme`, or `nil` if it's
     /// directly inside. Set by `NoteLibrary`.
     public var folder: String?
+    /// Whether the note is listed above the others, from the frontmatter's `pinned: true`.
+    public var isPinned: Bool
 
     public var id: URL { url }
 
@@ -47,6 +49,8 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
         let sources = fields["sources"].flatMap(Self.yamlFlowSequence) ?? scalars["source"].map { [$0] } ?? []
         self.sources = sources.filter { !$0.isEmpty }
         self.trigger = scalars["trigger"].flatMap(RecordingTrigger.init(rawValue:))
+        // YAML's `true`, `True` and `TRUE`.
+        self.isPinned = scalars["pinned"]?.lowercased() == "true"
         self.snippet = Self.snippet(from: blocks)
     }
 
@@ -179,6 +183,35 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
 
         if frontmatter == nil && !renamedHeading {
             lines.insert(contentsOf: ["---", titleLine, "---", ""], at: 0)
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    // MARK: - Pinning
+
+    /// `contents` with the frontmatter's `pinned` field set to `true`, or removed when unpinning.
+    /// A note without frontmatter gets some when pinned, and loses frontmatter that held nothing
+    /// else when unpinned. Line endings become `\n`.
+    static func pinned(_ contents: String, _ isPinned: Bool) -> String {
+        var text = contents.replacingOccurrences(of: "\r\n", with: "\n")
+        if text.hasPrefix("\u{FEFF}") { text.removeFirst() }
+        var lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let pinnedLines = isPinned ? ["pinned: true"] : []
+
+        guard let end = frontmatterEnd(lines) else {
+            if isPinned { lines.insert(contentsOf: ["---"] + pinnedLines + ["---", ""], at: 0) }
+            return lines.joined(separator: "\n")
+        }
+        if let index = lines[1..<end].firstIndex(where: { frontmatterKey($0) == "pinned" }) {
+            // Also drop the lines a multi-line value continues on, up to the next key.
+            let next = lines[(index + 1)..<end].firstIndex { $0.first.map { !$0.isWhitespace } ?? false }
+            lines.replaceSubrange(index..<(next ?? end), with: pinnedLines)
+        } else {
+            lines.insert(contentsOf: pinnedLines, at: end)
+        }
+        // Frontmatter left empty goes, with the blank line pinning added after it.
+        if !isPinned, frontmatterEnd(lines) == 1 {
+            lines.removeFirst(lines.count > 2 && lines[2].isEmpty ? 3 : 2)
         }
         return lines.joined(separator: "\n")
     }

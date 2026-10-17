@@ -87,6 +87,10 @@ private struct NotesFileMenuItems: View {
 
         Divider()
 
+        Button(shownNote?.note.isPinned == true ? "Unpin Note" : "Pin Note") {
+            if let shownNote { shownNote.actions.togglePinned(shownNote.note) }
+        }
+        .disabled(shownNote == nil)
         Button("Rename Note…") {
             if let shownNote { shownNote.actions.rename(shownNote.note) }
         }
@@ -132,6 +136,7 @@ private struct RecordingMenuItems: View {
 
         if case .preparingModel = coordinator.phase {
             Button("Cancel Download") { coordinator.cancelPreparation() }
+                .disabled(coordinator.isPreparingModelForRecording)
         } else {
             Button("Download Model") {
                 Task { await coordinator.prepareEngine() }

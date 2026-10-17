@@ -123,22 +123,10 @@ public enum NoteLibrary {
     /// Runs of whitespace in the title become one space, and a blank title becomes "Untitled".
     /// A note that isn't valid UTF-8 is left alone: writing it back would garble it.
     public static func rename(noteAt url: URL, to title: String) throws -> URL {
-        let fileManager = FileManager.default
         var title = title.split(whereSeparator: \.isWhitespace).joined(separator: " ")
         if title.isEmpty { title = "Untitled" }
 
-        guard let contents = String(data: try Data(contentsOf: url), encoding: .utf8) else {
-            throw CocoaError(.fileReadInapplicableStringEncoding, userInfo: [NSURLErrorKey: url])
-        }
-        let temporaryURL = url.deletingLastPathComponent().appending(
-            path: ".\(UUID().uuidString).mixdown-tmp",
-            directoryHint: .notDirectory
-        )
-        defer { try? fileManager.removeItem(at: temporaryURL) }
-        try Data(NoteDocument.retitled(contents, url: url, to: title).utf8).write(to: temporaryURL)
-        // Swaps the contents in atomically while keeping the file's creation date, which dates
-        // notes without a `created` field.
-        _ = try fileManager.replaceItemAt(url, withItemAt: temporaryURL)
+        try rewrite(noteAt: url) { NoteDocument.retitled($0, url: url, to: title) }
 
         let stem = url.deletingPathExtension().lastPathComponent
         let prefix = stem.range(of: #"^\d{4}-\d{2}-\d{2} \d{4} "#, options: .regularExpression).map { stem[$0] }
@@ -148,6 +136,30 @@ public enum NoteLibrary {
             named: (prefix ?? "") + MarkdownNoteWriter.sanitizedTitle(title),
             pathExtension: url.pathExtension
         )
+    }
+
+    /// Pins the note at `url`, listing it above the others, or unpins it. See
+    /// `NoteDocument.pinned(_:_:)` for how the contents change. A note that isn't valid UTF-8 is
+    /// left alone, like by `rename(noteAt:to:)`.
+    public static func setPinned(_ isPinned: Bool, noteAt url: URL) throws {
+        try rewrite(noteAt: url) { NoteDocument.pinned($0, isPinned) }
+    }
+
+    /// Replaces the contents of the note at `url` with what `transform` makes of them.
+    private static func rewrite(noteAt url: URL, _ transform: (String) -> String) throws {
+        let fileManager = FileManager.default
+        guard let contents = String(data: try Data(contentsOf: url), encoding: .utf8) else {
+            throw CocoaError(.fileReadInapplicableStringEncoding, userInfo: [NSURLErrorKey: url])
+        }
+        let temporaryURL = url.deletingLastPathComponent().appending(
+            path: ".\(UUID().uuidString).mixdown-tmp",
+            directoryHint: .notDirectory
+        )
+        defer { try? fileManager.removeItem(at: temporaryURL) }
+        try Data(transform(contents).utf8).write(to: temporaryURL)
+        // Swaps the contents in atomically while keeping the file's creation date, which dates
+        // notes without a `created` field.
+        _ = try fileManager.replaceItemAt(url, withItemAt: temporaryURL)
     }
 
     /// Moves a note that was moved to the Trash back to where it was. If a note with its old name

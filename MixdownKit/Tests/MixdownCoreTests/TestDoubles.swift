@@ -192,6 +192,7 @@ actor MockEngine: TranscriptionEngine {
     private let ungatedSampleCounts: Set<Int>
     private let prepareError: (any Error)?
     private let preparesUntilCancelled: Bool
+    private let preparationGate: Gate?
     private let deleteError: (any Error)?
     private let liveSession: MockLiveSession?
     private let liveError: (any Error)?
@@ -209,6 +210,7 @@ actor MockEngine: TranscriptionEngine {
     ///   - isDownloaded: Whether the model starts out on disk. A successful `prepare` downloads it.
     ///   - preparesUntilCancelled: `prepare` stalls halfway, like a slow download, until its task
     ///     is cancelled.
+    ///   - preparationGate: `prepare` stalls halfway until it opens.
     ///   - deleteError: Thrown by `deleteModel`, which then leaves the model on disk.
     ///   - liveSession: Handed out by `makeLiveSession` for every input; `nil` if the engine
     ///     doesn't transcribe live.
@@ -227,6 +229,7 @@ actor MockEngine: TranscriptionEngine {
         isDownloaded: Bool = true,
         prepareError: (any Error)? = nil,
         preparesUntilCancelled: Bool = false,
+        preparationGate: Gate? = nil,
         deleteError: (any Error)? = nil,
         liveSession: MockLiveSession? = nil,
         liveError: (any Error)? = nil
@@ -240,6 +243,7 @@ actor MockEngine: TranscriptionEngine {
         self.downloaded = LockedValue(isDownloaded)
         self.prepareError = prepareError
         self.preparesUntilCancelled = preparesUntilCancelled
+        self.preparationGate = preparationGate
         self.deleteError = deleteError
         self.liveSession = liveSession
         self.liveError = liveError
@@ -265,6 +269,7 @@ actor MockEngine: TranscriptionEngine {
                 throw error
             }
         }
+        await preparationGate?.wait()
         if let prepareError { throw prepareError }
         downloaded.update { $0 = true }
         progress?(1)
@@ -273,6 +278,11 @@ actor MockEngine: TranscriptionEngine {
     func deleteModel() async throws {
         deleteCount += 1
         if let deleteError { throw deleteError }
+        downloaded.update { $0 = false }
+    }
+
+    /// Takes the model off disk behind the coordinator's back, as macOS may with its own models.
+    nonisolated func removeModel() {
         downloaded.update { $0 = false }
     }
 

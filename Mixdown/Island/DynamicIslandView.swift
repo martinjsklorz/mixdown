@@ -1,9 +1,9 @@
 import MixdownCore
 import SwiftUI
 
-/// The notch island's content: the recording time on one side of the notch and, unless turned off,
+/// The Dynamic Island's content: the recording time on one side of the notch and, unless turned off,
 /// one waveform for all inputs on the other, on black that runs into the notch.
-struct NotchIslandView: View {
+struct DynamicIslandView: View {
     /// A wing's margin at the island's outer edge.
     fileprivate static let outerPadding: CGFloat = 10
     /// A wing's margin next to the notch.
@@ -16,8 +16,8 @@ struct NotchIslandView: View {
     let environment: AppEnvironment
     /// Left empty in the middle, behind the notch. Zero on screens without one.
     let notchWidth: CGFloat
-    let layout: NotchIsland.Layout
-    let presence: NotchIsland.Presence
+    let layout: DynamicIsland.Layout
+    let presence: DynamicIsland.Presence
     let openRecorder: () -> Void
     /// Called with how far the time reaches out from the notch, whenever that changes.
     let timeWingWidthChanged: (CGFloat) -> Void
@@ -42,12 +42,12 @@ struct NotchIslandView: View {
         .help("Open Record")
     }
 
-    private func hasWing(on side: NotchIsland.Side) -> Bool {
+    private func hasWing(on side: DynamicIsland.Side) -> Bool {
         side == layout.timeSide || layout.showsLevels
     }
 
     @ViewBuilder
-    private func wing(on side: NotchIsland.Side) -> some View {
+    private func wing(on side: DynamicIsland.Side) -> some View {
         if side == layout.timeSide {
             ElapsedWing(environment: environment, side: side)
                 .onGeometryChange(for: CGFloat.self, of: { $0.size.width }, action: timeWingWidthChanged)
@@ -62,7 +62,7 @@ struct NotchIslandView: View {
 
 /// A wing's black, `progress` of the way out from the notch, which is on the side opposite `side`.
 private struct WingShape: Shape {
-    let side: NotchIsland.Side
+    let side: DynamicIsland.Side
     var progress: CGFloat
 
     var animatableData: CGFloat {
@@ -73,7 +73,7 @@ private struct WingShape: Shape {
     func path(in rect: CGRect) -> Path {
         let width = rect.width * min(max(progress, 0), 1)
         let x = side == .left ? rect.maxX - width : rect.minX
-        let radius = min(NotchIslandView.cornerRadius, width)
+        let radius = min(DynamicIslandView.cornerRadius, width)
         return UnevenRoundedRectangle(
             bottomLeadingRadius: side == .left ? radius : 0,
             bottomTrailingRadius: side == .right ? radius : 0
@@ -85,14 +85,14 @@ private struct WingShape: Shape {
 extension View {
     /// Pads a wing's content, leaving more room at the island's outer edge on `side` than next to
     /// the notch.
-    fileprivate func wingPadding(_ side: NotchIsland.Side) -> some View {
-        padding(side == .left ? .leading : .trailing, NotchIslandView.outerPadding)
-            .padding(side == .left ? .trailing : .leading, NotchIslandView.innerPadding)
+    fileprivate func wingPadding(_ side: DynamicIsland.Side) -> some View {
+        padding(side == .left ? .leading : .trailing, DynamicIslandView.outerPadding)
+            .padding(side == .left ? .trailing : .leading, DynamicIslandView.innerPadding)
     }
 
     /// Puts a wing on black that grows out of the notch while `isExpanded`, revealing the content
     /// as it goes, and shrinks back into it otherwise.
-    fileprivate func wingBackground(_ side: NotchIsland.Side, isExpanded: Bool) -> some View {
+    fileprivate func wingBackground(_ side: DynamicIsland.Side, isExpanded: Bool) -> some View {
         opacity(isExpanded ? 1 : 0)
             .frame(maxHeight: .infinity)
             .background(.black)
@@ -103,7 +103,7 @@ extension View {
 /// A pulsing red dot and the time recorded so far.
 private struct ElapsedWing: View {
     let environment: AppEnvironment
-    let side: NotchIsland.Side
+    let side: DynamicIsland.Side
 
     var body: some View {
         let elapsed = environment.recordingElapsed ?? 0
@@ -129,7 +129,7 @@ private struct ElapsedWing: View {
 /// One waveform for all inputs together that turns orange while any input stays silent.
 private struct LevelsWing: View {
     let coordinator: RecordingCoordinator
-    let side: NotchIsland.Side
+    let side: DynamicIsland.Side
 
     var body: some View {
         let silent = coordinator.silentDevices

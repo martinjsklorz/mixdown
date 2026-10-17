@@ -1,8 +1,8 @@
 import MixdownNotes
 import SwiftUI
 
-/// A rendered preview of one note. The text is read-only; the toolbar renames, copies, shares
-/// and trashes the note.
+/// A rendered preview of one note. The text is read-only; the toolbar pins, renames, copies,
+/// shares and trashes the note.
 struct NoteDetailView: View {
     let note: NoteDocument
     let actions: NoteActions
@@ -36,6 +36,10 @@ struct NoteDetailView: View {
         // Editing and sharing in separate groups; otherwise they'd all share one glass background.
         .toolbar {
             ToolbarItemGroup {
+                Button(
+                    note.isPinned ? "Unpin" : "Pin",
+                    systemImage: note.isPinned ? "pin.slash" : "pin"
+                ) { actions.togglePinned(note) }
                 Button("Copy Transcript", systemImage: "doc.on.doc") { NoteActions.copyTranscript(of: note) }
                 Button("Rename", systemImage: "pencil") { actions.rename(note) }
                 Button("Delete", systemImage: "trash") { actions.moveToTrash(note) }
@@ -63,7 +67,11 @@ private struct NoteMetadataView: View {
 
     @ViewBuilder private var fields: some View {
         field("Date", systemImage: "calendar") {
-            Text(note.createdAt.formatted(date: .long, time: .shortened))
+            // Two-digit hours keep the width steady between notes ("02:35", not "2:35").
+            let date = note.createdAt.formatted(date: .long, time: .omitted)
+            let time = note.createdAt.formatted(.dateTime.hour(.twoDigits(amPM: .abbreviated)).minute(.twoDigits))
+            Text("\(date) at \(time)")
+                .monospacedDigit()
         }
         if let duration = note.duration, duration >= 1 {
             field("Duration", systemImage: "clock") {

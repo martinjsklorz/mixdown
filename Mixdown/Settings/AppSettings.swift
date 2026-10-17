@@ -20,6 +20,9 @@ struct AppSettings {
         static let suppressesTrashConfirmation = "suppressesTrashConfirmation"
         /// Whether Mixdown posts notifications at all. Absent means yes.
         static let showsNotifications = "showsNotifications"
+        /// Whether the sidebar's pinned notes are folded away. Absent means no. Read with
+        /// `@AppStorage`.
+        static let collapsesPinnedNotes = "collapsesPinnedNotes"
         /// Whether the global recording shortcut is on. Absent means yes. The shortcut itself is
         /// stored by KeyboardShortcuts.
         static let recordingShortcutEnabled = "recordingShortcutEnabled"
@@ -37,12 +40,12 @@ struct AppSettings {
         static let recordsCallsAutomatically = "recordsCallsAutomatically"
         /// An `Appearance` raw value. Absent means `.auto`. Read with `@AppStorage`.
         static let appearance = "appearance"
-        /// Whether a recording's time and input levels show around the notch instead of in the
-        /// menu bar. Absent means yes.
-        static let showsRecordingInNotch = "showsRecordingInNotch"
-        /// A `NotchIsland.Side` raw value for the recording time. Absent means left.
+        /// Whether a recording's time and input levels show in the Dynamic Island instead of in the
+        /// menu bar. Absent means yes. Still named for the notch, so the setting carries over.
+        static let showsRecordingInDynamicIsland = "showsRecordingInNotch"
+        /// A `DynamicIsland.Side` raw value for the recording time. Absent means left.
         static let islandTimeSide = "islandTimeSide"
-        /// Whether the notch island shows the input levels. Absent means yes.
+        /// Whether the Dynamic Island shows the input levels. Absent means yes.
         static let islandShowsLevels = "islandShowsLevels"
         /// Whether to show the setup assistant at launch. Absent means yes, unless a notes folder
         /// was chosen before the assistant existed.
@@ -157,10 +160,10 @@ struct AppSettings {
         defaults.string(forKey: Key.appearance).flatMap(Appearance.init(rawValue:)) ?? .auto
     }
 
-    /// Whether to show a recording around the notch. On unless turned off.
-    var showsRecordingInNotch: Bool {
-        get { defaults.object(forKey: Key.showsRecordingInNotch) as? Bool ?? true }
-        nonmutating set { defaults.set(newValue, forKey: Key.showsRecordingInNotch) }
+    /// Whether to show a recording in the Dynamic Island. On unless turned off.
+    var showsRecordingInDynamicIsland: Bool {
+        get { defaults.object(forKey: Key.showsRecordingInDynamicIsland) as? Bool ?? true }
+        nonmutating set { defaults.set(newValue, forKey: Key.showsRecordingInDynamicIsland) }
     }
 
     /// Whether the setup assistant opens at launch. Until it's finished or put off, and on first
@@ -170,11 +173,11 @@ struct AppSettings {
         nonmutating set { defaults.set(newValue, forKey: Key.needsSetup) }
     }
 
-    /// What the notch island shows, and where.
-    var islandLayout: NotchIsland.Layout {
+    /// What the Dynamic Island shows, and where.
+    var islandLayout: DynamicIsland.Layout {
         get {
-            NotchIsland.Layout(
-                timeSide: defaults.string(forKey: Key.islandTimeSide).flatMap(NotchIsland.Side.init(rawValue:))
+            DynamicIsland.Layout(
+                timeSide: defaults.string(forKey: Key.islandTimeSide).flatMap(DynamicIsland.Side.init(rawValue:))
                     ?? .left,
                 showsLevels: defaults.object(forKey: Key.islandShowsLevels) as? Bool ?? true
             )

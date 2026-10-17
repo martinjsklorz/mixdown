@@ -3,7 +3,9 @@ import MixdownCore
 import MixdownNotes
 import SwiftUI
 
-/// The sidebar list of notes in sections: today, the previous seven days, then by month.
+/// The sidebar list of notes in sections: pinned notes, then today, the previous seven days and
+/// by month. The pinned section folds away under its header, and the header of the section
+/// scrolled to the top stays there while its notes scroll under it.
 ///
 /// Drawn by hand rather than with `List(selection:)`: macOS paints a list's selection in the
 /// system accent color, and this highlights the selected note in Mixdown's orange like Apple
@@ -14,57 +16,70 @@ struct NoteListView<Footer: View>: View {
     @Binding var selection: NoteDocument.ID?
     /// Whether to highlight `selection`; not while another section of the window is showing.
     var showsSelection = true
+    /// Whether the pinned notes are folded away under their section header.
+    @Binding var collapsesPinned: Bool
     let actions: NoteActions
     /// Shown instead of the notes when there are none, e.g. an empty or error state.
     @ViewBuilder var footer: Footer
     @FocusState private var isFocused: Bool
+    /// The rows at least partly in view, top to bottom.
+    @State private var visibleRows: [Row.ID] = []
+    /// Where the headers in view sit, from the top of the list's visible area.
+    @State private var headerOffsets: [NoteSection.Group: CGFloat] = [:]
+    @State private var stickyHeaderHeight: CGFloat = 0
+    /// How tall the pinned notes' rows are unfolded, for folding them away.
+    @State private var pinnedRowHeights: [NoteDocument.ID: CGFloat] = [:]
+    /// Whether the pinned rows are laid out folded, once that's changed while the list is shown.
+    /// Follows `collapsesPinned` without animating, so the pinned notes never move.
+    @State private var foldsPinnedRows: Bool?
+    /// How far the rows below the pinned notes are drawn from their place, while they slide over
+    /// the pinned notes or off them.
+    @State private var foldSlide: CGFloat = 0
 
     var body: some View {
+        let rows = self.rows
+
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 2) {
-                    ForEach(sections) { section in
-                        SectionHeader(title: section.group.title)
-                            .transition(.noteRow)
-                        ForEach(section.notes) { note in
-                            // A button, so VoiceOver announces it and Space or Return opens it
-                            // once it has keyboard focus.
-                            Button {
-                                selection = note.id
-                                isFocused = true
-                            } label: {
-                                NoteRow(
-                                    note: note,
-                                    dateFormat: section.group.rowDateFormat,
-                                    isSelected: showsSelection && note.id == selection
-                                )
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityAddTraits(showsSelection && note.id == selection ? .isSelected : [])
-                            .contextMenu {
-                                Button("Rename…") { actions.rename(note) }
-                                Button("Copy Transcript") { NoteActions.copyTranscript(of: note) }
-                                ShareLink(item: note.url, preview: SharePreview(note.title))
-                                Divider()
-                                Button("Open in Default App") { NSWorkspace.shared.open(note.url) }
-                                Divider()
-                                Button("Delete") { actions.moveToTrash(note) }
-                            }
-                            .id(note.id)
-                            .transition(.noteRow)
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    // One flat list rather than one per section, so a note that's pinned or
+                    // unpinned moves to its new place instead of leaving one list and appearing
+                    // in another, which could leave a stale copy of its row behind.
+                    ForEach(rows) { row in
+                        switch row {
+                        case .header(let group):
+                            header(for: group)
+                                .onGeometryChange(for: CGFloat.self) {
+                                    $0.frame(in: .scrollView).minY
+                                } action: {
+                                    headerOffsets[group] = $0
+                                }
+                                .padding(.vertical, 1)
+                                .offset(y: group == .pinned ? 0 : foldSlide)
+                        case .note(let note, let dateFormat) where row.group == .pinned:
+                            pinnedNoteButton(note, dateFormat: dateFormat)
+                        case .note(let note, let dateFormat):
+                            noteButton(note, dateFormat: dateFormat)
+                                .padding(.vertical, 1)
+                                .offset(y: foldSlide)
                         }
                     }
+                    .transition(.noteRow)
                     footer
+                        .offset(y: foldSlide)
                 }
+                .scrollTargetLayout()
                 .padding(.horizontal, 10)
                 .padding(.bottom, 8)
             }
+            .onScrollTargetVisibilityChange(idType: Row.ID.self) { visibleRows = $0 }
+            .overlay(alignment: .top) { stickyHeader(in: rows) }
+            .onChange(of: collapsesPinned) { _, isFolded in slideRows(folding: isFolded) }
             .focusable()
             .focused($isFocused)
             .focusEffectDisabled()
-            .onKeyPress(.downArrow) { moveSelection(by: 1, proxy: proxy) }
-            .onKeyPress(.upArrow) { moveSelection(by: -1, proxy: proxy) }
+            .onKeyPress(.downArrow) { moveSelection(by: 1, in: rows, proxy: proxy) }
+            .onKeyPress(.upArrow) { moveSelection(by: -1, in: rows, proxy: proxy) }
             // ⌫, ⌦ and Edit → Delete trash the selected note.
             .onDeleteCommand {
                 guard showsSelection,
@@ -75,34 +90,233 @@ struct NoteListView<Footer: View>: View {
         }
     }
 
-    private func moveSelection(by offset: Int, proxy: ScrollViewProxy) -> KeyPress.Result {
-        let ids = sections.flatMap { $0.notes.map(\.id) }
+    /// The section headers and the notes under them, the pinned ones too while they're folded
+    /// away.
+    private var rows: [Row] {
+        sections.flatMap { section -> [Row] in
+            [.header(section.group)]
+                + section.notes.map { .note($0, dateFormat: section.group.rowDateFormat(for: $0)) }
+        }
+    }
+
+    /// Whether `row` is a pinned note folded away under its header.
+    private func isFolded(_ row: Row) -> Bool {
+        collapsesPinned && row.noteID != nil && row.group == .pinned
+    }
+
+    private var pinnedNotes: [NoteDocument] {
+        sections.first { $0.group == .pinned }?.notes ?? []
+    }
+
+    /// Folds the pinned notes away under the rows below as they slide up over them, or opens them
+    /// as the rows slide back down. The rows are laid out folded or not at once and drawn where
+    /// they were, and only that offset animates: the lazy stack moves the pinned notes when it
+    /// animates their rows shrinking or growing.
+    private func slideRows(folding: Bool) {
+        let height = pinnedNotes.reduce(0) { $0 + (pinnedRowHeights[$1.id] ?? 0) }
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            foldsPinnedRows = folding
+            foldSlide = folding ? height : -height
+        }
+        // Once drawn there, so the slide starts from it.
+        Task { @MainActor in
+            withAnimation(.snappy) { foldSlide = 0 }
+        }
+    }
+
+    /// A pinned note's row. Folded, it takes no room, and its note stays where it was and fades
+    /// under the rows below as they slide over it. Kept in the list while folded, as a row
+    /// removed from a lazy stack doesn't hold still while it fades out.
+    private func pinnedNoteButton(_ note: NoteDocument, dateFormat: Date.FormatStyle) -> some View {
+        let isFolded = collapsesPinned
+        let isLaidOutFolded = foldsPinnedRows ?? collapsesPinned
+        // Under the pinned notes above it, which take no room either.
+        let heightAbove = pinnedNotes.prefix { $0.id != note.id }.reduce(0) { $0 + (pinnedRowHeights[$1.id] ?? 0) }
+
+        return noteButton(note, dateFormat: dateFormat)
+            .padding(.vertical, 1)
+            .fixedSize(horizontal: false, vertical: true)
+            .onGeometryChange(for: CGFloat.self) {
+                $0.size.height
+            } action: {
+                pinnedRowHeights[note.id] = $0
+            }
+            // Out before the notes sliding over it reach it, and in once they've moved off it.
+            .animation(isFolded ? .easeOut(duration: 0.15) : .easeIn(duration: 0.2).delay(0.15)) {
+                $0.opacity(isFolded ? 0 : 1)
+            }
+            .offset(y: isLaidOutFolded ? heightAbove : 0)
+            .frame(height: isLaidOutFolded ? 0 : nil, alignment: .top)
+            .zIndex(-1)
+            .allowsHitTesting(!isFolded)
+            .accessibilityHidden(isFolded)
+    }
+
+    private func header(for group: NoteSection.Group) -> SectionHeader {
+        SectionHeader(title: group.title, isCollapsed: group == .pinned ? $collapsesPinned : nil)
+    }
+
+    /// The header of the section at the top of the list once its own has scrolled up out of
+    /// view. Drawn over the flat list rather than with pinned `Section` headers, which would split
+    /// it into one list per section. The next section's header pushes it up and out as it arrives.
+    @ViewBuilder
+    private func stickyHeader(in rows: [Row]) -> some View {
+        // Stale for rows out of view, so only the offsets of headers in view count.
+        // Folded rows count as in view at the top of their section, but take no room.
+        let shownRows = visibleRows.compactMap { id in rows.first { $0.id == id } }.filter { !isFolded($0) }
+        if let top = shownRows.first, top.id != .header(top.group) || headerOffsets[top.group, default: 0] < 0 {
+            let group = top.group
+            let groups = sections.map(\.group)
+            let next = zip(groups, groups.dropFirst()).first { $0.0 == group }?.1
+            let nextOffset = next.flatMap { visibleRows.contains(.header($0)) ? headerOffsets[$0] : nil }
+            let push = nextOffset.map { min(0, $0 - stickyHeaderHeight) } ?? 0
+
+            ZStack {
+                header(for: group)
+                    .padding(.horizontal, 10)
+                    .background(.bar)
+                    .onGeometryChange(for: CGFloat.self) {
+                        $0.size.height
+                    } action: {
+                        stickyHeaderHeight = $0
+                    }
+                    .offset(y: push)
+            }
+            .clipped()
+            // Lets clicks and scrolling through to the list, except on a header that folds.
+            .allowsHitTesting(group == .pinned)
+        }
+    }
+
+    private func noteButton(_ note: NoteDocument, dateFormat: Date.FormatStyle) -> some View {
+        // A button, so VoiceOver announces it and Space or Return opens it once it has keyboard
+        // focus.
+        Button {
+            selection = note.id
+            isFocused = true
+        } label: {
+            NoteRow(note: note, dateFormat: dateFormat, isSelected: showsSelection && note.id == selection)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.unpressed)
+        .accessibilityAddTraits(showsSelection && note.id == selection ? .isSelected : [])
+        .contextMenu {
+            Button(note.isPinned ? "Unpin Note" : "Pin Note") { actions.togglePinned(note) }
+            Button("Rename…") { actions.rename(note) }
+            Button("Copy Transcript") { NoteActions.copyTranscript(of: note) }
+            ShareLink(item: note.url, preview: SharePreview(note.title))
+            Divider()
+            Button("Open in Default App") { NSWorkspace.shared.open(note.url) }
+            Divider()
+            Button("Delete") { actions.moveToTrash(note) }
+        }
+    }
+
+    /// Moves the selection among the notes shown, skipping folded-away ones.
+    private func moveSelection(by offset: Int, in rows: [Row], proxy: ScrollViewProxy) -> KeyPress.Result {
+        let ids = rows.filter { !isFolded($0) }.compactMap(\.noteID)
         guard !ids.isEmpty else { return .ignored }
         let current = showsSelection ? selection : nil
         let index = current.flatMap(ids.firstIndex(of:)).map { $0 + offset } ?? 0
         let id = ids[min(max(index, 0), ids.count - 1)]
         selection = id
-        proxy.scrollTo(id)
+        proxy.scrollTo(Row.ID.note(id))
         return .handled
     }
 }
 
+/// A line of the sidebar list: a section's header or one of its notes.
+private enum Row: Identifiable {
+    case header(NoteSection.Group)
+    case note(NoteDocument, dateFormat: Date.FormatStyle)
+
+    enum ID: Hashable {
+        case header(NoteSection.Group)
+        case note(NoteDocument.ID)
+    }
+
+    var id: ID {
+        switch self {
+        case .header(let group): .header(group)
+        case .note(let note, _): .note(note.id)
+        }
+    }
+
+    var noteID: NoteDocument.ID? {
+        guard case .note(let note, _) = self else { return nil }
+        return note.id
+    }
+
+    /// The section the row belongs to.
+    var group: NoteSection.Group {
+        switch self {
+        case .header(let group): group
+        case .note(let note, _): note.isPinned ? .pinned : .date(NoteDateGroup(date: note.createdAt))
+        }
+    }
+}
+
 extension AnyTransition {
-    /// A note slides down into its place as it's added and up out of it as it's removed, while
-    /// the rows below move to make room or close the gap.
+    /// A row slides down into its place as it's added and up out of it as it's removed, fading
+    /// in and out, while the rows below move to make room or close the gap.
     fileprivate static var noteRow: AnyTransition { .move(edge: .top).combined(with: .opacity) }
 }
 
-/// A section's title, like "Today" or "September".
+extension ButtonStyle where Self == UnpressedButtonStyle {
+    /// Like `.plain`, without dimming the label while the mouse button is held down on it.
+    fileprivate static var unpressed: UnpressedButtonStyle { UnpressedButtonStyle() }
+}
+
+private struct UnpressedButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+    }
+}
+
+/// A section's title, like "Pinned", "Today" or "September". With `isCollapsed`, clicking it
+/// folds the section's notes away or shows them again, and a chevron says which.
 private struct SectionHeader: View {
     let title: String
+    var isCollapsed: Binding<Bool>?
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            heading
+            Divider()
+        }
+        .padding(EdgeInsets(top: 20, leading: 10, bottom: 6, trailing: 10))
+    }
+
+    @ViewBuilder
+    private var heading: some View {
+        if let isCollapsed {
+            Button {
+                isCollapsed.wrappedValue.toggle()
+            } label: {
+                HStack(spacing: 6) {
+                    text
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(isCollapsed.wrappedValue ? 0 : 90))
+                        .animation(.snappy, value: isCollapsed.wrappedValue)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.unpressed)
+            .accessibilityValue(isCollapsed.wrappedValue ? "Collapsed" : "Expanded")
+            .accessibilityHint(isCollapsed.wrappedValue ? "Shows the notes" : "Hides the notes")
+        } else {
+            text
+        }
+    }
+
+    private var text: some View {
         Text(title)
-            .font(.body.weight(.semibold))
-            .padding(.horizontal, 10)
-            .padding(.top, 14)
-            .padding(.bottom, 4)
+            .font(.title2.weight(.bold))
             .accessibilityAddTraits(.isHeader)
     }
 }
@@ -161,6 +375,24 @@ private struct TriggerIcon: View {
             .foregroundStyle(.secondary)
             .help(label)
             .accessibilityLabel(label)
+    }
+}
+
+extension NoteSection.Group {
+    var title: String {
+        switch self {
+        case .pinned: "Pinned"
+        case .date(let group): group.title
+        }
+    }
+
+    /// How the rows show when `note` was recorded. Pinned notes show it as they would in their
+    /// date's section.
+    fileprivate func rowDateFormat(for note: NoteDocument) -> Date.FormatStyle {
+        switch self {
+        case .pinned: NoteDateGroup(date: note.createdAt).rowDateFormat
+        case .date(let group): group.rowDateFormat
+        }
     }
 }
 

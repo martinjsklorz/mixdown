@@ -178,7 +178,11 @@ struct TranscriptionSettingsView: View {
             : model.isDownloaded ?? isAppleSpeechInstalled
         let label = Self.label(for: model)
         guard isDownloaded else { return Text(label) }
-        return Text("\(label)  \(Image(nsImage: Self.downloadedImage))")
+        // Menus drop a plain image's bottom on the baseline, unlike a symbol's, which they lower by
+        // its alignment rect; lowering it the same way centers it on the text.
+        let check = Text(Image(nsImage: Self.downloadedImage))
+            .baselineOffset(-Self.downloadedImage.alignmentRect.minY)
+        return Text("\(label)  \(check)")
             .accessibilityLabel("\(label), downloaded")
     }
 
@@ -202,7 +206,10 @@ struct TranscriptionSettingsView: View {
     private func downloadAccessory(for phase: RecordingCoordinator.Phase) -> some View {
         switch phase {
         case .preparingModel:
-            Button("Cancel", systemImage: "xmark.circle") { environment.coordinator.cancelPreparation() }
+            // A download for a finished recording can't be cancelled.
+            if !environment.coordinator.isPreparingModelForRecording {
+                Button("Cancel", systemImage: "xmark.circle") { environment.coordinator.cancelPreparation() }
+            }
         default:
             if environment.coordinator.isDeletingModel {
                 ProgressView()
