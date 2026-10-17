@@ -5,7 +5,7 @@ name: Mixdown
 options:
   bundleIdPrefix: app.mixdown
   deploymentTarget:
-    macOS: "15.0"
+    macOS: "27.0"
   developmentLanguage: en
   createIntermediateGroups: true
   groupSortPosition: top
@@ -43,6 +43,7 @@ targets:
           - MixdownCore
           - MixdownAudio
           - MixdownSpeechSwift
+          - MixdownAppleSpeech
           - MixdownFoundationModels
           - MixdownNotes
       - package: KeyboardShortcuts

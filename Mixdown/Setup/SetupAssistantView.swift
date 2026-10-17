@@ -2,7 +2,6 @@ import AppKit
 import KeyboardShortcuts
 import MixdownAudio
 import MixdownCore
-import MixdownSpeechSwift
 import SwiftUI
 import UserNotifications
 
@@ -316,8 +315,8 @@ private struct ModelPage: View {
         SetupPage(
             title: "Pick a Speech Model",
             systemImage: "waveform",
-            detail: "The model turns speech into text on this Mac. It's downloaded once from Hugging "
-                + "Face; your recordings are never uploaded."
+            detail: "The model turns speech into text on this Mac. It's downloaded once, from Hugging "
+                + "Face or, for Apple Speech, from Apple; your recordings are never uploaded."
         ) {
             Form {
                 Section {
@@ -328,7 +327,7 @@ private struct ModelPage: View {
                             set: { environment.setModel($0) }
                         )
                     ) {
-                        ForEach(SpeechSwiftModel.allCases) { model in
+                        ForEach(TranscriptionModel.available) { model in
                             Text(model.displayName).tag(model)
                         }
                     }
@@ -353,8 +352,10 @@ private struct ModelPage: View {
                     caption(
                         environment.model.labelsSpeakers
                             ? "This model labels speakers and detects the language itself."
-                            : "Larger models are more accurate but slower. Change it later under "
-                                + "Settings → Transcription."
+                            : environment.model.isManagedBySystem
+                                ? "Apple's model is part of macOS. Automatic uses your Mac's language."
+                                : "Larger models are more accurate but slower. Change it later under "
+                                    + "Settings → Transcription."
                     )
                 }
 

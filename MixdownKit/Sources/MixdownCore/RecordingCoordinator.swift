@@ -58,7 +58,14 @@ public final class RecordingCoordinator {
     public private(set) var recordingSummaryTemplate: SummaryTemplate?
     /// Whether the user picked `recordingSummaryTemplate`, so marking a call keeps it.
     @ObservationIgnored private var isRecordingSummaryTemplateChosen = false
-    public var options: TranscriptionOptions
+    public var options: TranscriptionOptions {
+        didSet {
+            guard options.language != oldValue.language else { return }
+            engine.languageDidChange(to: options.language)
+            isModelDownloaded = engine.isDownloaded
+            Task { await refreshModelStatus() }
+        }
+    }
     /// Speaker names for multi-source recordings.
     public var sourceLabels: SourceLabels
 
@@ -294,6 +301,7 @@ public final class RecordingCoordinator {
         self.deviceProvider = deviceProvider
         self.captureFactory = captureFactory
         self.engine = engine
+        engine.languageDidChange(to: options.language)
         self.isModelDownloaded = engine.isDownloaded
         self.noteWriter = noteWriter
         self.summarizer = summarizer
@@ -443,6 +451,13 @@ public final class RecordingCoordinator {
             logger.error("Preparing engine failed: \(error.localizedDescription, privacy: .public)")
             failWithModelError(error)
         }
+    }
+
+    /// Re-checks whether the model is downloaded, for an engine that can only tell asynchronously
+    /// (see `TranscriptionEngine.refreshDownloadStatus()`). Call it once the coordinator is created.
+    public func refreshModelStatus() async {
+        await engine.refreshDownloadStatus()
+        isModelDownloaded = engine.isDownloaded
     }
 
     /// Stops an in-progress model download. Files already fetched are kept, so the next

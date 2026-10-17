@@ -280,6 +280,49 @@ actor MockEngine: TranscriptionEngine {
     }
 }
 
+/// An engine with a model per language that only knows asynchronously whether it's downloaded,
+/// like Apple's speech model.
+actor PerLanguageEngine: TranscriptionEngine {
+    nonisolated let info = TranscriptionEngineInfo(id: "per-language", displayName: "Per-Language Engine")
+    nonisolated var isDownloaded: Bool { checked.current.contains(language.current) }
+
+    /// Languages whose model is on disk; `nil` is the automatic one.
+    private nonisolated let installed: LockedValue<Set<String?>>
+    /// `installed` as of the last `refreshDownloadStatus()` or `prepare`.
+    private nonisolated let checked = LockedValue<Set<String?>>([])
+    nonisolated let language = LockedValue<String?>(nil)
+
+    init(installed: Set<String?>) {
+        self.installed = LockedValue(installed)
+    }
+
+    nonisolated func languageDidChange(to language: String?) {
+        self.language.update { $0 = language }
+    }
+
+    func refreshDownloadStatus() async {
+        checked.update { $0 = installed.current }
+    }
+
+    func prepare(progress: (@Sendable (Double) -> Void)?) async throws {
+        installed.update { $0.insert(language.current) }
+        checked.update { $0 = installed.current }
+    }
+
+    func deleteModel() async throws {
+        installed.update { $0.remove(language.current) }
+        checked.update { $0 = installed.current }
+    }
+
+    func transcribe(
+        _ samples: [Float],
+        options: TranscriptionOptions,
+        progress: (@Sendable (Double) -> Void)?
+    ) async throws -> Transcript {
+        Transcript(segments: [], language: language.current)
+    }
+}
+
 /// Holds callers of `wait()` until `open()`.
 actor Gate {
     private var isOpen = false

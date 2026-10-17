@@ -33,15 +33,14 @@ struct NoteDetailView: View {
         // Start each note at the top.
         .id(note.id)
         .navigationTitle(note.title)
-        // Editing and sharing in separate groups; macOS 26 would otherwise put them all on one
-        // glass background.
+        // Editing and sharing in separate groups; otherwise they'd all share one glass background.
         .toolbar {
             ToolbarItemGroup {
                 Button("Copy Transcript", systemImage: "doc.on.doc") { NoteActions.copyTranscript(of: note) }
                 Button("Rename", systemImage: "pencil") { actions.rename(note) }
                 Button("Delete", systemImage: "trash") { actions.moveToTrash(note) }
             }
-            if #available(macOS 26, *) { ToolbarSpacer(.fixed) }
+            ToolbarSpacer(.fixed)
             ToolbarItem {
                 ShareLink(item: note.url, preview: SharePreview(note.title))
             }

@@ -226,6 +226,9 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             more.
             - **MOSS Transcribe Diarize 0.9B** (about 1 GB): meetings, because it labels who is \
             speaking.
+            - **Apple Speech**: Apple's own model, the one Notes and Voice \
+            Memos use. macOS downloads it once per language and shares it with other apps. It \
+            doesn't detect the language: **Automatic** uses your Mac's language.
 
             ## Downloading
 
@@ -236,18 +239,21 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
 
             The model menu under **Settings → Transcription** marks downloaded models with a green \
             check. To free up disk space, select a model there and click the trash button next to \
-            the menu. You'll need to download it again before recording with it.
+            the menu. You'll need to download it again before recording with it. Apple Speech \
+            belongs to macOS, which removes it when no app needs it any more, so it has no trash \
+            button.
 
             ## Speakers
 
             With MOSS, speaker numbers start over every 10 minutes, so "Speaker 1" may be someone \
-            else later in a long recording. The other models don't tell speakers apart.
+            else later in a long recording. The other models, Apple Speech included, don't tell \
+            speakers apart.
             """
         case .summaries:
             """
-            On macOS 26 or later with Apple Intelligence turned on, each note starts with a \
-            summary: a short overview, the key points and any action items, in the language of the \
-            recording. Apple Intelligence writes it on your Mac, so the transcript doesn't leave it.
+            With Apple Intelligence turned on, each note starts with a summary: a short overview, \
+            the key points and any action items, in the language of the recording. Apple \
+            Intelligence writes it on your Mac, so the transcript doesn't leave it.
 
             The summary also names the note after its topic, e.g. "Release timeline". Calls \
             recorded from Mixdown's call notification, or automatically, are titled as calls, e.g. \

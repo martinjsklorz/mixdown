@@ -97,6 +97,15 @@ public protocol TranscriptionEngine: Sendable {
     /// Balances `recordingWillStart()` once the recording has been transcribed, discarded or failed.
     func recordingDidFinish()
 
+    /// Called with `TranscriptionOptions.language` before the first `isDownloaded`, and whenever it
+    /// changes. For an engine with a model per language; `isDownloaded`, `prepare` and `deleteModel`
+    /// then refer to this language's.
+    func languageDidChange(to language: String?)
+
+    /// Brings `isDownloaded` up to date, for an engine that can only check asynchronously. Until it
+    /// has, such an engine reports `false`.
+    func refreshDownloadStatus() async
+
     /// Transcribes 16 kHz mono Float32 samples (see `AudioChunk.sampleRate`).
     /// Calls `prepare` implicitly if it hasn't completed yet. Honors task cancellation.
     /// - Parameter progress: Reports 0...1 as the work gets done, never moving backwards. An engine
@@ -111,6 +120,8 @@ public protocol TranscriptionEngine: Sendable {
 extension TranscriptionEngine {
     public func recordingWillStart() {}
     public func recordingDidFinish() {}
+    public func languageDidChange(to language: String?) {}
+    public func refreshDownloadStatus() async {}
 }
 
 public enum TranscriptionError: LocalizedError, Sendable {

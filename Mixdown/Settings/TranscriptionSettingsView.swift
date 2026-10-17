@@ -1,11 +1,14 @@
 import AppKit
+import MixdownAppleSpeech
 import MixdownCore
-import MixdownSpeechSwift
 import SwiftUI
 
 struct TranscriptionSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
     @State private var isConfirmingDelete = false
+    /// Whether macOS has Apple's speech model for the chosen language, for the model menu while
+    /// another model is selected. macOS only says so asynchronously.
+    @State private var isAppleSpeechInstalled = false
 
     /// ISO 639-1 codes offered besides "Automatic". The models support many more.
     static let languages = ["en", "de", "fr", "es", "it", "pt", "nl", "pl", "ja", "zh"]
@@ -24,7 +27,7 @@ struct TranscriptionSettingsView: View {
                                 set: { environment.setModel($0) }
                             )
                         ) {
-                            ForEach(SpeechSwiftModel.allCases) { model in
+                            ForEach(TranscriptionModel.available) { model in
                                 Label {
                                     Text(model.displayName)
                                 } icon: {
@@ -130,6 +133,9 @@ struct TranscriptionSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .task(id: environment.language) {
+            isAppleSpeechInstalled = await AppleSpeechEngine.isInstalled(language: environment.language)
+        }
     }
 
     /// A row under the model while it downloads or after it failed; nothing otherwise, as the
@@ -162,11 +168,11 @@ struct TranscriptionSettingsView: View {
     /// A green check for models on disk, else a download arrow, so the menu says which models are
     /// ready without picking them.
     @ViewBuilder
-    private func downloadIcon(for model: SpeechSwiftModel) -> some View {
+    private func downloadIcon(for model: TranscriptionModel) -> some View {
         let isDownloaded =
             model == environment.model
             ? environment.coordinator.isModelDownloaded
-            : SpeechSwiftEngine.isDownloaded(model)
+            : model.isDownloaded ?? isAppleSpeechInstalled
         if isDownloaded {
             Image(nsImage: Self.downloadedImage)
                 .accessibilityLabel("Downloaded")
@@ -191,7 +197,7 @@ struct TranscriptionSettingsView: View {
     /// Download next to the model menu while the model isn't on disk, Delete once it is; recording
     /// needs it. A Cancel button while preparing (files land on disk mid-download, so the menu's
     /// check would be premature). After a model error, Retry and Delete for files on disk (they may
-    /// be broken), else Download.
+    /// be broken), else Download. No Delete for a model macOS manages.
     @ViewBuilder
     private func downloadAccessory(for phase: RecordingCoordinator.Phase) -> some View {
         switch phase {
@@ -204,11 +210,14 @@ struct TranscriptionSettingsView: View {
             } else if environment.coordinator.isModelDownloaded, environment.coordinator.modelError != nil {
                 Button("Retry", systemImage: "arrow.clockwise") { prepare() }
                     .disabled(!environment.canChangeModel)
-                deleteButton
+                if !environment.model.isManagedBySystem { deleteButton }
             } else if environment.coordinator.isModelDownloaded {
-                deleteButton
-                    .labelStyle(.iconOnly)
-                    .help("Delete \(environment.model.displayName)")
+                // macOS decides when to remove its own model.
+                if !environment.model.isManagedBySystem {
+                    deleteButton
+                        .labelStyle(.iconOnly)
+                        .help("Delete \(environment.model.displayName)")
+                }
             } else {
                 downloadButton
             }
@@ -247,7 +256,12 @@ struct TranscriptionSettingsView: View {
         }
     }
 
-    private func footer(for model: SpeechSwiftModel) -> String {
+    private func footer(for model: TranscriptionModel) -> String {
+        if model.isManagedBySystem {
+            return "Apple's speech model is part of macOS. It's downloaded from Apple once per language and "
+                + "shared with other apps, and transcription runs on this Mac. Automatic uses your Mac's "
+                + "language. This model doesn't label speakers."
+        }
         var lines = [
             "Larger models are more accurate but slower and take more disk space.",
             "Models are downloaded once from Hugging Face; transcription always runs on this Mac.",

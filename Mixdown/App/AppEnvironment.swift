@@ -4,7 +4,6 @@ import MixdownAudio
 import MixdownCore
 import MixdownFoundationModels
 import MixdownNotes
-import MixdownSpeechSwift
 import Observation
 
 /// Composition root: wires concrete implementations into the `RecordingCoordinator` and keeps
@@ -14,7 +13,7 @@ final class AppEnvironment {
     /// Replaced (never mutated in place) when the transcription model changes, because the coordinator
     /// receives its engine at init.
     private(set) var coordinator: RecordingCoordinator
-    private(set) var model: SpeechSwiftModel
+    private(set) var model: TranscriptionModel
     /// Makes the summaries; `coordinator` only has it while summaries are on.
     let summarizer: any Summarizer
     let notesFolder: NotesFolderStore
@@ -85,6 +84,7 @@ final class AppEnvironment {
         }
         self.showRecorder = showRecorder
         startMonitoringDevices()
+        refreshModelStatus()
         observeRecording()
         observeNotchIsland()
         observePhaseForCues()
@@ -107,7 +107,7 @@ final class AppEnvironment {
     // MARK: Composition
 
     private static func makeCoordinator(
-        model: SpeechSwiftModel,
+        model: TranscriptionModel,
         summarizer: (any Summarizer)?,
         notesDirectory: URL?,
         settings: AppSettings
@@ -115,9 +115,9 @@ final class AppEnvironment {
         RecordingCoordinator(
             deviceProvider: CoreAudioDeviceProvider(),
             captureFactory: DefaultAudioCaptureFactory(),
-            // This is the ONE place the transcription engine is chosen. To use a different
-            // backend, construct any other `TranscriptionEngine` here; nothing else changes.
-            engine: SpeechSwiftEngine(model: model),
+            // `TranscriptionModel.makeEngine()` is the ONE place the transcription engine is chosen.
+            // To add a backend, give it a case there; nothing else here changes.
+            engine: model.makeEngine(),
             noteWriter: notesDirectory.map { MarkdownNoteWriter(directory: $0) },
             summarizer: summarizer,
             summaryTemplate: settings.summaryTemplate,
@@ -135,6 +135,13 @@ final class AppEnvironment {
         deviceMonitor?.cancel()
         deviceMonitor = Task { [coordinator] in
             await coordinator.monitorDevices()
+        }
+    }
+
+    /// Checks whether the model is downloaded, for an engine that can only tell asynchronously.
+    private func refreshModelStatus() {
+        Task { [coordinator] in
+            await coordinator.refreshModelStatus()
         }
     }
 
@@ -368,7 +375,7 @@ final class AppEnvironment {
 
     /// Switches models by rebuilding the coordinator. Ignored unless `canChangeModel`; the
     /// settings UI disables the picker in that case.
-    func setModel(_ model: SpeechSwiftModel) {
+    func setModel(_ model: TranscriptionModel) {
         guard model != self.model, canChangeModel else { return }
         settings.transcriptionModel = model
         self.model = model
@@ -379,6 +386,7 @@ final class AppEnvironment {
             settings: settings
         )
         startMonitoringDevices()
+        refreshModelStatus()
     }
 
     // MARK: Summary
