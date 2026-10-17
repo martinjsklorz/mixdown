@@ -95,7 +95,12 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
 
             ## Set up
 
-            Open **Record** at the top of the sidebar. Recording stays off until these two are done:
+            The first time Mixdown opens, the setup assistant walks you through choosing a notes \
+            folder, downloading a speech model, picking inputs and allowing the permissions. Open \
+            it again with **Help → Setup Assistant…**.
+
+            If you skipped it, open **Record** at the top of the sidebar. Recording stays off until \
+            these two are done:
 
             1. Click **Choose Folder…** and pick where your notes go, for example a new `Mixdown` \
             folder in Documents (use **New Folder** in the dialog).
