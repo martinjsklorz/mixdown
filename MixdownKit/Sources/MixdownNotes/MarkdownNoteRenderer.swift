@@ -58,14 +58,16 @@ public enum MarkdownNoteRenderer {
         "## \(heading)\n\n\(body)"
     }
 
-    /// The overview, then `###` lists of key points and action items. Empty parts are left out;
-    /// `nil` if that's all of them.
+    /// The overview, then `###` lists of key points and action items, the latter as `- [ ]` task
+    /// items to tick off. Empty parts are left out; `nil` if that's all of them.
     static func summaryBody(_ summary: NoteSummary) -> String? {
         var blocks: [String] = []
         let overview = escapedMarkdown(singleLine(summary.overview))
         if !overview.isEmpty { blocks.append(overview) }
-        for (heading, items) in [("Key Points", summary.keyPoints), ("Action Items", summary.actionItems)] {
-            let list = items.map { escapedMarkdown(singleLine($0)) }.filter { !$0.isEmpty }.map { "- \($0)" }
+        for (heading, marker, items) in [
+            ("Key Points", "- ", summary.keyPoints), ("Action Items", "- [ ] ", summary.actionItems),
+        ] {
+            let list = items.map { escapedMarkdown(singleLine($0)) }.filter { !$0.isEmpty }.map { marker + $0 }
             if !list.isEmpty {
                 blocks.append("### \(heading)\n\n" + list.joined(separator: "\n"))
             }

@@ -166,7 +166,7 @@ struct MarkdownNoteRendererTests {
 
             ### Action Items
 
-            - Anna writes the notes
+            - [ ] Anna writes the notes
 
             ## Transcript
             """
