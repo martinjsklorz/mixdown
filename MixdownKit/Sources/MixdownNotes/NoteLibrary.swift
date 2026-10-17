@@ -7,31 +7,74 @@ public enum NoteLibrary {
     /// Every Markdown file directly inside `directory`, newest first. Hidden files and
     /// subfolders are skipped, and a folder that doesn't exist yet has no notes.
     public static func loadNotes(in directory: URL) throws -> [NoteDocument] {
-        let fileManager = FileManager.default
-        guard fileManager.fileExists(atPath: directory.path(percentEncoded: false)) else { return [] }
+        var cache = Cache()
+        return try loadNotes(in: directory, cache: &cache)
+    }
 
-        let keys: Set<URLResourceKey> = [.isRegularFileKey, .creationDateKey, .contentModificationDateKey]
+    /// Like `loadNotes(in:)`, but only reads the files that are new or changed since `cache` last
+    /// saw them, and updates `cache`.
+    public static func loadNotes(in directory: URL, cache: inout Cache) throws -> [NoteDocument] {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: directory.path(percentEncoded: false)) else {
+            cache = Cache()
+            return []
+        }
+
+        let keys: Set<URLResourceKey> = [.isRegularFileKey, .creationDateKey, .contentModificationDateKey, .fileSizeKey]
         let urls = try fileManager.contentsOfDirectory(
             at: directory,
             includingPropertiesForKeys: Array(keys),
             options: [.skipsHiddenFiles]
         )
-        let notes = urls.compactMap { url -> NoteDocument? in
+        var entries: [URL: Cache.Entry] = [:]
+        for url in urls {
             guard fileExtensions.contains(url.pathExtension.lowercased()),
                 let values = try? url.resourceValues(forKeys: keys),
-                values.isRegularFile == true,
-                let data = try? Data(contentsOf: url)
-            else { return nil }
-            return NoteDocument(
+                values.isRegularFile == true
+            else { continue }
+            let stamp = Cache.Stamp(values)
+            if let entry = cache.entries[url], entry.stamp == stamp {
+                entries[url] = entry
+                continue
+            }
+            guard let data = try? Data(contentsOf: url) else { continue }
+            let note = NoteDocument(
                 url: url,
                 contents: String(decoding: data, as: UTF8.self),
                 fileDate: values.creationDate ?? values.contentModificationDate ?? .distantPast
             )
+            entries[url] = Cache.Entry(stamp: stamp, note: note)
         }
+        cache.entries = entries
+
         // The file name breaks ties so the order is stable between reloads.
-        return notes.sorted {
+        return entries.values.map(\.note).sorted {
             ($0.createdAt, $0.url.lastPathComponent) > ($1.createdAt, $1.url.lastPathComponent)
         }
+    }
+
+    /// The notes `loadNotes(in:cache:)` read last time, by file, so it can skip the ones whose
+    /// files haven't changed.
+    public struct Cache: Sendable {
+        /// What tells a changed file apart: a note is read again if either differs.
+        struct Stamp: Equatable, Sendable {
+            var modificationDate: Date?
+            var size: Int?
+
+            init(_ values: URLResourceValues) {
+                modificationDate = values.contentModificationDate
+                size = values.fileSize
+            }
+        }
+
+        struct Entry: Sendable {
+            var stamp: Stamp
+            var note: NoteDocument
+        }
+
+        var entries: [URL: Entry] = [:]
+
+        public init() {}
     }
 
     /// Changes the title of the note at `url` and renames its file to match. Returns the new URL.
