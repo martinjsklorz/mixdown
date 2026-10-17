@@ -358,7 +358,8 @@ struct RecordingCoordinatorTests {
     private func recordNote(
         transcript: Transcript = Transcript(segments: [TranscriptSegment(start: 0, end: 1, text: "Hello.")]),
         summarizer: MockSummarizer?,
-        isCall: Bool = false
+        isCall: Bool = false,
+        automatically: Bool = false
     ) async throws -> (RecordingCoordinator, Note) {
         let writer = InMemoryNoteWriter()
         let coordinator = makeCoordinator(
@@ -369,7 +370,7 @@ struct RecordingCoordinatorTests {
         )
         await coordinator.monitorDevices()
         await coordinator.startRecording()
-        if isCall { coordinator.markRecordingAsCall() }
+        if isCall { coordinator.markRecordingAsCall(automatically: automatically) }
         await coordinator.stopRecording()
         return (coordinator, try #require(await writer.notes.first))
     }
@@ -437,6 +438,17 @@ struct RecordingCoordinatorTests {
         german.language = "de"
         let (_, germanCall) = try await recordNote(summarizer: MockSummarizer(summary: german), isCall: true)
         #expect(germanCall.title == "Anruf zu Release timeline")
+    }
+
+    @Test func notesSayHowTheRecordingWasStarted() async throws {
+        let (_, manual) = try await recordNote(summarizer: nil)
+        #expect(manual.trigger == .manual)
+
+        let (_, prompted) = try await recordNote(summarizer: nil, isCall: true)
+        #expect(prompted.trigger == .manual)
+
+        let (_, automatic) = try await recordNote(summarizer: nil, isCall: true, automatically: true)
+        #expect(automatic.trigger == .automatic)
     }
 
     @Test func markingAsCallOutsideARecordingIsIgnored() async throws {

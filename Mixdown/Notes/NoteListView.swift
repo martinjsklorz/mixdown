@@ -1,4 +1,5 @@
 import AppKit
+import MixdownCore
 import MixdownNotes
 import SwiftUI
 
@@ -141,9 +142,15 @@ private struct NoteRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(note.title)
-                .font(.body.weight(.medium))
-                .lineLimit(1)
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(note.title)
+                    .font(.body.weight(.medium))
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                if let trigger = note.trigger {
+                    TriggerIcon(trigger: trigger)
+                }
+            }
             HStack(spacing: 6) {
                 Text(note.createdAt, format: .dateTime.hour().minute())
                 Text(note.snippet.isEmpty ? "No additional text" : note.snippet)
@@ -164,6 +171,24 @@ private struct NoteRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         // The light orange of the app icon's tracks (a darker icon orange in Dark Mode).
         .background(isSelected ? Color("NoteSelection") : .clear, in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+/// A small mark for how the recording was started. Notes that don't say show none.
+private struct TriggerIcon: View {
+    let trigger: RecordingTrigger
+
+    var body: some View {
+        let (symbol, label) =
+            switch trigger {
+            case .manual: ("hand.tap", "Started manually")
+            case .automatic: ("autostartstop", "Started automatically for a call")
+            }
+        Image(systemName: symbol)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .help(label)
+            .accessibilityLabel(label)
     }
 }
 

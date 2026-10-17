@@ -1,4 +1,5 @@
 import Foundation
+import MixdownCore
 
 /// A Markdown note read back from disk: its frontmatter metadata and Markdown body.
 ///
@@ -13,6 +14,9 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
     public var duration: TimeInterval?
     /// Names of the recorded inputs, from the frontmatter's `sources` list or single `source`.
     public var sources: [String]
+    /// How the recording was started. `nil` for notes from before Mixdown recorded it, and ones
+    /// edited to something else.
+    public var trigger: RecordingTrigger?
     /// The Markdown after the frontmatter.
     public var body: String
     /// The first text of the body as a single line of plain text. Empty if there is none.
@@ -42,6 +46,7 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
         }
         let sources = fields["sources"].flatMap(Self.yamlFlowSequence) ?? scalars["source"].map { [$0] } ?? []
         self.sources = sources.filter { !$0.isEmpty }
+        self.trigger = scalars["trigger"].flatMap(RecordingTrigger.init(rawValue:))
         self.snippet = Self.snippet(from: blocks)
     }
 

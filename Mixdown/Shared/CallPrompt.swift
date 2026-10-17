@@ -18,7 +18,8 @@ import os
 ///   instead (if notifying), and clicking that opens Record, which says why.
 ///
 /// A recording it starts, from a notification or automatically, is marked as a call, so its note
-/// is titled as one. Recordings started any other way aren't, even during a call.
+/// is titled as one. Recordings started any other way aren't, even during a call. Only automatic
+/// ones are marked as started automatically: clicking a notification is the user's choice.
 ///
 /// Call `recordingDidStart()` and `recordingDidStop()` as recordings come and go.
 /// `NotificationResponder` hands it the buttons, on notifications from an earlier run, too.
@@ -41,7 +42,7 @@ final class CallPrompt {
     private let isRecording: () -> Bool
     private let startRecording: () -> Bool
     private let stopRecording: () -> Void
-    private let markRecordingAsCall: () -> Void
+    private let markRecordingAsCall: (_ automatically: Bool) -> Void
     private let showRecorder: () -> Void
     private var detector: CallDetector?
     private var detection: Task<Void, Never>?
@@ -81,13 +82,14 @@ final class CallPrompt {
     ///   - isRecording: Whether Mixdown is recording.
     ///   - startRecording: Starts recording, returning `false` if it can't.
     ///   - stopRecording: Stops recording.
-    ///   - markRecordingAsCall: Marks the recording in progress as a call.
+    ///   - markRecordingAsCall: Marks the recording in progress as a call, and whether it was
+    ///     started automatically rather than from a notification.
     ///   - showRecorder: Opens Record in the main window.
     init(
         isRecording: @escaping () -> Bool,
         startRecording: @escaping () -> Bool,
         stopRecording: @escaping () -> Void,
-        markRecordingAsCall: @escaping () -> Void,
+        markRecordingAsCall: @escaping (_ automatically: Bool) -> Void,
         showRecorder: @escaping () -> Void
     ) {
         self.isRecording = isRecording
@@ -144,7 +146,7 @@ final class CallPrompt {
         withdrawRecordPrompts()
         if isStartingCall {
             isStartingCall = false
-            markRecordingAsCall()
+            markRecordingAsCall(startingFor != nil)
         }
         guard let app = startingFor else { return }
         startingFor = nil
