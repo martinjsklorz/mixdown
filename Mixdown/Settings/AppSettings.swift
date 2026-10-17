@@ -1,6 +1,5 @@
 import Foundation
 import MixdownCore
-import MixdownSpeechSwift
 
 /// Typed access to Mixdown's preferences in `UserDefaults`.
 ///
@@ -77,8 +76,12 @@ struct AppSettings {
         }
     }
 
-    var transcriptionModel: SpeechSwiftModel {
-        get { defaults.string(forKey: Key.transcriptionModel).flatMap(SpeechSwiftModel.init(rawValue:)) ?? .default }
+    /// The chosen model, or the default if it's not available on this Mac (any more).
+    var transcriptionModel: TranscriptionModel {
+        get {
+            let model = defaults.string(forKey: Key.transcriptionModel).flatMap(TranscriptionModel.init(rawValue:))
+            return model.flatMap { TranscriptionModel.available.contains($0) ? $0 : nil } ?? .default
+        }
         nonmutating set { defaults.set(newValue.rawValue, forKey: Key.transcriptionModel) }
     }
 

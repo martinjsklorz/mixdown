@@ -1057,6 +1057,33 @@ struct RecordingCoordinatorTests {
         #expect(coordinator.isRecording)
     }
 
+    @Test func modelStatusFollowsLanguage() async {
+        let engine = PerLanguageEngine(installed: ["de"])
+        let coordinator = RecordingCoordinator(
+            deviceProvider: MockDeviceProvider(devices: Fixtures.devices),
+            captureFactory: MockCaptureFactory(capture: MockCapture()),
+            engine: engine,
+            noteWriter: InMemoryNoteWriter(),
+            options: TranscriptionOptions(language: "de")
+        )
+        #expect(engine.language.current == "de")
+        // The engine can't tell yet.
+        #expect(!coordinator.isModelDownloaded)
+
+        await coordinator.refreshModelStatus()
+        #expect(coordinator.isModelDownloaded)
+
+        coordinator.options.language = "fr"
+        #expect(engine.language.current == "fr")
+        #expect(!coordinator.isModelDownloaded)
+
+        await coordinator.prepareEngine()
+        #expect(coordinator.isModelDownloaded)
+
+        coordinator.options.language = "de"
+        #expect(coordinator.isModelDownloaded)
+    }
+
     @Test func recordingWaitsForNotesFolder() async {
         let coordinator = makeCoordinator()
         coordinator.noteWriter = nil

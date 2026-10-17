@@ -1,5 +1,4 @@
 import MixdownCore
-import MixdownSpeechSwift
 import SwiftUI
 
 struct TranscriptionSettingsView: View {
@@ -21,7 +20,7 @@ struct TranscriptionSettingsView: View {
                         set: { environment.setModel($0) }
                     )
                 ) {
-                    ForEach(SpeechSwiftModel.allCases) { model in
+                    ForEach(TranscriptionModel.available) { model in
                         Text(model.displayName).tag(model)
                     }
                 }
@@ -138,7 +137,7 @@ struct TranscriptionSettingsView: View {
     /// "Downloaded" and a Delete button once the model is on disk, otherwise a button to fetch it;
     /// recording needs it. A Cancel button while preparing (files land on disk mid-download, so
     /// "Downloaded" would be premature). After a model error, Retry and Delete for files on disk
-    /// (they may be broken), else Download.
+    /// (they may be broken), else Download. No Delete for a model macOS manages.
     @ViewBuilder
     private func downloadAccessory(for phase: RecordingCoordinator.Phase) -> some View {
         switch phase {
@@ -151,7 +150,7 @@ struct TranscriptionSettingsView: View {
             } else if environment.coordinator.isModelDownloaded, environment.coordinator.modelError != nil {
                 Button("Retry", systemImage: "arrow.clockwise") { prepare() }
                     .disabled(!environment.canChangeModel)
-                deleteButton
+                if !environment.model.isManagedBySystem { deleteButton }
             } else if environment.coordinator.isModelDownloaded {
                 Label {
                     Text("Downloaded")
@@ -160,7 +159,8 @@ struct TranscriptionSettingsView: View {
                         .foregroundStyle(.green)
                 }
                 .foregroundStyle(.secondary)
-                deleteButton
+                // macOS decides when to remove its own model.
+                if !environment.model.isManagedBySystem { deleteButton }
             } else {
                 downloadButton
             }
@@ -191,7 +191,12 @@ struct TranscriptionSettingsView: View {
         Task { await environment.coordinator.prepareEngine() }
     }
 
-    private func footer(for model: SpeechSwiftModel) -> String {
+    private func footer(for model: TranscriptionModel) -> String {
+        if model.isManagedBySystem {
+            return "Apple's speech model is part of macOS. It's downloaded from Apple once per language and "
+                + "shared with other apps, and transcription runs on this Mac. Automatic uses your Mac's "
+                + "language. This model doesn't label speakers."
+        }
         var lines = [
             "Larger models are more accurate but slower and take more disk space.",
             "Models are downloaded once from Hugging Face; transcription always runs on this Mac.",

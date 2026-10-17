@@ -9,29 +9,22 @@ private let logger = Logger(subsystem: "app.mixdown", category: "summary")
 /// Summarizes with the on-device model behind Apple Intelligence, through the Foundation Models
 /// framework. Nothing is downloaded by Mixdown and nothing leaves the Mac.
 ///
-/// Needs macOS 26 or later with Apple Intelligence turned on; `availability` says what's missing.
+/// Needs Apple Intelligence turned on; `availability` says what's missing.
 public struct AppleIntelligenceSummarizer: Summarizer {
     public let info = SummarizerInfo(id: "apple-intelligence", displayName: "Apple Intelligence")
 
     public init() {}
 
     public var availability: SummarizerAvailability {
-        guard #available(macOS 26, *) else {
-            return .unavailable(reason: "Summaries with Apple Intelligence need macOS 26 or later.")
-        }
-        return SystemModelSummary.availability
+        SystemModelSummary.availability
     }
 
     // Qualified because FoundationModels has a `Transcript` of its own.
     public func summarize(_ transcript: MixdownCore.Transcript) async throws -> NoteSummary {
-        guard #available(macOS 26, *) else {
-            throw SummarizationError.unavailable("Summaries with Apple Intelligence need macOS 26 or later.")
-        }
-        return try await SystemModelSummary.summarize(transcript)
+        try await SystemModelSummary.summarize(transcript)
     }
 }
 
-@available(macOS 26, *)
 enum SystemModelSummary {
     /// Tokens of the context window kept free for the instructions, the response schema and the
     /// response.
@@ -138,12 +131,11 @@ enum SystemModelSummary {
 
     static func isContextOverflow(_ error: any Error) -> Bool {
         if case LanguageModelSession.GenerationError.exceededContextWindowSize = error { return true }
-        if #available(macOS 27, *), case LanguageModelError.contextSizeExceeded = error { return true }
+        if case LanguageModelError.contextSizeExceeded = error { return true }
         return false
     }
 }
 
-@available(macOS 26, *)
 @Generable
 struct GeneratedSummary {
     // Generated in this order, so the overview and the title can draw on what comes before them.

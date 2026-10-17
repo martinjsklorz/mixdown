@@ -116,6 +116,11 @@ you'll need to download it again before recording with it.
 | Qwen3-ASR 0.6B (default) | ~0.9 GB | Fast, everyday notes |
 | Qwen3-ASR 1.7B | ~2.3 GB | Better accuracy, on Macs with 24 GB+ memory |
 | MOSS Transcribe Diarize 0.9B | ~1 GB | Meetings: labels who is speaking |
+| Apple Speech | Managed by macOS | Light on memory; kept up to date by macOS |
+
+Apple Speech is Apple's on-device model, the one Notes and Voice Memos use. macOS downloads it
+once per language, keeps it up to date and shares it with other apps, so there's no **Delete**
+for it. It doesn't detect the language: **Automatic** uses your Mac's language.
 
 With MOSS, speaker numbers start over every 10 minutes, so "Speaker 1" may be someone else
 later in a long recording. When recording a call, MOSS numbers the speakers within each input,
@@ -125,10 +130,9 @@ so their lines are just labeled "Me" and "Others".
 
 ## Summaries
 
-On macOS 26 or later with Apple Intelligence turned on, each note starts with a summary: a short
-overview, the key points and any action items, in the language of the recording. Apple
-Intelligence writes it on your Mac after the transcript is ready, so the note takes a little
-longer to appear. Nothing extra is downloaded, and the transcript doesn't leave your Mac. Long
+With Apple Intelligence turned on, each note starts with a summary: a short overview, the key
+points and any action items, in the language of the recording. Apple Intelligence writes it on
+your Mac after the transcript is ready, so the note takes a little longer to appear. Nothing extra is downloaded, and the transcript doesn't leave your Mac. Long
 recordings are summarized in parts, which are then combined. Action items are saved as Markdown
 checkboxes (`- [ ]`), so you can tick them off in editors like Obsidian.
 
@@ -203,7 +207,7 @@ speakers: ["Me", "Others"]
 
 ## Building from source
 
-You need a Mac with Apple Silicon running macOS 15 or later, Xcode, and
+You need a Mac with Apple Silicon running macOS 27 or later, Xcode, and
 [Homebrew](https://brew.sh).
 
 ```sh
@@ -215,9 +219,9 @@ make clean       # quit Mixdown, delete all build output and refresh the Dock ic
 
 To sign the app with your Apple developer account, set `DEVELOPMENT_TEAM` in `project.yml`.
 
-The speech engine sits behind one interface (`TranscriptionEngine`), and so does the summarizer
-(`Summarizer`), so either can be replaced by changing a single line in
-`Mixdown/App/AppEnvironment.swift`.
+The speech engines sit behind one interface (`TranscriptionEngine`), and so does the summarizer
+(`Summarizer`). Speech models from any engine are listed in `Mixdown/App/TranscriptionModel.swift`;
+the summarizer is chosen in `Mixdown/App/AppEnvironment.swift`.
 
 ## License
 
