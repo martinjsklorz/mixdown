@@ -169,7 +169,11 @@ struct TranscriptionSettingsView: View {
             ? environment.coordinator.isModelDownloaded
             : model.isDownloaded ?? isAppleSpeechInstalled
         guard isDownloaded else { return Text(model.displayName) }
-        return Text("\(model.displayName)  \(Image(nsImage: Self.downloadedImage))")
+        // Menus drop a plain image's bottom on the baseline, unlike a symbol's, which they lower by
+        // its alignment rect; lowering it the same way centers it on the text.
+        let check = Text(Image(nsImage: Self.downloadedImage))
+            .baselineOffset(-Self.downloadedImage.alignmentRect.minY)
+        return Text("\(model.displayName)  \(check)")
             .accessibilityLabel("\(model.displayName), downloaded")
     }
 
