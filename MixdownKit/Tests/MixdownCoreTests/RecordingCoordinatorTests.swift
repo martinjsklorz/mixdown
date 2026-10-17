@@ -1144,6 +1144,71 @@ struct RecordingCoordinatorTests {
         #expect(coordinator.isModelDownloaded)
     }
 
+    @Test func modelRemovedWhileRecordingIsDownloadedAgainBeforeTranscribing() async throws {
+        let gate = Gate()
+        let engine = MockEngine(preparationGate: gate)
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            capture: MockCapture(chunks: [Fixtures.chunk(seconds: 1)]),
+            engine: engine,
+            writer: writer
+        )
+        await coordinator.monitorDevices()
+        await coordinator.startRecording()
+        engine.removeModel()
+
+        let stopping = Task { await coordinator.stopRecording() }
+        try await waitUntil { coordinator.phase == .preparingModel(progress: 0.5) }
+        #expect(coordinator.isPreparingModelForRecording)
+        #expect(!coordinator.isModelDownloaded)
+        #expect(await engine.receivedSampleCounts.isEmpty)
+        // The recording needs the model.
+        coordinator.cancelPreparation()
+        #expect(coordinator.phase == .preparingModel(progress: 0.5))
+        await gate.open()
+        await stopping.value
+
+        #expect(coordinator.phase == .idle)
+        #expect(!coordinator.isPreparingModelForRecording)
+        #expect(coordinator.isModelDownloaded)
+        #expect(await engine.prepareCount == 1)
+        #expect(await engine.receivedSampleCounts == [16_000])
+        #expect(await writer.notes.count == 1)
+    }
+
+    @Test func failedDownloadForRecordingIsAModelError() async {
+        let engine = MockEngine(prepareError: TranscriptionError.modelUnavailable("offline"))
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            capture: MockCapture(chunks: [Fixtures.chunk(seconds: 1)]),
+            engine: engine,
+            writer: writer
+        )
+        await coordinator.monitorDevices()
+        await coordinator.startRecording()
+        engine.removeModel()
+        await coordinator.stopRecording()
+
+        let message = TranscriptionError.modelUnavailable("offline").localizedDescription
+        #expect(coordinator.phase == .failed(message: message))
+        #expect(coordinator.modelError == message)
+        #expect(!coordinator.isPreparingModelForRecording)
+        #expect(!coordinator.isModelDownloaded)
+        #expect(await engine.receivedSampleCounts.isEmpty)
+        #expect(await writer.notes.isEmpty)
+    }
+
+    @Test func modelOnDiskIsNotPreparedBeforeTranscribing() async {
+        let engine = MockEngine()
+        let coordinator = makeCoordinator(capture: MockCapture(chunks: [Fixtures.chunk(seconds: 1)]), engine: engine)
+        await coordinator.monitorDevices()
+        await coordinator.startRecording()
+        await coordinator.stopRecording()
+
+        #expect(coordinator.phase == .idle)
+        #expect(await engine.prepareCount == 0)
+    }
+
     @Test func recordingWaitsForNotesFolder() async {
         let coordinator = makeCoordinator()
         coordinator.noteWriter = nil

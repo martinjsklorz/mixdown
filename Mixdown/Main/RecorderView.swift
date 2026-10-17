@@ -42,7 +42,7 @@ struct RecorderView: View {
                 downloadButton(for: coordinator)
 
             case .preparingModel(let progress):
-                headline("Downloading Model…", detail: environment.model.displayName)
+                headline("Downloading Model…", detail: downloadDetail(for: coordinator))
                 ProgressView(value: progress) {
                     EmptyView()
                 } currentValueLabel: {
@@ -52,8 +52,12 @@ struct RecorderView: View {
                     .monospacedDigit()
                 }
                 .frame(maxWidth: 320)
-                Button("Cancel Download") { coordinator.cancelPreparation() }
-                    .controlSize(.large)
+                if coordinator.isPreparingModelForRecording {
+                    summaryTemplatePicker(for: coordinator)
+                } else {
+                    Button("Cancel Download") { coordinator.cancelPreparation() }
+                        .controlSize(.large)
+                }
 
             case .recording(let startedAt):
                 Text(startedAt, style: .timer)
@@ -175,6 +179,13 @@ struct RecorderView: View {
             }
         }
         .controlSize(.large)
+    }
+
+    /// The model's name, and for a download a finished recording waits on, why it's downloading.
+    private func downloadDetail(for coordinator: RecordingCoordinator) -> String {
+        let name = environment.model.displayName
+        guard coordinator.isPreparingModelForRecording else { return name }
+        return "\(name) is no longer on this Mac. Transcribing starts once it's downloaded again."
     }
 
     private func headline(_ title: String, detail: String?) -> some View {

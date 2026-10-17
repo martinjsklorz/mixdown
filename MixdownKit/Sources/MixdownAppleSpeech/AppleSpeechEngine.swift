@@ -180,7 +180,8 @@ private enum AppleSpeech {
         progress: (@Sendable (Double) -> Void)?
     ) async throws -> Transcript {
         let transcriber = try await makeTranscriber(language: language)
-        // macOS may have removed the model since it was downloaded; this fetches it again.
+        // macOS may have removed the model since it was downloaded. The coordinator fetches it again
+        // before transcribing, with progress; this covers it going in between.
         try await install(language: language, progress: nil)
 
         guard let format = AVAudioFormat(
