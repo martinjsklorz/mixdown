@@ -59,6 +59,9 @@ struct NoteListView<Footer: View>: View {
             }
             .onScrollTargetVisibilityChange(idType: Row.ID.self) { visibleRows = $0 }
             .overlay(alignment: .top) { stickyHeader(in: rows) }
+            // Folding slides the pinned notes away. Here rather than with `withAnimation` where
+            // it's toggled, as the setting is `@AppStorage` and may change from outside the list.
+            .animation(.snappy, value: collapsesPinned)
             .focusable()
             .focused($isFocused)
             .focusEffectDisabled()
@@ -129,7 +132,7 @@ struct NoteListView<Footer: View>: View {
             NoteRow(note: note, dateFormat: dateFormat, isSelected: showsSelection && note.id == selection)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.unpressed)
         .accessibilityAddTraits(showsSelection && note.id == selection ? .isSelected : [])
         .contextMenu {
             Button(note.isPinned ? "Unpin Note" : "Pin Note") { actions.togglePinned(note) }
@@ -193,6 +196,17 @@ extension AnyTransition {
     fileprivate static var noteRow: AnyTransition { .move(edge: .top).combined(with: .opacity) }
 }
 
+extension ButtonStyle where Self == UnpressedButtonStyle {
+    /// Like `.plain`, without dimming the label while the mouse button is held down on it.
+    fileprivate static var unpressed: UnpressedButtonStyle { UnpressedButtonStyle() }
+}
+
+private struct UnpressedButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+    }
+}
+
 /// A section's title, like "Pinned", "Today" or "September". With `isCollapsed`, clicking it
 /// folds the section's notes away or shows them again, and a chevron says which.
 private struct SectionHeader: View {
@@ -211,19 +225,19 @@ private struct SectionHeader: View {
     private var heading: some View {
         if let isCollapsed {
             Button {
-                withAnimation(.snappy) { isCollapsed.wrappedValue.toggle() }
+                isCollapsed.wrappedValue.toggle()
             } label: {
                 HStack(spacing: 6) {
                     text
+                    Spacer(minLength: 0)
                     Image(systemName: "chevron.right")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .rotationEffect(.degrees(isCollapsed.wrappedValue ? 0 : 90))
-                    Spacer(minLength: 0)
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.unpressed)
             .accessibilityValue(isCollapsed.wrappedValue ? "Collapsed" : "Expanded")
             .accessibilityHint(isCollapsed.wrappedValue ? "Shows the notes" : "Hides the notes")
         } else {
