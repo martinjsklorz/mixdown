@@ -46,6 +46,65 @@ struct NoteLibraryTests {
         #expect(try NoteLibrary.loadNotes(in: directory).isEmpty)
     }
 
+    // MARK: Reloading with a cache
+
+    private func setModificationDate(_ date: Date, of name: String, in directory: URL) throws {
+        let path = directory.appending(path: name, directoryHint: .notDirectory).path(percentEncoded: false)
+        try FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: path)
+    }
+
+    @Test func cachedReloadPicksUpAddedChangedAndRemovedNotes() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try write("# One", to: "One.md", in: directory)
+        try write("# Two", to: "Two.md", in: directory)
+        try setModificationDate(.now - 60, of: "Two.md", in: directory)
+        var cache = NoteLibrary.Cache()
+        #expect(Set(try NoteLibrary.loadNotes(in: directory, cache: &cache).map(\.title)) == ["One", "Two"])
+
+        try write("# Three", to: "Three.md", in: directory)
+        try write("# Two, edited", to: "Two.md", in: directory)
+        try FileManager.default.removeItem(at: directory.appending(path: "One.md", directoryHint: .notDirectory))
+
+        let titles = try NoteLibrary.loadNotes(in: directory, cache: &cache).map(\.title)
+        #expect(Set(titles) == ["Two, edited", "Three"])
+    }
+
+    @Test func cachedReloadSkipsFilesThatLookUnchanged() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try write("# Old", to: "Note.md", in: directory)
+        let date = Date.now - 60
+        try setModificationDate(date, of: "Note.md", in: directory)
+        var cache = NoteLibrary.Cache()
+        _ = try NoteLibrary.loadNotes(in: directory, cache: &cache)
+
+        // Same size and date: taken from the cache rather than read again.
+        try write("# New", to: "Note.md", in: directory)
+        try setModificationDate(date, of: "Note.md", in: directory)
+        #expect(try NoteLibrary.loadNotes(in: directory, cache: &cache).map(\.title) == ["Old"])
+        // Without the cache it is read.
+        #expect(try NoteLibrary.loadNotes(in: directory).map(\.title) == ["New"])
+    }
+
+    @Test func cachedReloadOfAnotherFolderHasOnlyItsNotes() throws {
+        let first = try makeDirectory()
+        let second = try makeDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: first)
+            try? FileManager.default.removeItem(at: second)
+        }
+        try write("# First", to: "Note.md", in: first)
+        try write("# Second", to: "Note.md", in: second)
+        var cache = NoteLibrary.Cache()
+        _ = try NoteLibrary.loadNotes(in: first, cache: &cache)
+
+        #expect(try NoteLibrary.loadNotes(in: second, cache: &cache).map(\.title) == ["Second"])
+        try FileManager.default.removeItem(at: second)
+        #expect(try NoteLibrary.loadNotes(in: second, cache: &cache).isEmpty)
+        #expect(try NoteLibrary.loadNotes(in: first, cache: &cache).map(\.title) == ["First"])
+    }
+
     @Test func tellsNotesByName() {
         let directory = URL(fileURLWithPath: "/Notes", isDirectory: true)
         let note = { (name: String) in NoteLibrary.isNote(directory.appending(path: name)) }

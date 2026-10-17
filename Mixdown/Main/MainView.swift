@@ -21,8 +21,6 @@ struct MainView: View {
     @AppStorage(AppSettings.Key.showsNotifications) private var showsNotifications = true
     @State private var titleDraft = ""
     @State private var failure: Failure?
-    /// The note a reload was asked to select, until a reload that isn't superseded selects it.
-    @State private var pendingSelection: URL?
 
     /// An action on a note that didn't work, for an alert.
     private struct Failure {
@@ -271,14 +269,10 @@ struct MainView: View {
         }
     }
 
-    /// Reloads the folder, then selects the note at `url` if given (here or by a reload this one
-    /// superseded), else keeps the selection if that note still exists, else selects the newest.
+    /// Reloads the folder, then selects the note at `url` if given, else keeps the selection if
+    /// that note still exists, else selects the newest note.
     private func reload(selecting url: URL? = nil) async {
-        if let url { pendingSelection = url }
-        // A newer reload started meanwhile, e.g. for a change the watcher reported; it selects.
-        guard await library.reload(from: environment.notesFolder.directory) else { return }
-        let url = pendingSelection
-        pendingSelection = nil
+        await library.reload(from: environment.notesFolder.directory)
         let notes = library.notes
         // By name: the writer's URL and the directory listing's can differ in form.
         if let url, let note = notes.first(where: { $0.url.lastPathComponent == url.lastPathComponent }) {
