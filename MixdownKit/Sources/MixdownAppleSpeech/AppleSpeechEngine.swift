@@ -16,7 +16,7 @@ private let logger = Logger(subsystem: "app.mixdown", category: "transcription")
 /// doesn't detect the language: without one, it uses the Mac's language. It doesn't label speakers
 /// or translate.
 public actor AppleSpeechEngine: TranscriptionEngine {
-    public static let displayName = "Apple Speech (built into macOS)"
+    public static let displayName = "Apple Speech"
 
     public nonisolated let info = TranscriptionEngineInfo(
         id: "apple-speech",

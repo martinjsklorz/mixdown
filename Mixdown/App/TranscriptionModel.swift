@@ -12,7 +12,7 @@ enum TranscriptionModel: Hashable, Identifiable {
 
     /// The models this Mac can use, in the order Settings lists them.
     static var available: [TranscriptionModel] {
-        SpeechSwiftModel.allCases.map(Self.speechSwift) + (AppleSpeechEngine.isSupported ? [.apple] : [])
+        (AppleSpeechEngine.isSupported ? [.apple] : []) + SpeechSwiftModel.allCases.map(Self.speechSwift)
     }
 
     /// Persisted in user defaults; never change it. speech-swift models keep the raw values they
