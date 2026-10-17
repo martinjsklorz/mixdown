@@ -4,8 +4,9 @@ import Foundation
 public enum NoteLibrary {
     static let fileExtensions: Set<String> = ["md", "markdown"]
 
-    /// Every Markdown file directly inside `directory`, newest first. Hidden files and
-    /// subfolders are skipped, and a folder that doesn't exist yet has no notes.
+    /// Every Markdown file in `directory` and its subfolders, newest first. Hidden files and
+    /// folders (like Obsidian's `.obsidian` and `.trash`) and packages are skipped, and a folder
+    /// that doesn't exist yet has no notes.
     public static func loadNotes(in directory: URL) throws -> [NoteDocument] {
         var cache = Cache()
         return try loadNotes(in: directory, cache: &cache)
@@ -20,30 +21,49 @@ public enum NoteLibrary {
             return []
         }
 
-        let keys: Set<URLResourceKey> = [.isRegularFileKey, .creationDateKey, .contentModificationDateKey, .fileSizeKey]
-        let urls = try fileManager.contentsOfDirectory(
-            at: directory,
-            includingPropertiesForKeys: Array(keys),
-            options: [.skipsHiddenFiles]
-        )
+        let keys: Set<URLResourceKey> = [
+            .isRegularFileKey, .isDirectoryKey, .isPackageKey, .creationDateKey, .contentModificationDateKey,
+            .fileSizeKey,
+        ]
         var entries: [URL: Cache.Entry] = [:]
-        for url in urls {
-            guard isNote(url),
-                let values = try? url.resourceValues(forKeys: keys),
-                values.isRegularFile == true
-            else { continue }
-            let stamp = Cache.Stamp(values)
-            if let entry = cache.entries[url], entry.stamp == stamp {
-                entries[url] = entry
+        // Folders still to read, with their paths relative to `directory`.
+        var folders: [(url: URL, path: String?)] = [(directory, nil)]
+        while let folder = folders.popLast() {
+            let urls: [URL]
+            do {
+                urls = try fileManager.contentsOfDirectory(
+                    at: folder.url,
+                    includingPropertiesForKeys: Array(keys),
+                    options: [.skipsHiddenFiles]
+                )
+            } catch {
+                // Only the notes folder itself has to be readable.
+                if folder.path == nil { throw error }
                 continue
             }
-            guard let data = try? Data(contentsOf: url) else { continue }
-            let note = NoteDocument(
-                url: url,
-                contents: String(decoding: data, as: UTF8.self),
-                fileDate: values.creationDate ?? values.contentModificationDate ?? .distantPast
-            )
-            entries[url] = Cache.Entry(stamp: stamp, note: note)
+            for url in urls {
+                guard let values = try? url.resourceValues(forKeys: keys) else { continue }
+                // Symbolic links aren't followed, so a link to a parent folder can't loop.
+                if values.isDirectory == true, values.isPackage != true {
+                    let name = url.lastPathComponent
+                    folders.append((url, folder.path.map { "\($0)/\(name)" } ?? name))
+                    continue
+                }
+                guard isNote(url), values.isRegularFile == true else { continue }
+                let stamp = Cache.Stamp(values)
+                if let entry = cache.entries[url], entry.stamp == stamp {
+                    entries[url] = entry
+                    continue
+                }
+                guard let data = try? Data(contentsOf: url) else { continue }
+                var note = NoteDocument(
+                    url: url,
+                    contents: String(decoding: data, as: UTF8.self),
+                    fileDate: values.creationDate ?? values.contentModificationDate ?? .distantPast
+                )
+                note.folder = folder.path
+                entries[url] = Cache.Entry(stamp: stamp, note: note)
+            }
         }
         cache.entries = entries
 
@@ -82,6 +102,18 @@ public enum NoteLibrary {
     /// temporary files.
     public static func isNote(_ url: URL) -> Bool {
         !url.lastPathComponent.hasPrefix(".") && fileExtensions.contains(url.pathExtension.lowercased())
+    }
+
+    /// Whether a change to the item at `url` can change the notes listed for `directory`: it's a
+    /// note or a folder (renaming or removing one moves every note in it), and neither it nor a
+    /// folder it's in is hidden. Judged by the path alone, for a folder watcher.
+    public static func affectsNotes(_ url: URL, isDirectory: Bool, in directory: URL) -> Bool {
+        let components = url.standardizedFileURL.pathComponents
+        let root = directory.standardizedFileURL.pathComponents
+        // A path outside `directory` (one spelled differently, say) is judged by its name only.
+        let relative = components.starts(with: root) ? components.dropFirst(root.count) : components.suffix(1)
+        if relative.contains(where: { $0.hasPrefix(".") }) { return false }
+        return isDirectory || isNote(url)
     }
 
     /// Changes the title of the note at `url` and renames its file to match. Returns the new URL.
