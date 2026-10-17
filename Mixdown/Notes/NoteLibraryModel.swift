@@ -1,6 +1,7 @@
 import Foundation
 import MixdownNotes
 import Observation
+import SwiftUI
 
 /// The notes listed in the main window's sidebar, read from the notes folder off the main thread.
 @MainActor @Observable
@@ -49,7 +50,9 @@ final class NoteLibraryModel {
 
             switch result {
             case .success(let notes):
-                self.notes = notes
+                // Notes written or removed since slide in and out of the sidebar; the first
+                // load just appears.
+                withAnimation(hasLoaded ? .snappy : nil) { self.notes = notes }
                 errorMessage = nil
             case .failure(let error):
                 notes = []
@@ -71,6 +74,6 @@ final class NoteLibraryModel {
 
     /// Drops a note that was moved away from `notes` right away, ahead of the next reload.
     func didRemove(_ note: NoteDocument) {
-        notes.removeAll { $0.id == note.id }
+        withAnimation(.snappy) { notes.removeAll { $0.id == note.id } }
     }
 }

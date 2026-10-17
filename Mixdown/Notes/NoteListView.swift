@@ -31,6 +31,7 @@ struct NoteListView<Header: View, Footer: View>: View {
                         SectionHeader(section: section, isCollapsed: isCollapsed) {
                             withAnimation(.snappy) { collapsed.formSymmetricDifference([section.group]) }
                         }
+                        .transition(.noteRow)
                         ForEach(isCollapsed ? [] : section.notes) { note in
                             // A button, so VoiceOver announces it and Space or Return opens it
                             // once it has keyboard focus.
@@ -53,6 +54,7 @@ struct NoteListView<Header: View, Footer: View>: View {
                                 Button("Delete") { actions.moveToTrash(note) }
                             }
                             .id(note.id)
+                            .transition(.noteRow)
                         }
                     }
                     footer
@@ -92,6 +94,12 @@ struct NoteListView<Header: View, Footer: View>: View {
         proxy.scrollTo(id)
         return .handled
     }
+}
+
+extension AnyTransition {
+    /// A note slides down into its place as it's added and up out of it as it's removed, while
+    /// the rows below move to make room or close the gap.
+    fileprivate static var noteRow: AnyTransition { .move(edge: .top).combined(with: .opacity) }
 }
 
 /// A day's title, which collapses or expands its notes.
