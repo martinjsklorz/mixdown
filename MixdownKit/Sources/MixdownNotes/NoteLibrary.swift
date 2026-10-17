@@ -28,7 +28,7 @@ public enum NoteLibrary {
         )
         var entries: [URL: Cache.Entry] = [:]
         for url in urls {
-            guard fileExtensions.contains(url.pathExtension.lowercased()),
+            guard isNote(url),
                 let values = try? url.resourceValues(forKeys: keys),
                 values.isRegularFile == true
             else { continue }
@@ -75,6 +75,13 @@ public enum NoteLibrary {
         var entries: [URL: Entry] = [:]
 
         public init() {}
+    }
+
+    /// Whether the file at `url` would be listed as a note, judged by its name alone: a Markdown
+    /// file that isn't hidden. Lets a folder watcher skip changes to `.DS_Store` and editors'
+    /// temporary files.
+    public static func isNote(_ url: URL) -> Bool {
+        !url.lastPathComponent.hasPrefix(".") && fileExtensions.contains(url.pathExtension.lowercased())
     }
 
     /// Changes the title of the note at `url` and renames its file to match. Returns the new URL.

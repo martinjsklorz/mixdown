@@ -105,6 +105,19 @@ struct NoteLibraryTests {
         #expect(try NoteLibrary.loadNotes(in: first, cache: &cache).map(\.title) == ["First"])
     }
 
+    @Test func tellsNotesByName() {
+        let directory = URL(fileURLWithPath: "/Notes", isDirectory: true)
+        let note = { (name: String) in NoteLibrary.isNote(directory.appending(path: name)) }
+
+        #expect(note("2026-10-17 0930 Standup.md"))
+        #expect(note("Plain.MARKDOWN"))
+        #expect(!note(".DS_Store"))
+        #expect(!note(".Standup.md.swp"))
+        #expect(!note(".hidden.md"))
+        #expect(!note("notes.txt"))
+        #expect(!note("Standup.md.sb-1a2b3c"))
+    }
+
     // MARK: Renaming
 
     private func contents(of url: URL) throws -> String {

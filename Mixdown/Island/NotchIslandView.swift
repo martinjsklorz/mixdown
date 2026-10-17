@@ -2,7 +2,7 @@ import MixdownCore
 import SwiftUI
 
 /// The notch island's content: the recording time on one side of the notch and, unless turned off,
-/// a waveform per input on the other, on black that runs into the notch.
+/// one waveform for all inputs on the other, on black that runs into the notch.
 struct NotchIslandView: View {
     /// How far the island reaches out on either side of the notch.
     static let wingWidth: CGFloat = 80
@@ -75,57 +75,18 @@ private struct ElapsedWing: View {
     }
 }
 
-/// A waveform per input, like the music one in the iPhone's Dynamic Island: its last few levels as
-/// rounded bars, newest on the right, that shrink to dots in silence. An input that stays silent
-/// turns orange. With two inputs, the microphone is on the left.
+/// One waveform for all inputs together that turns orange while any input stays silent.
 private struct LevelsWing: View {
     let coordinator: RecordingCoordinator
     let side: NotchIsland.Side
 
     var body: some View {
-        let silent = Set(coordinator.silentDevices.map(\.id))
+        let silent = coordinator.silentDevices
 
-        HStack(spacing: 8) {
-            ForEach(coordinator.selectedDevices) { device in
-                Waveform(coordinator: coordinator, deviceID: device.id, isSilent: silent.contains(device.id))
-                    .help(device.name)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("\(device.name) level")
-            }
-        }
-        .wingAlignment(side)
-    }
-}
-
-/// One input's recent levels as bars.
-private struct Waveform: View {
-    static let barCount = 5
-    static let barWidth: CGFloat = 3
-    static let maxBarHeight: CGFloat = 16
-
-    let coordinator: RecordingCoordinator
-    let deviceID: String
-    let isSilent: Bool
-    @State private var history = Array(repeating: 0.0, count: barCount)
-
-    var body: some View {
-        HStack(spacing: 2) {
-            ForEach(history.indices, id: \.self) { index in
-                Capsule()
-                    .frame(width: Self.barWidth, height: max(Self.barWidth, history[index] * Self.maxBarHeight))
-            }
-        }
-        .frame(height: Self.maxBarHeight)
-        .foregroundStyle(isSilent ? Color.orange : Color.white.opacity(0.75))
-        .animation(.easeOut(duration: 0.1), value: history)
-        // Sampled on a clock rather than on each new level, so the bars keep moving (to dots) while
-        // an input delivers the same level, such as exact silence.
-        .task {
-            while !Task.isCancelled {
-                history.removeFirst()
-                history.append(coordinator.inputLevels[deviceID]?.meterValue ?? 0)
-                try? await Task.sleep(for: .milliseconds(100))
-            }
-        }
+        LevelWaveform(coordinator: coordinator, isSilent: !silent.isEmpty, color: .white.opacity(0.75))
+            .help(silent.isEmpty ? "Input level" : "No sound from \(silent.map(\.name).formatted(.list(type: .and)))")
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Input level")
+            .wingAlignment(side)
     }
 }

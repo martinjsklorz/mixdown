@@ -44,7 +44,15 @@ struct MainView: View {
         }
         .searchable(text: $searchText, placement: .sidebar, prompt: "Search Recordings")
         .frame(minWidth: 720, minHeight: 480)
-        .task(id: environment.notesFolder.directory) { await reload(selecting: navigation.takeNoteToShow()) }
+        // Reads the folder and watches it for changes; again for each folder the user chooses.
+        .task(id: environment.notesFolder.directory) {
+            let directory = environment.notesFolder.directory
+            // Started first, so nothing that changes during the first reload is missed.
+            let changes = directory.map { NotesFolderWatcher.changes(in: $0) }
+            await reload(selecting: navigation.takeNoteToShow())
+            guard let changes else { return }
+            for await _ in changes { await reload() }
+        }
         .onChange(of: environment.coordinator.lastNoteURL) { _, url in
             Task {
                 await reload(selecting: url)
@@ -52,7 +60,8 @@ struct MainView: View {
                 if url != nil, navigation.destination == .recorder { navigation.destination = .notes }
             }
         }
-        // Picks up notes edited, added or removed in other apps when the user comes back.
+        // In case the watcher missed a change. FSEvents doesn't see changes made by other
+        // computers on a network volume, for one.
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await reload() }
         }
