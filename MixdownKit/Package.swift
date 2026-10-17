@@ -3,9 +3,10 @@ import PackageDescription
 
 let package = Package(
     name: "MixdownKit",
-    // macOS 27 for Apple's speech model (`AnalyzerInputConverter`) and Foundation Models, so neither
-    // needs availability checks. A string, as this tools version has no `.v27`.
-    platforms: [.macOS("27.0")],
+    // macOS 26 for Apple's speech model (`SpeechAnalyzer`) and Foundation Models, so neither needs
+    // availability checks; only their macOS 27 additions do. A string, as this tools version has no
+    // `.v26`.
+    platforms: [.macOS("26.0")],
     products: [
         .library(name: "MixdownCore", targets: ["MixdownCore"]),
         .library(name: "MixdownAudio", targets: ["MixdownAudio"]),
