@@ -5,6 +5,8 @@ import SwiftUI
 /// What can be done to a note from the sidebar, the note's toolbar and the menu bar. `MainView`
 /// supplies the actions that change the notes folder, so it can reload and keep a selection.
 struct NoteActions {
+    /// Pins the note if it isn't, listing it above the others, and unpins it if it is.
+    var togglePinned: @MainActor (NoteDocument) -> Void
     /// Asks for a new title, then renames the note and its file.
     var rename: @MainActor (NoteDocument) -> Void
     /// Asks for confirmation unless the user turned that off, then moves the note to the Trash.

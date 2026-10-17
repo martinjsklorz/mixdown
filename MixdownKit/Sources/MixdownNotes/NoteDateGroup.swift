@@ -21,22 +21,30 @@ public enum NoteDateGroup: Hashable, Sendable {
     }
 }
 
-/// A run of notes that share a `NoteDateGroup`.
+/// A run of notes listed under one heading: the pinned notes, or notes that share a
+/// `NoteDateGroup`.
 public struct NoteSection: Sendable, Equatable, Identifiable {
-    public var group: NoteDateGroup
+    public enum Group: Hashable, Sendable {
+        case pinned
+        case date(NoteDateGroup)
+    }
+
+    public var group: Group
     public var notes: [NoteDocument]
 
-    public var id: NoteDateGroup { group }
+    public var id: Group { group }
 
-    /// Groups notes that are already sorted newest first, keeping their order.
+    /// The pinned notes first, then the others grouped by date. `notes` must already be sorted
+    /// newest first; each section keeps their order.
     public static func sections(
         for notes: [NoteDocument],
         now: Date = .now,
         calendar: Calendar = .current
     ) -> [NoteSection] {
-        var sections: [NoteSection] = []
-        for note in notes {
-            let group = NoteDateGroup(date: note.createdAt, now: now, calendar: calendar)
+        let pinned = notes.filter(\.isPinned)
+        var sections = pinned.isEmpty ? [] : [NoteSection(group: .pinned, notes: pinned)]
+        for note in notes where !note.isPinned {
+            let group = Group.date(NoteDateGroup(date: note.createdAt, now: now, calendar: calendar))
             if sections.last?.group == group {
                 sections[sections.count - 1].notes.append(note)
             } else {

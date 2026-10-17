@@ -335,6 +335,65 @@ struct NoteLibraryTests {
         #expect(try NoteLibrary.loadNotes(in: directory).map(\.title) == ["Untitled"])
     }
 
+    // MARK: Pinning
+
+    @Test func pinAndUnpinRenderedNote() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = try await MarkdownNoteWriter(directory: directory).write(NoteFixtures.note())
+        let original = try contents(of: url)
+
+        try NoteLibrary.setPinned(true, noteAt: url)
+        #expect(try contents(of: url).contains("tags: [mixdown]\npinned: true\n---\n"))
+        #expect(try NoteLibrary.loadNotes(in: directory).map(\.isPinned) == [true])
+
+        try NoteLibrary.setPinned(true, noteAt: url)
+        #expect(try contents(of: url).components(separatedBy: "pinned:").count == 2)
+
+        try NoteLibrary.setPinned(false, noteAt: url)
+        #expect(try contents(of: url) == original)
+        #expect(try NoteLibrary.loadNotes(in: directory).map(\.isPinned) == [false])
+    }
+
+    @Test func pinReplacesExistingFieldAndKeepsTheRest() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try write("---\r\npinned: false\r\ntags:\r\n  - a\r\n---\r\n# Note\r\n", to: "Note.md", in: directory)
+        let url = directory.appending(path: "Note.md", directoryHint: .notDirectory)
+
+        try NoteLibrary.setPinned(true, noteAt: url)
+        #expect(try contents(of: url) == "---\npinned: true\ntags:\n  - a\n---\n# Note\n")
+
+        try NoteLibrary.setPinned(false, noteAt: url)
+        #expect(try contents(of: url) == "---\ntags:\n  - a\n---\n# Note\n")
+    }
+
+    @Test func pinAddsFrontmatterAndUnpinRemovesIt() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try write("# Ideas\n\nSome text\n", to: "Ideas.md", in: directory)
+        let url = directory.appending(path: "Ideas.md", directoryHint: .notDirectory)
+
+        try NoteLibrary.setPinned(true, noteAt: url)
+        #expect(try contents(of: url) == "---\npinned: true\n---\n\n# Ideas\n\nSome text\n")
+        let note = try #require(try NoteLibrary.loadNotes(in: directory).first)
+        #expect(note.isPinned && note.title == "Ideas")
+
+        try NoteLibrary.setPinned(false, noteAt: url)
+        #expect(try contents(of: url) == "# Ideas\n\nSome text\n")
+    }
+
+    @Test func pinLeavesNoteThatIsNotUTF8Alone() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appending(path: "Caf\u{E9}.md", directoryHint: .notDirectory)
+        let latin1 = Data("# Caf".utf8) + Data([0xE9, 0x0A])
+        try latin1.write(to: url)
+
+        #expect(throws: CocoaError.self) { try NoteLibrary.setPinned(true, noteAt: url) }
+        #expect(try Data(contentsOf: url) == latin1)
+    }
+
     // MARK: Restoring
 
     @Test func restoreMovesTrashedNoteBackUnderItsName() throws {
