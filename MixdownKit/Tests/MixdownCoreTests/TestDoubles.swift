@@ -94,12 +94,14 @@ final class LiveDeviceProvider: AudioDeviceProvider {
 }
 
 /// Yields `chunks` on start, then finishes on `stop()` (or immediately with `streamError`, or
-/// immediately without error when `finishesOnStart`, like a capture the system ended).
+/// immediately without error when `finishesOnStart`, like a capture the system ended). With a
+/// `startGate`, `start()` waits for it to open, like a capture held up by a permission prompt.
 final class MockCapture: AudioCapturing {
     private let chunks: [AudioChunk]
     private let streamError: (any Error)?
     private let startError: (any Error)?
     private let finishesOnStart: Bool
+    private let startGate: Gate?
     private let stream: AsyncThrowingStream<AudioChunk, any Error>
     private let continuation: AsyncThrowingStream<AudioChunk, any Error>.Continuation
     private let startCalls = LockedValue(0)
@@ -109,12 +111,14 @@ final class MockCapture: AudioCapturing {
         chunks: [AudioChunk] = [],
         streamError: (any Error)? = nil,
         startError: (any Error)? = nil,
-        finishesOnStart: Bool = false
+        finishesOnStart: Bool = false,
+        startGate: Gate? = nil
     ) {
         self.chunks = chunks
         self.streamError = streamError
         self.startError = startError
         self.finishesOnStart = finishesOnStart
+        self.startGate = startGate
         let (stream, continuation) = AsyncThrowingStream<AudioChunk, any Error>.makeStream()
         self.stream = stream
         self.continuation = continuation
@@ -125,6 +129,7 @@ final class MockCapture: AudioCapturing {
 
     func start() async throws -> AsyncThrowingStream<AudioChunk, any Error> {
         startCalls.update { $0 += 1 }
+        await startGate?.wait()
         if let startError { throw startError }
         for chunk in chunks {
             continuation.yield(chunk)

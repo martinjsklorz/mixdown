@@ -8,6 +8,7 @@ struct AudioCueTests {
     @Test func startingAndStoppingAreCued() {
         #expect(AudioCue.cue(from: .idle, to: started) == .recordingStarted)
         #expect(AudioCue.cue(from: .failed(message: "Old error"), to: started) == .recordingStarted)
+        #expect(AudioCue.cue(from: .startingCapture, to: started) == .recordingStarted)
         #expect(AudioCue.cue(from: started, to: .transcribing(progress: 0)) == .recordingStopped)
         // A recording too short to transcribe.
         #expect(AudioCue.cue(from: started, to: .idle) == .recordingStopped)
@@ -16,6 +17,7 @@ struct AudioCueTests {
     @Test func errorsAreCued() {
         // Starting failed, e.g. without microphone permission.
         #expect(AudioCue.cue(from: .idle, to: .failed(message: "Denied")) == .failed)
+        #expect(AudioCue.cue(from: .startingCapture, to: .failed(message: "Denied")) == .failed)
         // Capture ended with an error before anything was saved.
         #expect(AudioCue.cue(from: started, to: .failed(message: "Unplugged")) == .failed)
         #expect(AudioCue.cue(from: .transcribing(progress: 0.5), to: .failed(message: "Boom")) == .failed)
@@ -28,6 +30,8 @@ struct AudioCueTests {
         #expect(AudioCue.cue(from: started, to: started) == nil)
         #expect(AudioCue.cue(from: .failed(message: "Denied"), to: .failed(message: "Denied")) == nil)
         #expect(AudioCue.cue(from: .idle, to: .preparingModel(progress: 0)) == nil)
+        // Recording is cued once it's started, e.g. after a permission prompt.
+        #expect(AudioCue.cue(from: .idle, to: .startingCapture) == nil)
         #expect(AudioCue.cue(from: .preparingModel(progress: 0.2), to: .preparingModel(progress: 0.4)) == nil)
         #expect(AudioCue.cue(from: .transcribing(progress: 0.2), to: .transcribing(progress: 0.4)) == nil)
         // The note itself is cued when it's written.

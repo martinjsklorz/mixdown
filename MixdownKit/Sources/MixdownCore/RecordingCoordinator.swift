@@ -22,6 +22,8 @@ public final class RecordingCoordinator {
         case idle
         /// Downloading or loading the model. `progress` is 0...1.
         case preparingModel(progress: Double)
+        /// Starting the captures, which waits on the user while macOS asks for permission to record.
+        case startingCapture
         case recording(startedAt: Date)
         /// `progress` is 0...1 across all of the recording's sources.
         case transcribing(progress: Double)
@@ -111,6 +113,12 @@ public final class RecordingCoordinator {
         }
     }
 
+    /// Recording, or starting to. Stopping while the captures start ends the recording as soon as
+    /// they have.
+    public var canStopRecording: Bool {
+        isRecording || isStartingCapture
+    }
+
     /// Preparing the model, transcribing or summarizing.
     public var isBusy: Bool {
         switch phase {
@@ -163,7 +171,10 @@ public final class RecordingCoordinator {
     /// The in-flight `engine.prepare` call, kept so `cancelPreparation()` can stop it.
     @ObservationIgnored private var preparation: Task<Void, any Error>?
     /// True while the captures are starting; blocks a second start.
-    private var isStartingCapture = false
+    private var isStartingCapture: Bool { phase == .startingCapture }
+    /// Whether `stopRecording()` was called while the captures were starting, to be done once
+    /// they have.
+    @ObservationIgnored private var isStopPending = false
     /// Sources of the current recording that delivered sound at least once.
     @ObservationIgnored private var heardDeviceIDs: Set<String> = []
     /// Add each recording device to `silentDevices` once `silenceWarningDelay` has passed, by ID.
@@ -541,7 +552,8 @@ public final class RecordingCoordinator {
     public func startRecording() async {
         guard canStartRecording else { return }
         let devices = selectedDevices
-        isStartingCapture = true
+        phase = .startingCapture
+        isStopPending = false
         // Held until `end(_:interruption:)` has transcribed the recording.
         engine.recordingWillStart()
 
@@ -551,7 +563,7 @@ public final class RecordingCoordinator {
         } catch {
             logger.error("Starting capture failed: \(error.localizedDescription, privacy: .public)")
             engine.recordingDidFinish()
-            isStartingCapture = false
+            isStopPending = false
             phase = .failed(message: error.localizedDescription)
             reconcileSelection()
             return
@@ -559,7 +571,6 @@ public final class RecordingCoordinator {
 
         let session = Session(startedAt: now())
         self.session = session
-        isStartingCapture = false
         recordingSummaryTemplate = summaryTemplate
         isRecordingSummaryTemplateChosen = false
         for started in startedCaptures {
@@ -568,6 +579,12 @@ public final class RecordingCoordinator {
         phase = .recording(startedAt: session.startedAt)
         let names = devices.map(\.name).joined(separator: " + ")
         logger.info("Recording started on \(names, privacy: .public)")
+        if isStopPending {
+            isStopPending = false
+            logger.info("Stopping the recording, as it was stopped while starting")
+            await end(session, interruption: nil)
+            return
+        }
         // Catches devices that changed while the captures were starting.
         reconcileSelection()
     }
@@ -655,8 +672,13 @@ public final class RecordingCoordinator {
         return started
     }
 
-    /// Stops capture, transcribes, writes the note and updates `lastNoteURL`.
+    /// Stops capture, transcribes, writes the note and updates `lastNoteURL`. While the captures
+    /// are starting, e.g. waiting on a permission prompt, it stops them as soon as they've started.
     public func stopRecording() async {
+        guard !isStartingCapture else {
+            isStopPending = true
+            return
+        }
         // An error racing a user-initiated stop doesn't matter; keep whatever was captured.
         guard let session else { return }
         await end(session, interruption: nil)
@@ -935,7 +957,7 @@ public final class RecordingCoordinator {
     }
 
     public func toggleRecording() async {
-        if isRecording {
+        if canStopRecording {
             await stopRecording()
         } else {
             await startRecording()

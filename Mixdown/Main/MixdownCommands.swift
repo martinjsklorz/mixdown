@@ -128,11 +128,11 @@ private struct RecordingMenuItems: View {
     var body: some View {
         let coordinator = environment.coordinator
 
-        Button(coordinator.isRecording ? "Stop Recording" : "Start Recording") {
+        Button(coordinator.canStopRecording ? "Stop Recording" : "Start Recording") {
             Task { await coordinator.toggleRecording() }
         }
         .keyboardShortcut("r")
-        .disabled(!coordinator.canStartRecording && !coordinator.isRecording)
+        .disabled(!coordinator.canStartRecording && !coordinator.canStopRecording)
 
         if case .preparingModel = coordinator.phase {
             Button("Cancel Download") { coordinator.cancelPreparation() }

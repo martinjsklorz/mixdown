@@ -442,7 +442,7 @@ private struct RecorderStatusBadge: View {
             Text(progress.formatted(.percent.precision(.fractionLength(0))))
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
-        case .summarizing:
+        case .startingCapture, .summarizing:
             ProgressView()
                 .controlSize(.small)
         case .failed:
