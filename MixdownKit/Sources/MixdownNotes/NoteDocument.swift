@@ -17,6 +17,9 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
     public var body: String
     /// The first text of the body as a single line of plain text. Empty if there is none.
     public var snippet: String
+    /// The subfolder of the notes folder the note is in, like `Clients/Acme`, or `nil` if it's
+    /// directly inside. Set by `NoteLibrary`.
+    public var folder: String?
 
     public var id: URL { url }
 

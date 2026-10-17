@@ -39,6 +39,46 @@ struct NoteLibraryTests {
         #expect(notes.map(\.title) == ["Plain", "Newer", "Newer", "Older"])
     }
 
+    @Test func loadsNotesInSubfolders() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fileManager = FileManager.default
+        for folder in ["Clients/Acme", ".obsidian", ".trash"] {
+            try fileManager.createDirectory(
+                at: directory.appending(path: folder, directoryHint: .isDirectory),
+                withIntermediateDirectories: true
+            )
+        }
+        try write("# Root", to: "Root.md", in: directory)
+        try write("# Client", to: "Clients/Client.md", in: directory)
+        try write("# Acme", to: "Clients/Acme/Acme.md", in: directory)
+        try write("# Settings", to: ".obsidian/Settings.md", in: directory)
+        try write("# Trashed", to: ".trash/Trashed.md", in: directory)
+
+        let notes = try NoteLibrary.loadNotes(in: directory)
+
+        let folders = Dictionary(uniqueKeysWithValues: notes.map { ($0.title, $0.folder) })
+        #expect(folders == ["Root": nil, "Client": "Clients", "Acme": "Clients/Acme"])
+    }
+
+    @Test func unreadableSubfolderIsLeftOut() throws {
+        let directory = try makeDirectory()
+        let locked = directory.appending(path: "Locked", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: locked, withIntermediateDirectories: false)
+        try write("# Hidden away", to: "Locked/Note.md", in: directory)
+        try write("# Root", to: "Root.md", in: directory)
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: locked.path(percentEncoded: false))
+        defer {
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o755],
+                ofItemAtPath: locked.path(percentEncoded: false)
+            )
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        #expect(try NoteLibrary.loadNotes(in: directory).map(\.title) == ["Root"])
+    }
+
     @Test func missingDirectoryHasNoNotes() throws {
         let directory = FileManager.default.temporaryDirectory
             .appending(path: "NoteLibraryTests-missing-\(UUID().uuidString)", directoryHint: .isDirectory)
@@ -116,6 +156,24 @@ struct NoteLibraryTests {
         #expect(!note(".hidden.md"))
         #expect(!note("notes.txt"))
         #expect(!note("Standup.md.sb-1a2b3c"))
+    }
+
+    @Test func tellsChangesThatAffectNotes() {
+        let directory = URL(fileURLWithPath: "/Notes", isDirectory: true)
+        let affects = { (path: String, isDirectory: Bool) in
+            NoteLibrary.affectsNotes(URL(fileURLWithPath: path), isDirectory: isDirectory, in: directory)
+        }
+
+        #expect(affects("/Notes/Clients/Standup.md", false))
+        #expect(affects("/Notes/Clients", true))
+        #expect(affects("/Notes", true))
+        #expect(!affects("/Notes/Clients/.DS_Store", false))
+        #expect(!affects("/Notes/.obsidian/Settings.md", false))
+        #expect(!affects("/Notes/.trash", true))
+        #expect(!affects("/Notes/Clients/notes.txt", false))
+        // Spelled differently from `directory`: by name only.
+        #expect(affects("/private/Notes/.x/Standup.md", false))
+        #expect(!affects("/private/Notes/.Standup.md", false))
     }
 
     // MARK: Renaming

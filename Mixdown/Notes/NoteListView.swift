@@ -146,6 +146,13 @@ private struct NoteRow: View {
                     .lineLimit(1)
             }
             .font(.subheadline)
+            if let folder = note.folder {
+                Label(folder, systemImage: "folder")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.head)
+            }
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 10)

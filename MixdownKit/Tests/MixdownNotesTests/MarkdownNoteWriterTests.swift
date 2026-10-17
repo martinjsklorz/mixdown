@@ -67,6 +67,17 @@ struct MarkdownNoteWriterTests {
         #expect(url.deletingLastPathComponent().lastPathComponent == "Notes")
     }
 
+    @Test(arguments: [("Issue #42 [draft] | x^2", "Issue 42 (draft) - x2"), ("# ^", "Untitled")])
+    func dropsCharactersThatBreakObsidianLinks(title: String, expected: String) async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory.deletingLastPathComponent()) }
+        let note = NoteFixtures.note(title: title)
+
+        let url = try await MarkdownNoteWriter(directory: directory).write(note)
+
+        #expect(url.lastPathComponent == "\(datePrefix(note.createdAt)) \(expected).md")
+    }
+
     @Test func capsLongTitles() async throws {
         let directory = makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory.deletingLastPathComponent()) }
