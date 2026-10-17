@@ -352,7 +352,9 @@ struct RecordingCoordinatorTests {
     private func recordNote(
         transcript: Transcript = Transcript(segments: [TranscriptSegment(start: 0, end: 1, text: "Hello.")]),
         summarizer: MockSummarizer?,
-        isCall: Bool = false
+        isCall: Bool = false,
+        configure: (RecordingCoordinator) -> Void = { _ in },
+        whileRecording: (RecordingCoordinator) -> Void = { _ in }
     ) async throws -> (RecordingCoordinator, Note) {
         let writer = InMemoryNoteWriter()
         let coordinator = makeCoordinator(
@@ -361,9 +363,11 @@ struct RecordingCoordinatorTests {
             writer: writer,
             summarizer: summarizer
         )
+        configure(coordinator)
         await coordinator.monitorDevices()
         await coordinator.startRecording()
         if isCall { coordinator.markRecordingAsCall() }
+        whileRecording(coordinator)
         await coordinator.stopRecording()
         return (coordinator, try #require(await writer.notes.first))
     }
@@ -377,6 +381,62 @@ struct RecordingCoordinatorTests {
         #expect(coordinator.phase == .idle)
         #expect(note.summary == summary)
         #expect(summarizer.receivedTranscripts == [note.transcript])
+        #expect(summarizer.receivedTemplates == [.general])
+    }
+
+    @Test func summaryTemplateDependsOnHowRecordingStarted() async throws {
+        let setTemplates = { (coordinator: RecordingCoordinator) in
+            coordinator.summaryTemplate = .standup
+            coordinator.callSummaryTemplate = .clientCall
+        }
+
+        let manual = MockSummarizer()
+        _ = try await recordNote(summarizer: manual, configure: setTemplates)
+        #expect(manual.receivedTemplates == [.standup])
+
+        let call = MockSummarizer()
+        _ = try await recordNote(summarizer: call, isCall: true, configure: setTemplates)
+        #expect(call.receivedTemplates == [.clientCall])
+    }
+
+    @Test func recordingSummaryTemplateCanBeChosenWhileRecording() async throws {
+        let summarizer = MockSummarizer()
+        var seen: [SummaryTemplate?] = []
+        let (coordinator, _) = try await recordNote(
+            summarizer: summarizer,
+            configure: { coordinator in
+                coordinator.callSummaryTemplate = .clientCall
+                seen.append(coordinator.recordingSummaryTemplate)
+            },
+            whileRecording: { coordinator in
+                seen.append(coordinator.recordingSummaryTemplate)
+                coordinator.chooseSummaryTemplate(.oneOnOne)
+                // A call detected after the user chose keeps their choice.
+                coordinator.markRecordingAsCall()
+                seen.append(coordinator.recordingSummaryTemplate)
+            }
+        )
+
+        #expect(seen == [nil, .general, .oneOnOne])
+        #expect(summarizer.receivedTemplates == [.oneOnOne])
+        #expect(coordinator.recordingSummaryTemplate == nil)
+    }
+
+    @Test func markingAsCallPreselectsCallTemplate() async throws {
+        var seen: SummaryTemplate?
+        _ = try await recordNote(
+            summarizer: MockSummarizer(),
+            isCall: true,
+            configure: { $0.callSummaryTemplate = .standup },
+            whileRecording: { seen = $0.recordingSummaryTemplate }
+        )
+        #expect(seen == .standup)
+    }
+
+    @Test func choosingSummaryTemplateOutsideARecordingIsIgnored() {
+        let coordinator = makeCoordinator()
+        coordinator.chooseSummaryTemplate(.standup)
+        #expect(coordinator.recordingSummaryTemplate == nil)
     }
 
     @Test func noteIsSavedWithoutSummaryWhenSummarizingFails() async throws {

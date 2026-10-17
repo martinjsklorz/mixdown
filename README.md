@@ -104,8 +104,9 @@ Choose a model under **Settings → Transcription**. It's downloaded once, from 
 Model** in the window, the Recording menu or Settings, and the time left shows next to the menu bar icon. After
 switching models, download the new one before recording. **Cancel Download** in the menu (or **Cancel** in Settings) stops
 it; files already fetched are kept, so the next download picks up where it left off.
-To free up disk space, select a model under **Settings → Transcription** and choose **Delete**;
-you'll need to download it again before recording with it.
+The model menu there marks downloaded models with a green check. To free up disk space, select
+a model and click the trash button next to the menu; you'll need to download it again before
+recording with it.
 
 | Model | Size | Good for |
 | ----- | ---- | -------- |
@@ -133,6 +134,21 @@ Mixdown's call notification, or automatically (see **Settings → Recording**), 
 the language of the recording, e.g. "Call about Release timeline" or "Anruf zu Budgetplanung".
 Recordings started any other way aren't, even during a call. Without a summary, a note is titled
 with the date and time it was recorded.
+
+### Templates
+
+Under **Settings → Transcription**, pick a summary template for manual recordings and one for
+detected calls (recordings started from the call notification or automatically):
+
+- **General** (the default): overview, key points and action items, as above.
+- **1:1**, **Standup** and **Client Call**: always the same four sections, `### TL;DR`,
+  `### Decisions`, `### Action Items` (as `- [ ]` checkboxes) and `### Open Questions`, so every
+  note of a kind reads the same. A section with nothing in it says _None._ Each template tells
+  Apple Intelligence what to look out for, e.g. blockers in a standup or promises made to a
+  client.
+
+That template is preselected for each recording. To use another one for this recording only, pick
+it under **Record** while recording or transcribing, until the summary starts.
 
 Turn summaries off under **Settings → Transcription**, which also says why summaries aren't
 available on this Mac if they aren't. Without them, or if summarizing fails, the note is saved

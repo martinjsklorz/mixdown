@@ -26,6 +26,10 @@ struct AppSettings {
         static let recordingShortcutEnabled = "recordingShortcutEnabled"
         /// Whether notes get a summary. Absent means yes.
         static let summarizesNotes = "summarizesNotes"
+        /// A `SummaryTemplate` raw value for recordings started by hand. Absent means `.general`.
+        static let summaryTemplate = "summaryTemplate"
+        /// A `SummaryTemplate` raw value for recordings started for a call. Absent means `.general`.
+        static let callSummaryTemplate = "callSummaryTemplate"
         /// Whether Mixdown plays audio cues at all. Absent means yes.
         static let playsSounds = "playsSounds"
         /// Whether to post notifications when calls start and end. Absent means yes.
@@ -101,6 +105,16 @@ struct AppSettings {
     var summarizesNotes: Bool {
         get { defaults.object(forKey: Key.summarizesNotes) as? Bool ?? true }
         nonmutating set { defaults.set(newValue, forKey: Key.summarizesNotes) }
+    }
+
+    var summaryTemplate: SummaryTemplate {
+        get { defaults.string(forKey: Key.summaryTemplate).flatMap(SummaryTemplate.init(rawValue:)) ?? .general }
+        nonmutating set { defaults.set(newValue.rawValue, forKey: Key.summaryTemplate) }
+    }
+
+    var callSummaryTemplate: SummaryTemplate {
+        get { defaults.string(forKey: Key.callSummaryTemplate).flatMap(SummaryTemplate.init(rawValue:)) ?? .general }
+        nonmutating set { defaults.set(newValue.rawValue, forKey: Key.callSummaryTemplate) }
     }
 
     var playsSounds: Bool {

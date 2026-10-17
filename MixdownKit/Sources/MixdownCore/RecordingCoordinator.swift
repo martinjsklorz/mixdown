@@ -48,6 +48,16 @@ public final class RecordingCoordinator {
     public var noteWriter: (any NoteWriting)?
     /// Adds a summary to each note. `nil` while summaries are off.
     public var summarizer: (any Summarizer)?
+    /// The summary template for recordings started by hand.
+    public var summaryTemplate: SummaryTemplate
+    /// The summary template for recordings started for a call. See `markRecordingAsCall()`.
+    public var callSummaryTemplate: SummaryTemplate
+    /// The summary template of the recording in progress, from its start until its summary is
+    /// begun; `nil` otherwise. Starts as `summaryTemplate`, or `callSummaryTemplate` once the
+    /// recording is marked as a call, until the user picks one with `chooseSummaryTemplate(_:)`.
+    public private(set) var recordingSummaryTemplate: SummaryTemplate?
+    /// Whether the user picked `recordingSummaryTemplate`, so marking a call keeps it.
+    @ObservationIgnored private var isRecordingSummaryTemplateChosen = false
     public var options: TranscriptionOptions
     /// Speaker names for multi-source recordings.
     public var sourceLabels: SourceLabels
@@ -272,6 +282,8 @@ public final class RecordingCoordinator {
         engine: any TranscriptionEngine,
         noteWriter: (any NoteWriting)?,
         summarizer: (any Summarizer)? = nil,
+        summaryTemplate: SummaryTemplate = .general,
+        callSummaryTemplate: SummaryTemplate = .general,
         options: TranscriptionOptions = .init(),
         sourceLabels: SourceLabels = .init(),
         preferredDeviceIDs: [String] = [],
@@ -284,6 +296,8 @@ public final class RecordingCoordinator {
         self.isModelDownloaded = engine.isDownloaded
         self.noteWriter = noteWriter
         self.summarizer = summarizer
+        self.summaryTemplate = summaryTemplate
+        self.callSummaryTemplate = callSummaryTemplate
         self.options = options
         self.sourceLabels = sourceLabels
         self.preferredDeviceIDs = preferredDeviceIDs
@@ -494,6 +508,8 @@ public final class RecordingCoordinator {
         let session = Session(startedAt: now())
         self.session = session
         isStartingCapture = false
+        recordingSummaryTemplate = summaryTemplate
+        isRecordingSummaryTemplateChosen = false
         for started in startedCaptures {
             attach(started, to: session.addLane(kind: started.device.kind), in: session)
         }
@@ -604,6 +620,7 @@ public final class RecordingCoordinator {
         resetLevels()
         let tracks = await endCaptures(of: session)
         await finish(session, tracks: tracks, interruption: interruption)
+        recordingSummaryTemplate = nil
         engine.recordingDidFinish()
     }
 
@@ -660,7 +677,10 @@ public final class RecordingCoordinator {
             } else {
                 transcript = try await transcribeSeparately(tracks, session: session)
             }
-            let summary = await summarize(transcript)
+            let template = recordingSummaryTemplate ?? (session.isCall ? callSummaryTemplate : summaryTemplate)
+            // The template can't change once the summary is under way.
+            recordingSummaryTemplate = nil
+            let summary = await summarize(transcript, template: template)
             let note = Note(
                 title: NoteTitle.make(
                     for: session.startedAt,
@@ -697,7 +717,7 @@ public final class RecordingCoordinator {
 
     /// The transcript's summary, or `nil` if there's no summarizer, it isn't available or it
     /// fails. The note is saved either way, so a failure is only logged.
-    private func summarize(_ transcript: Transcript) async -> NoteSummary? {
+    private func summarize(_ transcript: Transcript, template: SummaryTemplate) async -> NoteSummary? {
         guard let summarizer, !transcript.isEmpty else { return nil }
         let name = summarizer.info.displayName
         if case .unavailable(let reason) = summarizer.availability {
@@ -706,7 +726,7 @@ public final class RecordingCoordinator {
         }
         phase = .summarizing
         do {
-            let summary = try await summarizer.summarize(transcript)
+            let summary = try await summarizer.summarize(transcript, template: template)
             return summary.isEmpty ? nil : summary
         } catch {
             logger.error(
@@ -793,7 +813,19 @@ public final class RecordingCoordinator {
     /// Marks the recording in progress as a call, so its note is titled as one, e.g. "Call about …".
     /// Ignored when not recording.
     public func markRecordingAsCall() {
-        session?.isCall = true
+        guard let session else { return }
+        session.isCall = true
+        if !isRecordingSummaryTemplateChosen {
+            recordingSummaryTemplate = callSummaryTemplate
+        }
+    }
+
+    /// Summarizes the recording in progress, or the one being transcribed, with `template`
+    /// instead of the default. Ignored when there's no such recording or its summary has begun.
+    public func chooseSummaryTemplate(_ template: SummaryTemplate) {
+        guard recordingSummaryTemplate != nil else { return }
+        recordingSummaryTemplate = template
+        isRecordingSummaryTemplateChosen = true
     }
 
     public func toggleRecording() async {

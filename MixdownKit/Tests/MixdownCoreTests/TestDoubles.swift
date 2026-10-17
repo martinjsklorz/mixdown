@@ -323,13 +323,14 @@ func waitUntil(
     }
 }
 
-/// Returns `summary`, or throws `error`, and records the transcripts it was given.
+/// Returns `summary`, or throws `error`, and records the transcripts and templates it was given.
 final class MockSummarizer: Summarizer {
     let info = SummarizerInfo(id: "mock", displayName: "Mock Summarizer")
     let availability: SummarizerAvailability
     private let summary: NoteSummary
     private let error: (any Error)?
     private let received = LockedValue<[Transcript]>([])
+    private let receivedTemplateList = LockedValue<[SummaryTemplate]>([])
 
     init(
         summary: NoteSummary = NoteSummary(overview: "A test."),
@@ -342,9 +343,11 @@ final class MockSummarizer: Summarizer {
     }
 
     var receivedTranscripts: [Transcript] { received.current }
+    var receivedTemplates: [SummaryTemplate] { receivedTemplateList.current }
 
-    func summarize(_ transcript: Transcript) async throws -> NoteSummary {
+    func summarize(_ transcript: Transcript, template: SummaryTemplate) async throws -> NoteSummary {
         received.update { $0.append(transcript) }
+        receivedTemplateList.update { $0.append(template) }
         if let error { throw error }
         return summary
     }

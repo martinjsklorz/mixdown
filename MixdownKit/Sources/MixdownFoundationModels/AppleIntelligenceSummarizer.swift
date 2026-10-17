@@ -23,11 +23,11 @@ public struct AppleIntelligenceSummarizer: Summarizer {
     }
 
     // Qualified because FoundationModels has a `Transcript` of its own.
-    public func summarize(_ transcript: MixdownCore.Transcript) async throws -> NoteSummary {
+    public func summarize(_ transcript: MixdownCore.Transcript, template: SummaryTemplate) async throws -> NoteSummary {
         guard #available(macOS 26, *) else {
             throw SummarizationError.unavailable("Summaries with Apple Intelligence need macOS 26 or later.")
         }
-        return try await SystemModelSummary.summarize(transcript)
+        return try await SystemModelSummary.summarize(transcript, template: template)
     }
 }
 
@@ -57,7 +57,7 @@ enum SystemModelSummary {
         }
     }
 
-    static func summarize(_ transcript: MixdownCore.Transcript) async throws -> NoteSummary {
+    static func summarize(_ transcript: MixdownCore.Transcript, template: SummaryTemplate) async throws -> NoteSummary {
         let model = SystemLanguageModel.default
         if case .unavailable(let reason) = availability { throw SummarizationError.unavailable(reason) }
 
@@ -69,7 +69,7 @@ enum SystemModelSummary {
             do {
                 let summarizer = ChunkedSummarizer(maxTokens: maxTokens)
                 var summary = try await summarizer.summarize(transcript) { text, kind in
-                    try await respond(to: text, kind: kind, model: model, language: language)
+                    try await respond(to: text, kind: kind, template: template, model: model, language: language)
                 }
                 summary.language = language
                 return summary
@@ -84,21 +84,35 @@ enum SystemModelSummary {
     private static func respond(
         to text: String,
         kind: ChunkedSummarizer.Step,
+        template: SummaryTemplate,
         model: SystemLanguageModel,
         language: String?
     ) async throws -> NoteSummary {
-        let rules = instructions(for: kind, language: language)
+        let rules = instructions(for: kind, template: template, language: language)
         let session = LanguageModelSession(model: model) { rules }
         let prompt = kind == .transcript ? "Transcript:\n\(text)" : text
         // The explicit `includeSchemaInPrompt` picks the macOS 26 overload over macOS 27's
         // metadata one, whose other parameters have defaults too.
-        let response = try await session.respond(generating: GeneratedSummary.self, includeSchemaInPrompt: true) {
+        guard template.hasFixedSections else {
+            let response = try await session.respond(generating: GeneratedSummary.self, includeSchemaInPrompt: true) {
+                prompt
+            }
+            return response.content.noteSummary
+        }
+        let response = try await session.respond(
+            generating: GeneratedSectionedSummary.self,
+            includeSchemaInPrompt: true
+        ) {
             prompt
         }
-        return response.content.noteSummary
+        return response.content.noteSummary(template: template)
     }
 
-    static func instructions(for kind: ChunkedSummarizer.Step, language: String?) -> String {
+    static func instructions(
+        for kind: ChunkedSummarizer.Step,
+        template: SummaryTemplate,
+        language: String?
+    ) -> String {
         let task =
             switch kind {
             case .transcript:
@@ -111,7 +125,7 @@ enum SystemModelSummary {
                 You summarize recordings such as meetings, calls and voice memos. The user gives you \
                 summaries of consecutive parts of one recording, in order. Merge them into a single \
                 summary of the whole recording, combining points that repeat and keeping every \
-                action item.
+                decision and action item. Drop questions that a later part answers.
                 """
             }
         // The model answers in the language of its input, and the instructions and the summary's
@@ -120,9 +134,32 @@ enum SystemModelSummary {
         let languageRule =
             languageName.map { "You MUST write in \($0)." } ?? "You MUST write in the language of the transcript."
         return """
-            \(task)
+            \(task)\(focus(of: template).map { "\n" + $0 } ?? "")
             Only use what's in the text; don't add anything. Be brief and concrete. \(languageRule)
             """
+    }
+
+    /// What kind of recording `template` is for, and what matters in one.
+    static func focus(of template: SummaryTemplate) -> String? {
+        switch template {
+        case .general:
+            nil
+        case .oneOnOne:
+            """
+            The recording is a one-on-one meeting between two people, such as a manager and a team \
+            member. Look out for feedback, goals, concerns and what the two agreed on.
+            """
+        case .standup:
+            """
+            The recording is a team standup. Look out for what each person finished, what they'll \
+            work on next and what blocks them, naming the person.
+            """
+        case .clientCall:
+            """
+            The recording is a call with a client. Look out for the client's needs and requirements, \
+            what was promised to them, and the next steps on both sides.
+            """
+        }
     }
 
     /// The language the transcript was made in, or else the one most of its text is in. Speech
@@ -181,5 +218,44 @@ struct GeneratedSummary {
             item = String(item.dropFirst(bullet.count)).trimmingCharacters(in: .whitespaces)
         }
         return item
+    }
+}
+
+
+/// A summary in the fixed sections of every template but `general`.
+@available(macOS 26, *)
+@Generable
+struct GeneratedSectionedSummary {
+    // Generated in this order, so the TL;DR and the title can draw on what comes before them.
+    @Guide(description: "Decisions that were made, one short sentence each. Empty if there are none", .maximumCount(8))
+    var decisions: [String]
+
+    @Guide(
+        description: "Tasks someone agreed to do, naming who if the text says. Empty if there are none",
+        .maximumCount(8)
+    )
+    var actionItems: [String]
+
+    @Guide(
+        description: "Questions that were raised but not answered, one each. Empty if there are none",
+        .maximumCount(8)
+    )
+    var openQuestions: [String]
+
+    @Guide(description: "TL;DR: one to three sentences on what the recording is about and its outcome")
+    var tldr: String
+
+    @Guide(description: "The topic in two to six words, as a title. Not a sentence; no \"Meeting about\" or similar")
+    var title: String
+
+    func noteSummary(template: SummaryTemplate) -> NoteSummary {
+        NoteSummary(
+            template: template,
+            title: title.trimmingCharacters(in: .whitespacesAndNewlines),
+            overview: tldr.trimmingCharacters(in: .whitespacesAndNewlines),
+            decisions: decisions.map(GeneratedSummary.listItem),
+            actionItems: actionItems.map(GeneratedSummary.listItem),
+            openQuestions: openQuestions.map(GeneratedSummary.listItem)
+        )
     }
 }
