@@ -31,6 +31,7 @@ public enum MarkdownNoteRenderer {
             lines.append("source_kinds: [\(note.sources.map(\.kind.rawValue).joined(separator: ", "))]")
         }
         lines.append("engine: \(yamlQuoted(note.engine.displayName))")
+        lines.append("trigger: \(note.trigger.rawValue)")
         if let language = note.transcript.language, !language.isEmpty {
             // Quoted so codes like `no` (Norwegian) aren't read as YAML booleans.
             lines.append("language: \(yamlQuoted(language))")

@@ -16,9 +16,22 @@ struct NoteDocumentTests {
         #expect(document.createdAt == note.createdAt)
         #expect(document.duration == 65)
         #expect(document.sources == ["MacBook Pro Microphone"])
+        #expect(document.trigger == .manual)
         #expect(document.snippet == "[00:00:00] Hello everyone.")
         #expect(document.body.hasPrefix("\n# Weekly Sync\n\n## Transcript\n"))
         #expect(document.id == url)
+    }
+
+    @Test func readsBackTrigger() {
+        let note = NoteFixtures.note(trigger: .automatic)
+        let automatic = NoteDocument(url: url, contents: MarkdownNoteRenderer.render(note), fileDate: fileDate)
+        #expect(automatic.trigger == .automatic)
+
+        let quoted = NoteDocument(url: url, contents: "---\ntrigger: \"manual\"\n---\n", fileDate: fileDate)
+        #expect(quoted.trigger == .manual)
+
+        let unknown = NoteDocument(url: url, contents: "---\ntrigger: scheduled\n---\n", fileDate: fileDate)
+        #expect(unknown.trigger == nil)
     }
 
     @Test func displayBlocksDropLeadingTitleHeading() {
@@ -89,6 +102,7 @@ struct NoteDocumentTests {
         #expect(document.createdAt == fileDate)
         #expect(document.duration == nil)
         #expect(document.sources.isEmpty)
+        #expect(document.trigger == nil)
         #expect(document.snippet == "Intro line")
         #expect(document.body == contents)
     }

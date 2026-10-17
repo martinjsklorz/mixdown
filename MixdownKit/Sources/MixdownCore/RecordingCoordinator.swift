@@ -159,6 +159,7 @@ public final class RecordingCoordinator {
         let startedAt: Date
         /// Whether the recording was started for a call, from a notification or automatically.
         var isCall = false
+        var trigger = RecordingTrigger.manual
         private(set) var lanes: [Lane] = []
         /// Devices that went away or failed to start during this recording. They aren't picked
         /// again until they leave the device list or the user chooses them.
@@ -673,7 +674,8 @@ public final class RecordingCoordinator {
                 sources: session.devices,
                 engine: engine.info,
                 transcript: transcript,
-                summary: summary
+                summary: summary,
+                trigger: session.trigger
             )
             // The folder can go away mid-recording, e.g. when its drive is disconnected.
             guard let noteWriter else { throw NoteWritingError.noFolder }
@@ -790,10 +792,11 @@ public final class RecordingCoordinator {
         phase = .transcribing(progress: total)
     }
 
-    /// Marks the recording in progress as a call, so its note is titled as one, e.g. "Call about …".
-    /// Ignored when not recording.
-    public func markRecordingAsCall() {
+    /// Marks the recording in progress as a call, so its note is titled as one, e.g. "Call about …",
+    /// and, if Mixdown started it by itself, as started automatically. Ignored when not recording.
+    public func markRecordingAsCall(automatically: Bool = false) {
         session?.isCall = true
+        if automatically { session?.trigger = .automatic }
     }
 
     public func toggleRecording() async {

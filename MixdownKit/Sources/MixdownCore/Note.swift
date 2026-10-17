@@ -11,6 +11,8 @@ public struct Note: Sendable, Equatable {
     public var transcript: Transcript
     /// `nil` when summaries are off, unavailable or failed.
     public var summary: NoteSummary?
+    /// Whether the user started the recording or Mixdown started it for a call by itself.
+    public var trigger: RecordingTrigger
 
     public init(
         title: String,
@@ -19,7 +21,8 @@ public struct Note: Sendable, Equatable {
         sources: [AudioInputDevice],
         engine: TranscriptionEngineInfo,
         transcript: Transcript,
-        summary: NoteSummary? = nil
+        summary: NoteSummary? = nil,
+        trigger: RecordingTrigger = .manual
     ) {
         self.title = title
         self.createdAt = createdAt
@@ -28,7 +31,16 @@ public struct Note: Sendable, Equatable {
         self.engine = engine
         self.transcript = transcript
         self.summary = summary
+        self.trigger = trigger
     }
+}
+
+/// How a recording was started. The raw value is what notes store.
+public enum RecordingTrigger: String, Sendable, Equatable {
+    /// By the user, e.g. from Record, the menu bar, the shortcut or a call notification.
+    case manual
+    /// By Mixdown, as a call started while it records calls automatically.
+    case automatic
 }
 
 /// Persists notes somewhere the user can find them.

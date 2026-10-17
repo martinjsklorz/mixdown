@@ -17,7 +17,8 @@ enum NoteFixtures {
         sources: [AudioInputDevice] = [
             AudioInputDevice(id: "builtin", name: "MacBook Pro Microphone", kind: .microphone)
         ],
-        summary: NoteSummary? = nil
+        summary: NoteSummary? = nil,
+        trigger: RecordingTrigger = .manual
     ) -> Note {
         Note(
             title: title,
@@ -26,7 +27,8 @@ enum NoteFixtures {
             sources: sources,
             engine: TranscriptionEngineInfo(id: "speech-swift", displayName: "Qwen3-ASR 0.6B"),
             transcript: Transcript(segments: segments, language: language),
-            summary: summary
+            summary: summary,
+            trigger: trigger
         )
     }
 }
@@ -49,6 +51,7 @@ struct MarkdownNoteRendererTests {
         #expect(lines.contains("source_kind: microphone"))
         #expect(lines.contains(#"engine: "Qwen3-ASR 0.6B""#))
         #expect(lines.contains(#"language: "en""#))
+        #expect(lines.contains("trigger: manual"))
         #expect(lines.contains("tags: [mixdown]"))
 
         let created = try #require(lines.first { $0.hasPrefix("created: ") })
@@ -68,6 +71,11 @@ struct MarkdownNoteRendererTests {
         #expect(lines.contains(#"sources: ["MacBook Pro Microphone", "System Audio"]"#))
         #expect(lines.contains("source_kinds: [microphone, systemAudio]"))
         #expect(!lines.contains { $0.hasPrefix("source:") || $0.hasPrefix("source_kind:") })
+    }
+
+    @Test func recordsAutomaticTrigger() {
+        let markdown = MarkdownNoteRenderer.render(NoteFixtures.note(trigger: .automatic))
+        #expect(frontmatterLines(markdown).contains("trigger: automatic"))
     }
 
     @Test func omitsLanguageWhenUnknown() {
