@@ -129,6 +129,15 @@ struct MarkdownNoteRendererTests {
         #expect(markdown.contains(#"# Say "hi" \\ now"#))
     }
 
+    @Test(arguments: [("C# *draft* #", "# C# \\*draft\\* \\#"), ("##", "# \\##"), ("Foo#", "# Foo#")])
+    func escapesTitleHeading(title: String, heading: String) {
+        let markdown = MarkdownNoteRenderer.render(NoteFixtures.note(title: title))
+        #expect(markdown.contains("\n\(heading)\n"))
+        // The heading reads as the title, so the note window doesn't show it twice.
+        let blocks = NoteDocument(url: URL(filePath: "/n.md"), contents: markdown, fileDate: .now).displayBlocks()
+        #expect(!blocks.contains { $0 == .heading(level: 1, text: String(heading.dropFirst(2))) })
+    }
+
     @Test func escapesMarkdownInTranscript() {
         let markdown = MarkdownNoteRenderer.render(
             NoteFixtures.note(segments: [

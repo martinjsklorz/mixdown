@@ -120,13 +120,16 @@ public enum NoteLibrary {
     ///
     /// See `NoteDocument.retitled(_:url:to:)` for how the contents change. The file keeps its
     /// `yyyy-MM-dd HHmm ` prefix and extension, and gets ` 2`, ` 3`, … if the new name is taken.
-    /// A blank title becomes "Untitled".
+    /// Runs of whitespace in the title become one space, and a blank title becomes "Untitled".
+    /// A note that isn't valid UTF-8 is left alone: writing it back would garble it.
     public static func rename(noteAt url: URL, to title: String) throws -> URL {
         let fileManager = FileManager.default
-        var title = MarkdownNoteRenderer.singleLine(title)
+        var title = title.split(whereSeparator: \.isWhitespace).joined(separator: " ")
         if title.isEmpty { title = "Untitled" }
 
-        let contents = String(decoding: try Data(contentsOf: url), as: UTF8.self)
+        guard let contents = String(data: try Data(contentsOf: url), encoding: .utf8) else {
+            throw CocoaError(.fileReadInapplicableStringEncoding, userInfo: [NSURLErrorKey: url])
+        }
         let temporaryURL = url.deletingLastPathComponent().appending(
             path: ".\(UUID().uuidString).mixdown-tmp",
             directoryHint: .notDirectory
