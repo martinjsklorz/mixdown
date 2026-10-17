@@ -21,6 +21,8 @@ struct MainView: View {
     @AppStorage(AppSettings.Key.showsNotifications) private var showsNotifications = true
     @State private var titleDraft = ""
     @State private var failure: Failure?
+    /// The note a reload was asked to select, until a reload that isn't superseded selects it.
+    @State private var pendingSelection: URL?
 
     /// An action on a note that didn't work, for an alert.
     private struct Failure {
@@ -44,7 +46,15 @@ struct MainView: View {
         }
         .searchable(text: $searchText, placement: .sidebar, prompt: "Search Recordings")
         .frame(minWidth: 720, minHeight: 480)
-        .task(id: environment.notesFolder.directory) { await reload(selecting: navigation.takeNoteToShow()) }
+        // Reads the folder and watches it for changes; again for each folder the user chooses.
+        .task(id: environment.notesFolder.directory) {
+            let directory = environment.notesFolder.directory
+            // Started first, so nothing that changes during the first reload is missed.
+            let changes = directory.map { NotesFolderWatcher.changes(in: $0) }
+            await reload(selecting: navigation.takeNoteToShow())
+            guard let changes else { return }
+            for await _ in changes { await reload() }
+        }
         .onChange(of: environment.coordinator.lastNoteURL) { _, url in
             Task {
                 await reload(selecting: url)
@@ -52,7 +62,8 @@ struct MainView: View {
                 if url != nil, navigation.destination == .recorder { navigation.destination = .notes }
             }
         }
-        // Picks up notes edited, added or removed in other apps when the user comes back.
+        // In case the watcher missed a change. FSEvents doesn't see changes made by other
+        // computers on a network volume, for one.
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await reload() }
         }
@@ -260,10 +271,14 @@ struct MainView: View {
         }
     }
 
-    /// Reloads the folder, then selects the note at `url` if given, else keeps the selection if
-    /// that note still exists, else selects the newest note.
+    /// Reloads the folder, then selects the note at `url` if given (here or by a reload this one
+    /// superseded), else keeps the selection if that note still exists, else selects the newest.
     private func reload(selecting url: URL? = nil) async {
-        await library.reload(from: environment.notesFolder.directory)
+        if let url { pendingSelection = url }
+        // A newer reload started meanwhile, e.g. for a change the watcher reported; it selects.
+        guard await library.reload(from: environment.notesFolder.directory) else { return }
+        let url = pendingSelection
+        pendingSelection = nil
         let notes = library.notes
         // By name: the writer's URL and the directory listing's can differ in form.
         if let url, let note = notes.first(where: { $0.url.lastPathComponent == url.lastPathComponent }) {
