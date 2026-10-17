@@ -47,7 +47,8 @@ audio, but without headphones your microphone may hear the start sound.
 opens Settings. The waveform icon in the menu bar can start and stop recording and pick inputs
 without the window, and has **Settings…** too. Recording carries on there if
 you close the window; **Open Mixdown** in that menu, **Window → Mixdown** (⌘0) or the Dock icon
-brings it back.
+brings it back. **Help → Mixdown Help** (⌘?) explains all of this inside the app, and the Help
+menu's search field finds its topics as well as menu commands.
 
 The first time, macOS asks for permission: **Microphone** to record your voice, or **System
 Audio Recording** to record what your Mac plays. If system audio comes out silent, check that

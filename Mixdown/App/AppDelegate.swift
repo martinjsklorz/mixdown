@@ -2,15 +2,25 @@ import AppKit
 import SwiftUI
 
 /// Brings the main window back when the Dock icon is clicked. SwiftUI does that for a
-/// `WindowGroup`, but not for a `Window` that has been closed.
+/// `WindowGroup`, but not for a `Window` that has been closed. Also adds help topics to the Help
+/// menu's search.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Set by `capturesOpenWindow(for:navigation:)`, which also gives it SwiftUI's `openWindow`.
     fileprivate weak var navigation: MainNavigation?
+    private var helpSearch: HelpSearch?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Before the first window appears, so it doesn't flash in the system's appearance.
         AppSettings().appearance.apply()
+    }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        let helpSearch = HelpSearch { [weak self] topic, search in
+            self?.navigation?.showHelp(topic, searching: search)
+        }
+        NSApp.registerUserInterfaceItemSearchHandler(helpSearch)
+        self.helpSearch = helpSearch
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
