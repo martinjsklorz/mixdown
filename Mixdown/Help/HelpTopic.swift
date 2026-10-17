@@ -99,7 +99,7 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             folder, downloading a speech model, picking inputs and allowing the permissions. Open \
             it again with **Help → Setup Assistant…**.
 
-            If you skipped it, open **Record** at the top of the sidebar. Recording stays off until \
+            If you skipped it, open **Record** with the ● button next to the search field. Recording stays off until \
             these two are done:
 
             1. Click **Choose Folder…** and pick where your notes go, for example a new `Mixdown` \
@@ -189,8 +189,8 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             """
         case .notes:
             """
-            Your recordings are listed in the sidebar below **Record**, in sections by day. Click a \
-            day to fold it away, and search the sidebar to find older recordings.
+            Your recordings are listed in the sidebar under **Today**, **Previous 7 Days** and then \
+            each month. Search the sidebar (⌘F) to find older recordings.
 
             ## Working with a note
 
@@ -317,6 +317,7 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             - ⌃⌥⌘R: Start or stop recording from any app (change it under **Settings → General**)
             - ⌘1: Show Record
             - ⌘2: Show Notes
+            - ⌘F: Search recordings
             - ⌘0: Open the Mixdown window
             - ⇧⌘O: Open the notes folder
             - ⌘⌫: Move the open note to the Trash

@@ -1,11 +1,13 @@
 import Foundation
 
-/// The section a note is listed under: the calendar day it was created.
+/// The section a note is listed under, like Apple Notes: today, the seven days before, then
+/// each earlier month.
 public enum NoteDateGroup: Hashable, Sendable {
     case today
-    case yesterday
-    /// An earlier day, as its start.
-    case day(Date)
+    /// The seven calendar days before today.
+    case previousSevenDays
+    /// An earlier month, as its first day's start.
+    case month(Date)
 
     /// Dates in the future count as today.
     public init(date: Date, now: Date = .now, calendar: Calendar = .current) {
@@ -13,8 +15,8 @@ public enum NoteDateGroup: Hashable, Sendable {
         let days = calendar.dateComponents([.day], from: day, to: calendar.startOfDay(for: now)).day ?? 0
         switch days {
         case ...0: self = .today
-        case 1: self = .yesterday
-        default: self = .day(day)
+        case 1...7: self = .previousSevenDays
+        default: self = .month(calendar.dateInterval(of: .month, for: day)?.start ?? day)
         }
     }
 }

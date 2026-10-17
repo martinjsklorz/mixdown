@@ -9,8 +9,8 @@ Everything happens on your Mac. Your audio never leaves it.
 
 ## Using Mixdown
 
-Mixdown's window has a sidebar with **Record** at the top and your recordings below it, in
-collapsible sections by day. The cog above the sidebar, next to the sidebar button, opens Settings.
+Mixdown's window has a sidebar with a search field and the **Record** button (●) at the top, and
+your recordings below it under **Today**, **Previous 7 Days** and then each month. The cog above the sidebar, next to the sidebar button, opens Settings.
 
 1. Open Mixdown. **Record** shows the big record button and what the next recording uses:
    microphone, system audio, speech model, language and notes folder.
@@ -27,7 +27,7 @@ collapsible sections by day. The cog above the sidebar, next to the sidebar butt
 A few seconds later the note appears under **Today** in the sidebar and opens, rendered much like
 Apple Notes. A **Note Ready** notification says so too, with **Open** to show the note in Mixdown
 and **Show in Finder** for its file, so you can stop from the menu bar and carry on elsewhere.
-Click a day to fold it away, and search the sidebar to find older recordings. Notes you file into
+Search the sidebar (⌘F) to find older recordings. Notes you file into
 subfolders of the notes folder are listed too, with their folder under the title; hidden folders
 like Obsidian's `.obsidian` and `.trash` are skipped.
 The buttons above a note, or right-clicking it in the sidebar, rename it, copy its transcript as

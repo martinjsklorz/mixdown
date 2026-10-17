@@ -4,8 +4,9 @@ import MixdownCore
 import MixdownNotes
 import SwiftUI
 
-/// The main window: Record at the top of the sidebar, the notes folder by day below it, and the
-/// recorder or the selected note on the right. Above the sidebar are the notes folder and Settings.
+/// The main window: search and Record at the top of the sidebar, the notes folder by date below
+/// it, and the recorder or the selected note on the right. Above the sidebar are the notes folder
+/// and Settings.
 struct MainView: View {
     static let windowID = "main"
 
@@ -42,7 +43,6 @@ struct MainView: View {
                     }
                 }
         }
-        .searchable(text: $searchText, placement: .sidebar, prompt: "Search Recordings")
         .frame(minWidth: 720, minHeight: 480)
         // Reads the folder and watches it for changes; again for each folder the user chooses.
         .task(id: environment.notesFolder.directory) {
@@ -134,7 +134,27 @@ struct MainView: View {
     private var sidebar: some View {
         let notes = filteredNotes
 
-        return NoteListView(
+        return VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                SidebarSearchField(text: $searchText)
+                RecordButton(coordinator: environment.coordinator)
+            }
+            .padding(.horizontal, 10)
+            .padding(.top, 8)
+            .padding(.bottom, 2)
+
+            noteList(notes)
+        }
+        // Toolbar items on the sidebar sit above it, next to the sidebar toggle.
+        .toolbar {
+            if !isSidebarCollapsed {
+                ToolbarItemGroup { folderAndSettingsButtons }
+            }
+        }
+    }
+
+    private func noteList(_ notes: [NoteDocument]) -> some View {
+        NoteListView(
             sections: NoteSection.sections(for: notes),
             selection: Binding(
                 get: { navigation.selectedNoteID },
@@ -146,17 +166,7 @@ struct MainView: View {
             showsSelection: navigation.destination == .notes,
             actions: noteActions
         ) {
-            SidebarRow("Record", systemImage: "record.circle", destination: .recorder) {
-                RecorderStatusBadge(coordinator: environment.coordinator)
-            }
-        } footer: {
             notesPlaceholder(isEmptyAfterSearch: notes.isEmpty)
-        }
-        // Toolbar items on the sidebar sit above it, next to the sidebar toggle.
-        .toolbar {
-            if !isSidebarCollapsed {
-                ToolbarItemGroup { folderAndSettingsButtons }
-            }
         }
     }
 
@@ -300,45 +310,77 @@ struct MainView: View {
     }
 }
 
-/// A section row at the top of the sidebar, highlighted like a selected note.
-private struct SidebarRow<Accessory: View>: View {
-    @Environment(MainNavigation.self) private var navigation
-    let title: String
-    let systemImage: String
-    let destination: MainNavigation.Destination
-    let accessory: Accessory
-
-    init(
-        _ title: String,
-        systemImage: String,
-        destination: MainNavigation.Destination,
-        @ViewBuilder accessory: () -> Accessory
-    ) {
-        self.title = title
-        self.systemImage = systemImage
-        self.destination = destination
-        self.accessory = accessory()
-    }
+/// The sidebar's search field, drawn by hand so Record fits beside it: `searchable` in the
+/// sidebar takes its whole width.
+private struct SidebarSearchField: View {
+    @Binding var text: String
+    @FocusState private var isFocused: Bool
 
     var body: some View {
-        let isSelected = navigation.destination == destination
-        HStack {
-            Label(title, systemImage: systemImage)
-                .font(.headline)
-            Spacer()
-            accessory
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            TextField("Search Recordings", text: $text)
+                .textFieldStyle(.plain)
+                .focused($isFocused)
+                .onExitCommand { text = "" }
+            if !text.isEmpty {
+                Button("Clear", systemImage: "xmark.circle.fill") { text = "" }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+            }
         }
-        .padding(.vertical, 8)
         .padding(.horizontal, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(isSelected ? Color("NoteSelection") : .clear, in: RoundedRectangle(cornerRadius: 8))
-        .contentShape(Rectangle())
-        .onTapGesture { navigation.destination = destination }
-        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+        .frame(height: SidebarControl.height)
+        .background(.quaternary, in: Capsule())
+        // ⌘F, as `searchable` had it, from an invisible button: hidden ones don't take shortcuts.
+        .background {
+            Button("Search Recordings") { isFocused = true }
+                .keyboardShortcut("f")
+                .opacity(0)
+                .accessibilityHidden(true)
+        }
     }
 }
 
-/// What the recorder is doing, next to its sidebar row: the time while recording, progress
+/// Shows the recorder, beside the search field. Highlighted like a selected note while it's
+/// shown, and says what the recorder is doing while it's busy.
+private struct RecordButton: View {
+    @Environment(MainNavigation.self) private var navigation
+    let coordinator: RecordingCoordinator
+
+    var body: some View {
+        let isSelected = navigation.destination == .recorder
+        Button {
+            navigation.destination = .recorder
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "record.circle")
+                    .font(.headline)
+                RecorderStatusBadge(coordinator: coordinator)
+            }
+            .padding(.horizontal, 10)
+            .frame(minWidth: SidebarControl.height, minHeight: SidebarControl.height)
+            .background(
+                isSelected ? AnyShapeStyle(Color("NoteSelection")) : AnyShapeStyle(.quaternary),
+                in: Capsule()
+            )
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Record")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .help("Record (⌘1)")
+    }
+}
+
+private enum SidebarControl {
+    static let height: CGFloat = 30
+}
+
+/// What the recorder is doing, next to the Record icon: the time while recording, progress
 /// while downloading, transcribing or summarizing.
 private struct RecorderStatusBadge: View {
     let coordinator: RecordingCoordinator
