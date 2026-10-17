@@ -54,6 +54,19 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
         self.info = TranscriptionEngineInfo(id: "speech-swift", displayName: model.displayName)
     }
 
+    /// Switching models replaces the engine rather than calling `unload()`, so the old one frees its
+    /// memory here. Nothing is transcribing: that holds a reference.
+    deinit {
+        pendingUnload?.cancel()
+        loading?.task.cancel()
+        // A finished load task keeps its result, i.e. the models.
+        loading = nil
+        models?.recognizer.unload()
+        // Released before clearing, or MOSS's weights (freed with the instance) would miss the cache clear.
+        models = nil
+        Memory.clearCache()
+    }
+
     /// Loads the VAD and ASR models, downloading them on first use. Concurrent calls share one load;
     /// a failed load is retried by the next call. Throws `TranscriptionError.modelUnavailable`.
     ///
