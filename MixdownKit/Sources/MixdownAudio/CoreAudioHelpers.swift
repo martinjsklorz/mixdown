@@ -84,6 +84,22 @@ enum CoreAudioHAL {
         stringProperty(kAudioObjectPropertyName, of: deviceID)
     }
 
+    /// Whether the device is an aggregate device that only its creating process can see, such as
+    /// the one system audio is captured through.
+    static func isPrivateAggregate(_ deviceID: AudioDeviceID) -> Bool {
+        var address = propertyAddress(kAudioAggregateDevicePropertyComposition)
+        var value: Unmanaged<CFDictionary>?
+        var size = UInt32(MemoryLayout<Unmanaged<CFDictionary>?>.size)
+        // Fails for anything that isn't an aggregate device.
+        let status = withUnsafeMutablePointer(to: &value) { pointer in
+            AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, pointer)
+        }
+        guard status == noErr, let value else { return false }
+        // CFDictionary properties are returned at +1; the caller owns the reference.
+        let composition = value.takeRetainedValue() as? [String: Any]
+        return (composition?[kAudioAggregateDeviceIsPrivateKey] as? NSNumber)?.boolValue ?? false
+    }
+
     /// Whether the device is still connected. A device ID outlives its device and reports `false`.
     static func isAlive(_ deviceID: AudioDeviceID) -> Bool {
         var address = propertyAddress(kAudioDevicePropertyDeviceIsAlive)

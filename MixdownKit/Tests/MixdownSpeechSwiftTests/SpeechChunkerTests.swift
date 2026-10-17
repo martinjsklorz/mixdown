@@ -52,6 +52,17 @@ struct SpeechChunkerTests {
         #expect(result.allSatisfy { $0.window.duration <= 14 })
     }
 
+    @Test func splitsInAPauseRatherThanAtASingleQuietFrame() {
+        // 0.1 s frames. A lone dip inside a word at 9 s; a 0.5 s pause between words around 11.5 s.
+        var probabilities = [Float](repeating: 0.9, count: 300)
+        probabilities[90] = 0.05
+        for index in 113...117 { probabilities[index] = 0.3 }
+
+        let result = pieces([(0, 30)], probabilities: probabilities, frameDuration: 0.1, audioDuration: 30)
+
+        #expect((11.3...11.8).contains(result[0].speech.end))
+    }
+
     @Test func splitsAtTheBudgetWithoutProbabilities() {
         let result = pieces([(0, 20)], audioDuration: 20)
         #expect(result.map(\.speech) == [TimeSpan(start: 0, end: 14), TimeSpan(start: 14, end: 20)])

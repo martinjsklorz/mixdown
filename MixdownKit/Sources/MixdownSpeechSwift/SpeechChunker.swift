@@ -86,7 +86,15 @@ enum SpeechChunker {
         return result
     }
 
-    /// Centre of the lowest-probability VAD frame whose centre lies in `[from, to]` (latest on ties).
+    /// Frames on each side averaged when looking for a cut: ±3 Silero frames ≈ 0.2 s.
+    static let smoothingRadius = 3
+
+    /// Centre of the VAD frame whose centre lies in `[from, to]` and whose neighbourhood
+    /// (`smoothingRadius` frames each side) is quietest on average. Ties go to the quieter frame
+    /// itself, then to the later one.
+    ///
+    /// Averaging makes the cut land in a pause between words. The single quietest frame is often
+    /// a stop consonant or a breath inside a word, and a cut there splits the word across pieces.
     private static func quietestPoint(
         from: TimeInterval,
         to: TimeInterval,
@@ -97,9 +105,27 @@ enum SpeechChunker {
         let first = max(0, Int((from / frameDuration - 0.5).rounded(.up)))
         let last = min(probabilities.count - 1, Int((to / frameDuration - 0.5).rounded(.down)))
         guard first <= last else { return nil }
+        // Neighbours outside the region are used too: silence just past it still marks a pause.
+        let lower = max(0, first - smoothingRadius)
+        let upper = min(probabilities.count - 1, last + smoothingRadius)
+        var sums = [Double](repeating: 0, count: upper - lower + 2)
+        for index in lower...upper {
+            sums[index - lower + 1] = sums[index - lower] + Double(probabilities[index])
+        }
+        func average(around index: Int) -> Double {
+            let start = max(lower, index - smoothingRadius)
+            let end = min(upper, index + smoothingRadius)
+            return (sums[end - lower + 1] - sums[start - lower]) / Double(end - start + 1)
+        }
         var best = first
-        for index in first...last where probabilities[index] <= probabilities[best] {
-            best = index
+        var bestAverage = average(around: first)
+        for index in first...last {
+            let value = average(around: index)
+            let isTie = abs(value - bestAverage) < 1e-9
+            if (isTie && probabilities[index] <= probabilities[best]) || (!isTie && value < bestAverage) {
+                best = index
+                bestAverage = value
+            }
         }
         return (Double(best) + 0.5) * frameDuration
     }

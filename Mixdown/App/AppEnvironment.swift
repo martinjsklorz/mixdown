@@ -35,12 +35,20 @@ final class AppEnvironment {
     /// Whether the global shortcut (`KeyboardShortcuts.Name.toggleRecording`) starts and stops
     /// recording. Off, the shortcut is kept but released, so other apps get those keys.
     private(set) var isRecordingShortcutEnabled: Bool
+    /// Whether a recording shows in the notch island rather than the menu bar. See `NotchIsland`.
+    private(set) var showsRecordingInNotch: Bool
+    /// What the notch island shows, and where.
+    private(set) var islandLayout: NotchIsland.Layout
 
     private let settings: AppSettings
     @ObservationIgnored private var deviceMonitor: Task<Void, Never>?
     @ObservationIgnored private var recordingClock: Task<Void, Never>?
     @ObservationIgnored private var recordingClockStart: Date?
     @ObservationIgnored private var callPrompt: CallPrompt?
+    /// Created the first time it's shown.
+    @ObservationIgnored private var notchIsland: NotchIsland?
+    /// Opens Record in the main window.
+    @ObservationIgnored private let showRecorder: () -> Void
     @ObservationIgnored private var notifiedNoteURL: URL?
     /// The phase `observePhaseForCues` saw last.
     @ObservationIgnored private var cuedPhase: RecordingCoordinator.Phase = .idle
@@ -69,8 +77,16 @@ final class AppEnvironment {
         )
         self.notifiesAboutCalls = settings.notifiesAboutCalls
         self.recordsCallsAutomatically = settings.recordsCallsAutomatically
+        self.showsRecordingInNotch = settings.showsRecordingInNotch
+        self.islandLayout = settings.islandLayout
+        let showRecorder: () -> Void = { [weak navigation] in
+            guard let navigation, let openWindow = navigation.openWindow else { return }
+            navigation.show(.recorder, using: openWindow)
+        }
+        self.showRecorder = showRecorder
         startMonitoringDevices()
         observeRecording()
+        observeNotchIsland()
         observePhaseForCues()
         observeNotesFolder()
         observeNewNotes()
@@ -79,10 +95,8 @@ final class AppEnvironment {
             isRecording: { [weak self] in self?.coordinator.isRecording ?? false },
             startRecording: { [weak self] in self?.startRecordingCall() ?? false },
             stopRecording: { [weak self] in self?.stopRecordingCall() },
-            showRecorder: { [weak navigation] in
-                guard let navigation, let openWindow = navigation.openWindow else { return }
-                navigation.show(.recorder, using: openWindow)
-            }
+            markRecordingAsCall: { [weak self] in self?.coordinator.markRecordingAsCall() },
+            showRecorder: showRecorder
         )
         callPrompt.notifies = notifiesAboutCalls
         callPrompt.recordsAutomatically = recordsCallsAutomatically
@@ -108,7 +122,8 @@ final class AppEnvironment {
             summarizer: summarizer,
             options: TranscriptionOptions(language: settings.language),
             sourceLabels: settings.sourceLabels,
-            preferredDeviceIDs: settings.selectedDeviceIDs
+            preferredDeviceIDs: settings.selectedDeviceIDs,
+            playbackMonitor: CoreAudioPlaybackMonitor()
         )
     }
 
@@ -148,6 +163,24 @@ final class AppEnvironment {
                 // Wake on the next whole second since the start, so the display doesn't lag.
                 try? await Task.sleep(for: .seconds(1 - elapsed.truncatingRemainder(dividingBy: 1)))
             }
+        }
+    }
+
+    /// Shows the notch island while recording, if it's turned on, and lays it out again when its
+    /// settings change. Re-registers itself after every change, including the coordinator being
+    /// replaced.
+    private func observeNotchIsland() {
+        let (shows, layout) = withObservationTracking {
+            (coordinator.isRecording && showsRecordingInNotch, islandLayout)
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.observeNotchIsland() }
+        }
+        if shows {
+            let island = notchIsland ?? NotchIsland(environment: self, openRecorder: showRecorder)
+            notchIsland = island
+            island.show(layout)
+        } else {
+            notchIsland?.hide()
         }
     }
 
@@ -202,8 +235,20 @@ final class AppEnvironment {
         coordinator.selectedDevices.contains { $0.kind == .systemAudio }
     }
 
+    /// Whether the microphone is **System Default**, following the Mac's default input.
+    var followsDefaultMicrophone: Bool {
+        coordinator.followsDefaultMicrophone && selectedMicrophone != nil
+    }
+
+    /// The microphone as chosen: `AudioInputDevice.defaultMicrophone` for System Default, else
+    /// the selected device.
+    private var chosenMicrophone: AudioInputDevice? {
+        followsDefaultMicrophone ? .defaultMicrophone : selectedMicrophone
+    }
+
     /// Switches to `device` (replacing the current microphone) or, with `nil`, records without a
-    /// microphone. Ignored if that would leave no input selected.
+    /// microphone. `AudioInputDevice.defaultMicrophone` follows the Mac's default input. Ignored if
+    /// that would leave no input selected.
     func selectMicrophone(_ device: AudioInputDevice?) {
         var selection = coordinator.selectedDevices.filter { $0.kind != .microphone }
         if let device { selection.insert(device, at: 0) }
@@ -212,7 +257,7 @@ final class AppEnvironment {
 
     /// Adds or removes system audio. Ignored if that would leave no input selected.
     func setRecordsSystemAudio(_ enabled: Bool) {
-        var selection = coordinator.selectedDevices.filter { $0.kind != .systemAudio }
+        var selection = chosenMicrophone.map { [$0] } ?? []
         if enabled, let systemAudio = coordinator.devices.first(where: { $0.kind == .systemAudio }) {
             selection.append(systemAudio)
         }
@@ -292,6 +337,18 @@ final class AppEnvironment {
         } else {
             KeyboardShortcuts.disable(.toggleRecording)
         }
+    }
+
+    // MARK: Design
+
+    func setShowsRecordingInNotch(_ enabled: Bool) {
+        settings.showsRecordingInNotch = enabled
+        showsRecordingInNotch = enabled
+    }
+
+    func setIslandLayout(_ layout: NotchIsland.Layout) {
+        settings.islandLayout = layout
+        islandLayout = layout
     }
 
     // MARK: Transcription

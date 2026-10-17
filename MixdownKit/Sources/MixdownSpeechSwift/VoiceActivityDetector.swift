@@ -44,10 +44,10 @@ final class VoiceActivityDetector: @unchecked Sendable {
         ModelCache.contains(weightsAnd: ["silero_vad.mlmodelc"], in: directory)
     }
 
-    /// Same computation as `SileroVADModel.detectSpeech(audio:sampleRate:config:)` (512-sample frames, last
-    /// one zero-padded, `VADConfig.sileroDefault` hysteresis), but it keeps the per-frame probabilities and
-    /// checks for cancellation as it goes.
-    func detect(_ samples: [Float]) throws -> Detection {
+    /// Same frames as `SileroVADModel.detectSpeech(audio:sampleRate:config:)` (512 samples, last one
+    /// zero-padded), but it keeps the per-frame probabilities, checks for cancellation and reports
+    /// progress as it goes, and finds regions with `SpeechRegions` so short replies survive.
+    func detect(_ samples: [Float], progress: (Double) -> Void = { _ in }) throws -> Detection {
         let frameSize = SileroVADModel.chunkSize
         model.resetState()
         defer { model.resetState() }
@@ -58,7 +58,10 @@ final class VoiceActivityDetector: @unchecked Sendable {
         var offset = 0
         while offset < samples.count {
             // Every 1024 frames ≈ 33 s of audio.
-            if probabilities.count % 1024 == 0 { try Task.checkCancellation() }
+            if probabilities.count % 1024 == 0 {
+                try Task.checkCancellation()
+                progress(Double(offset) / Double(samples.count))
+            }
             let end = min(offset + frameSize, samples.count)
             frame.withUnsafeMutableBufferPointer { buffer in
                 for index in 0..<frameSize {
@@ -68,25 +71,8 @@ final class VoiceActivityDetector: @unchecked Sendable {
             probabilities.append(model.processChunk(frame))
             offset = end
         }
-        guard !probabilities.isEmpty else { return Detection(regions: [], probabilities: []) }
-
-        let defaults = VADConfig.sileroDefault
-        let pipeline = VADPipeline(
-            config: VADConfig(
-                onset: defaults.onset,
-                offset: defaults.offset,
-                minSpeechDuration: defaults.minSpeechDuration,
-                minSilenceDuration: defaults.minSilenceDuration,
-                // Makes `VADPipeline.frameDuration` equal one Silero frame.
-                windowDuration: Float(Double(probabilities.count) * Self.frameDuration),
-                stepRatio: 1
-            ),
-            sampleRate: SileroVADModel.sampleRate,
-            framesPerChunk: probabilities.count
-        )
-        let regions = pipeline.binarize(probs: probabilities).map {
-            TimeSpan(start: TimeInterval($0.startTime), end: TimeInterval($0.endTime))
-        }
+        progress(1)
+        let regions = SpeechRegions.detect(in: probabilities, frameDuration: Self.frameDuration)
         return Detection(regions: regions, probabilities: probabilities)
     }
 }

@@ -12,6 +12,8 @@ public enum AudioSourceKind: String, Codable, Sendable, CaseIterable {
 public struct AudioInputDevice: Identifiable, Hashable, Sendable, Codable {
     /// Identifier for the system-audio pseudo device.
     public static let systemAudioID = "mixdown.system-audio"
+    /// Identifier for the default-microphone pseudo device.
+    public static let defaultMicrophoneID = "mixdown.default-microphone"
 
     /// Stable identifier. The CoreAudio device UID for microphones, `systemAudioID` for system audio.
     public let id: String
@@ -31,6 +33,15 @@ public struct AudioInputDevice: Identifiable, Hashable, Sendable, Codable {
         id: systemAudioID,
         name: "System Audio",
         kind: .systemAudio
+    )
+
+    /// Stands for whichever microphone macOS uses as its default input. Selecting it makes the
+    /// selection follow the default, also mid-recording, e.g. to AirPods when they connect. Never
+    /// in a device list; the selection holds the actual default microphone instead.
+    public static let defaultMicrophone = AudioInputDevice(
+        id: defaultMicrophoneID,
+        name: "System Default",
+        kind: .microphone
     )
 }
 
@@ -61,6 +72,13 @@ public protocol AudioDeviceProvider: Sendable {
     func availableDevices() async -> [AudioInputDevice]
     /// Emits the full device list whenever it changes. Finishes when the consumer cancels.
     func deviceUpdates() -> AsyncStream<[AudioInputDevice]>
+}
+
+/// Tells whether other apps are playing audio. A system audio tap delivers silence both when
+/// nothing plays and when the permission is missing; this tells the two apart.
+public protocol AudioPlaybackMonitoring: Sendable {
+    /// Whether a process other than Mixdown is playing audio right now.
+    func isOtherAudioPlaying() async -> Bool
 }
 
 /// A single capture session for one device. Instances are single-use: start once, stop once.

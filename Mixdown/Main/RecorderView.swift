@@ -51,11 +51,7 @@ struct RecorderView: View {
                     "Download the Speech Model",
                     detail: "Recording starts once \(environment.model.displayName) is on this Mac."
                 )
-                Button("Download Model", systemImage: "arrow.down.circle") {
-                    Task { await coordinator.prepareEngine() }
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
+                downloadButton(for: coordinator)
 
             case .preparingModel(let progress):
                 headline("Downloading Model…", detail: environment.model.displayName)
@@ -109,7 +105,12 @@ struct RecorderView: View {
                     .symbolRenderingMode(.multicolor)
                     .multilineTextAlignment(.center)
                 Button("Dismiss") { coordinator.dismissError() }
-                startButton(for: coordinator)
+                // After a failed download, recording still needs the model.
+                if coordinator.isModelDownloaded {
+                    startButton(for: coordinator)
+                } else {
+                    downloadButton(for: coordinator)
+                }
 
             case .idle:
                 headline("Ready to Record", detail: nil)
@@ -118,6 +119,15 @@ struct RecorderView: View {
         }
         .multilineTextAlignment(.center)
         .animation(.default, value: coordinator.isRecording)
+    }
+
+    private func downloadButton(for coordinator: RecordingCoordinator) -> some View {
+        Button("Download Model", systemImage: "arrow.down.circle") {
+            Task { await coordinator.prepareEngine() }
+        }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.large)
+        .disabled(!coordinator.isIdle)
     }
 
     private func startButton(for coordinator: RecordingCoordinator) -> some View {
@@ -185,7 +195,7 @@ struct RecorderView: View {
     private var setup: some View {
         GroupBox {
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 8) {
-                row("mic", "Microphone", environment.selectedMicrophone?.name ?? "Off")
+                row("mic", "Microphone", microphoneName)
                 row("speaker.wave.2", "System audio", environment.recordsSystemAudio ? "On" : "Off")
                 row("waveform", "Model", TranscriptionSettingsView.label(for: environment.model))
                 row("globe", "Language", languageName)
@@ -227,6 +237,11 @@ struct RecorderView: View {
         case .available: return status.name ?? ""
         case .unavailable: return status.name.map { "\($0) (not available)" } ?? "Not available"
         }
+    }
+
+    private var microphoneName: String {
+        guard let microphone = environment.selectedMicrophone else { return "Off" }
+        return environment.followsDefaultMicrophone ? "System Default (\(microphone.name))" : microphone.name
     }
 
     private var summaryName: String {

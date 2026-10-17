@@ -29,21 +29,36 @@ public struct AudioTrack: Sendable, Equatable {
     /// then its own.
     @discardableResult
     public mutating func append(_ chunk: AudioChunk) -> [Float] {
-        var added: [Float] = []
-        if let hostTime = chunk.hostTime {
-            if sampleCount == 0 {
-                startHostTime = hostTime
-            } else if let startHostTime {
-                let gap = hostTime - (startHostTime + duration)
-                if gap > Self.gapTolerance {
-                    added = Array(repeating: 0, count: Int((gap * AudioChunk.sampleRate).rounded()))
-                }
-            }
-        }
+        var added = [Float](repeating: 0, count: gap(before: chunk.hostTime))
         added.append(contentsOf: chunk.samples)
         sampleCount += added.count
         if keepsSamples { samples.append(contentsOf: added) }
         return added
+    }
+
+    /// Appends a later recording of the same source, e.g. from the device it switched to, with
+    /// the time between the two filled with silence. Both should keep their samples, or neither.
+    public mutating func append(_ track: AudioTrack) {
+        guard track.sampleCount > 0 else { return }
+        let silence = gap(before: track.startHostTime)
+        sampleCount += silence + track.sampleCount
+        if keepsSamples {
+            samples.append(contentsOf: repeatElement(0, count: silence))
+            samples.append(contentsOf: track.samples)
+        }
+    }
+
+    /// Samples of silence that fill the time between the track's end and audio starting at
+    /// `hostTime`. Records `hostTime` as the start of an empty track.
+    private mutating func gap(before hostTime: TimeInterval?) -> Int {
+        guard let hostTime else { return 0 }
+        guard sampleCount > 0 else {
+            startHostTime = hostTime
+            return 0
+        }
+        guard let startHostTime else { return 0 }
+        let gap = hostTime - (startHostTime + duration)
+        return gap > Self.gapTolerance ? Int((gap * AudioChunk.sampleRate).rounded()) : 0
     }
 
     /// Seconds from the earliest track's first sample to each track's first sample. Tracks

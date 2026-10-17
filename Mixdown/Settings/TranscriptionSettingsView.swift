@@ -67,6 +67,35 @@ struct TranscriptionSettingsView: View {
             }
 
             Section {
+                TextField(
+                    "Microphone",
+                    text: Binding(
+                        get: { environment.sourceLabels.microphone },
+                        set: { environment.sourceLabels.microphone = $0 }
+                    ),
+                    prompt: Text(SourceLabels.defaultMicrophone)
+                )
+                TextField(
+                    "System audio",
+                    text: Binding(
+                        get: { environment.sourceLabels.systemAudio },
+                        set: { environment.sourceLabels.systemAudio = $0 }
+                    ),
+                    prompt: Text(SourceLabels.defaultSystemAudio)
+                )
+            } header: {
+                Text("Speaker Names")
+            } footer: {
+                Text(
+                    "With more than one input, each is transcribed on its own and its lines are labeled "
+                        + "with these names. Use headphones so your microphone doesn't pick up the other "
+                        + "people; otherwise Mixdown drops lines your microphone only heard from the speakers."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
+            Section {
                 Toggle(
                     "Summarize recordings",
                     isOn: Binding(
@@ -199,8 +228,8 @@ struct TranscriptionSettingsView: View {
         let summarizer = environment.summarizer
         switch summarizer.availability {
         case .available:
-            return "Adds an overview, key points and action items above the transcript. "
-                + "\(summarizer.info.displayName) makes them on this Mac."
+            return "Adds an overview, key points and action items above the transcript, and names the note "
+                + "after its topic. \(summarizer.info.displayName) makes them on this Mac."
         case .unavailable(let reason):
             return reason
         }

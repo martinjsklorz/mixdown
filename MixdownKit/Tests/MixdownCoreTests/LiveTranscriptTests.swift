@@ -159,4 +159,30 @@ struct LiveTranscriptTests {
         #expect(transcript.lines.map(\.text) == ["So", "Yes", "the plan."])
         #expect(transcript.segments(fromSource: 0).map(\.text) == ["So the plan."])
     }
+
+    @Test func sourcesCanBeAddedAndRelabeled() {
+        var transcript = LiveTranscript(speakers: [nil])
+        transcript.apply(update(["Hello."]), fromSource: 0, startHostTime: 100)
+        // System audio turned on a few seconds in.
+        transcript.addSource(speaker: "Others")
+        transcript.setSpeaker("Me", ofSource: 0)
+        transcript.apply(update(["Hi."]), fromSource: 1, startHostTime: 104)
+
+        #expect(transcript.lines.map(\.speaker) == ["Me", "Others"])
+        #expect(transcript.lines.map(\.start) == [0, 4])
+    }
+
+    @Test func aSourceCanSwitchClocks() {
+        var transcript = LiveTranscript(speakers: [nil])
+        transcript.apply(update(["Before."]), fromSource: 0, startHostTime: 100)
+        // A new device, recording from 10 s later, counts its times from zero again.
+        transcript.apply(update(["After."]), fromSource: 0, startHostTime: 110)
+
+        #expect(
+            transcript.segments(fromSource: 0) == [
+                TranscriptSegment(start: 0, end: 0.5, text: "Before."),
+                TranscriptSegment(start: 10, end: 10.5, text: "After."),
+            ]
+        )
+    }
 }

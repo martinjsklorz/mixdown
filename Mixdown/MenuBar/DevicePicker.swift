@@ -4,13 +4,14 @@ import SwiftUI
 /// Input selection as checkmarked menu items: one microphone at a time, and system audio, which
 /// can be added on top to record both sides of a call.
 ///
-/// Choosing a microphone replaces the current one; choosing the checked one again turns the
-/// microphone off. Either is ignored if it would leave nothing to record.
+/// **System Default** follows whichever microphone the Mac uses as its input, so connecting
+/// AirPods switches to them. Choosing a microphone replaces the current one; choosing the checked
+/// one again turns the microphone off. Either is ignored if it would leave nothing to record.
+/// While recording, the recording switches over.
 struct DevicePicker: View {
     let devices: [AudioInputDevice]
     let selectedIDs: Set<String>
-    /// Switching inputs mid-recording isn't supported.
-    let isEnabled: Bool
+    let followsDefaultMicrophone: Bool
     let onSelectMicrophone: @MainActor (AudioInputDevice?) -> Void
     let onSetSystemAudio: @MainActor (Bool) -> Void
 
@@ -25,8 +26,12 @@ struct DevicePicker: View {
         }
         if !microphones.isEmpty {
             Section("Microphone") {
+                toggle(Self.defaultTitle(among: microphones), isOn: followsDefaultMicrophone) { isOn in
+                    onSelectMicrophone(isOn ? .defaultMicrophone : nil)
+                }
                 ForEach(microphones) { device in
-                    toggle(Self.title(for: device), isOn: selectedIDs.contains(device.id)) { isOn in
+                    let isOn = !followsDefaultMicrophone && selectedIDs.contains(device.id)
+                    toggle(Self.title(for: device), isOn: isOn) { isOn in
                         onSelectMicrophone(isOn ? device : nil)
                     }
                 }
@@ -43,10 +48,15 @@ struct DevicePicker: View {
 
     private func toggle(_ title: String, isOn: Bool, set: @escaping @MainActor (Bool) -> Void) -> some View {
         Toggle(title, isOn: Binding(get: { isOn }, set: { set($0) }))
-            .disabled(!isEnabled)
     }
 
     static func title(for device: AudioInputDevice) -> String {
         device.isDefault ? "\(device.name) (Default)" : device.name
+    }
+
+    /// "System Default (AirPods)", naming the microphone it currently stands for.
+    static func defaultTitle(among microphones: [AudioInputDevice]) -> String {
+        guard let current = microphones.first(where: \.isDefault) else { return "System Default" }
+        return "System Default (\(current.name))"
     }
 }

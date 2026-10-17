@@ -36,10 +36,9 @@ struct MixdownApp: App {
                 .environment(navigation)
                 .capturesOpenWindow(for: appDelegate, navigation: navigation)
         } label: {
-            MenuBarLabel(
-                coordinator: environment.coordinator,
-                recordingElapsed: environment.recordingElapsed
-            )
+            // Reads the environment itself: read here, the elapsed time ticking every second
+            // would rebuild every scene.
+            MenuBarLabel(environment: environment)
         }
         .menuBarExtraStyle(.menu)
 

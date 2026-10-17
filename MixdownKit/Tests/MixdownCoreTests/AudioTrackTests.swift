@@ -23,6 +23,39 @@ struct AudioTrackTests {
         #expect(track.samples.last == 0.1)
     }
 
+    @Test func appendsLaterTrackAfterTheGap() {
+        var first = AudioTrack()
+        first.append(Fixtures.chunk(seconds: 1, hostTime: 50))
+        var second = AudioTrack()
+        second.append(Fixtures.chunk(seconds: 1, hostTime: 51.5))
+
+        first.append(second)
+        first.append(AudioTrack())
+
+        #expect(first.startHostTime == 50)
+        #expect(first.duration == 2.5)
+        #expect(first.samples[16_000..<24_000].allSatisfy { $0 == 0 })
+
+        var empty = AudioTrack()
+        empty.append(second)
+        #expect(empty == second)
+    }
+
+    @Test func joinsTracksThatDontKeepSamples() {
+        var first = AudioTrack(keepsSamples: false)
+        first.append(Fixtures.chunk(seconds: 1, hostTime: 50))
+        var second = AudioTrack(keepsSamples: false)
+        second.append(Fixtures.chunk(seconds: 1, hostTime: 51.5))
+
+        var lane = AudioTrack(keepsSamples: false)
+        lane.append(first)
+        lane.append(second)
+
+        #expect(lane.startHostTime == 50)
+        #expect(lane.duration == 2.5)
+        #expect(lane.samples.isEmpty)
+    }
+
     @Test func ignoresJitter() {
         var track = AudioTrack()
         track.append(Fixtures.chunk(seconds: 1, hostTime: 50))

@@ -5,13 +5,16 @@ import Foundation
 ///
 /// Each input is transcribed on its own, and their updates arrive out of step by a fraction of a
 /// second. Lines are therefore kept in the order the words were spoken, not the order they
-/// arrived in.
+/// arrived in. Inputs can be added while recording, and an input can switch devices, each
+/// recording with a clock of its own; updates say which audio their times count from.
 public struct LiveTranscript: Sendable, Equatable {
     public struct Line: Sendable, Equatable, Identifiable {
         /// Stable while the line grows and as lines are inserted before it.
         public let id: Int
+        /// Index of the input.
+        let source: Int
         /// The input's label when several are recorded, else `nil`.
-        public let speaker: String?
+        public internal(set) var speaker: String?
         /// Seconds on the recording's timeline.
         public internal(set) var start: TimeInterval
         public internal(set) var end: TimeInterval
@@ -32,8 +35,9 @@ public struct LiveTranscript: Sendable, Equatable {
     public private(set) var revision = 0
 
     private struct Source: Sendable, Equatable {
-        let speaker: String?
-        /// Seconds from `referenceHostTime` to the input's first sample, once known.
+        var speaker: String?
+        /// Seconds from `referenceHostTime` to the input's first sample, once known. Segments are
+        /// timed from there.
         var offset: TimeInterval?
         /// Index in `lines` of the input's latest line, which its next word may continue.
         var openLine: Int?
@@ -62,6 +66,22 @@ public struct LiveTranscript: Sendable, Equatable {
 
     public var isEmpty: Bool { lines.isEmpty }
 
+    /// Adds an input, such as system audio turned on mid-recording. Its index follows the others'.
+    public mutating func addSource(speaker: String? = nil) {
+        sources.append(Source(speaker: speaker))
+    }
+
+    /// Relabels input `index`, including the lines it already has, e.g. once a second input
+    /// makes labels necessary.
+    public mutating func setSpeaker(_ speaker: String?, ofSource index: Int) {
+        guard sources.indices.contains(index), sources[index].speaker != speaker else { return }
+        sources[index].speaker = speaker
+        for line in lines.indices where lines[line].source == index {
+            lines[line].speaker = speaker
+        }
+        revision += 1
+    }
+
     /// What input `index` said, as transcript segments timed in seconds from its first sample.
     public func segments(fromSource index: Int) -> [TranscriptSegment] {
         guard sources.indices.contains(index) else { return [] }
@@ -76,8 +96,8 @@ public struct LiveTranscript: Sendable, Equatable {
     }
 
     /// Adds what input `index` recognized.
-    /// - Parameter startHostTime: Host time of the input's first sample, which lines the inputs
-    ///   up with each other; `nil` if unknown. Only the first update's value is used.
+    /// - Parameter startHostTime: Host time of the first sample of the audio the update's times
+    ///   count from, which lines the inputs up with each other; `nil` if unknown.
     public mutating func apply(_ update: LiveTranscriptUpdate, fromSource index: Int, startHostTime: TimeInterval?) {
         guard sources.indices.contains(index), !update.isEmpty else { return }
         let offset = offset(ofSource: index, startHostTime: startHostTime)
@@ -97,15 +117,15 @@ public struct LiveTranscript: Sendable, Equatable {
         }
     }
 
+    /// Seconds from `referenceHostTime` to `startHostTime`. The first for an input is its offset.
     private mutating func offset(ofSource index: Int, startHostTime: TimeInterval?) -> TimeInterval {
-        if let offset = sources[index].offset { return offset }
         var offset: TimeInterval = 0
         if let startHostTime {
             let reference = referenceHostTime ?? startHostTime
             referenceHostTime = reference
             offset = startHostTime - reference
         }
-        sources[index].offset = offset
+        if sources[index].offset == nil { sources[index].offset = offset }
         return offset
     }
 
@@ -132,6 +152,7 @@ public struct LiveTranscript: Sendable, Equatable {
         let position = lines.lastIndex { $0.start <= start }.map { $0 + 1 } ?? 0
         let line = Line(
             id: nextLineID,
+            source: index,
             speaker: sources[index].speaker,
             start: start,
             end: end,
