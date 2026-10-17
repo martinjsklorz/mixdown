@@ -14,9 +14,11 @@ collapsible sections by day. The cog above the sidebar, next to the sidebar butt
 
 1. Open Mixdown. **Record** shows the big record button and what the next recording uses:
    microphone, system audio, speech model, language and notes folder.
-2. The first time, click **Choose Folder…** and pick where your notes go (see [Notes](#notes)),
-   then click **Download Model** and wait for it to finish (see [Speech models](#speech-models)).
-   Recording stays off until both are done.
+2. The first time, the setup assistant walks you through choosing where your notes go (see
+   [Notes](#notes)), downloading a speech model (see [Speech models](#speech-models)), picking
+   inputs, allowing the microphone and notifications, call detection, the global shortcut and
+   launching at login. **Help → Setup Assistant…** opens it again. If you skip it, click **Choose
+   Folder…** and **Download Model** on Record instead; recording stays off until both are done.
 3. Pick your inputs in the **Recording** menu (a microphone, **System Audio**, or both), or with
    **Change…** next to the setup summary.
 4. Click the red button (or press ⌘R) to record, and again to stop. From any other app, press

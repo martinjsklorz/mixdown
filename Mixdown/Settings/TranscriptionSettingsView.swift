@@ -8,7 +8,7 @@ struct TranscriptionSettingsView: View {
     @State private var isConfirmingDelete = false
 
     /// ISO 639-1 codes offered besides "Automatic". The models support many more.
-    private static let languages = ["en", "de", "fr", "es", "it", "pt", "nl", "pl", "ja", "zh"]
+    static let languages = ["en", "de", "fr", "es", "it", "pt", "nl", "pl", "ja", "zh"]
 
     var body: some View {
         let coordinator = environment.coordinator

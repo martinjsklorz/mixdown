@@ -49,7 +49,24 @@ enum Notifications {
     /// Whether the user turned Mixdown's notifications off in System Settings, so none are shown
     /// even with them on in Mixdown's Settings.
     nonisolated static func isDeniedBySystem() async -> Bool {
-        await UNUserNotificationCenter.current().notificationSettings().authorizationStatus == .denied
+        await authorizationStatus() == .denied
+    }
+
+    /// Whether Mixdown may notify: `.notDetermined` until the user answers the system prompt.
+    nonisolated static func authorizationStatus() async -> UNAuthorizationStatus {
+        await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+    }
+
+    /// Shows the system prompt if the user hasn't answered it yet, ahead of the first
+    /// notification. Returns whether Mixdown may notify.
+    @discardableResult
+    static func requestAuthorization() async -> Bool {
+        do {
+            return try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert])
+        } catch {
+            logger.error("Couldn't ask for permission to notify: \(error.localizedDescription)")
+            return false
+        }
     }
 
     /// Opens System Settings › Notifications at Mixdown.
