@@ -67,11 +67,11 @@ struct MainView: View {
         }
         .focusedSceneValue(\.shownNote, shownNote.map { ShownNote(note: $0, actions: noteActions) })
         .confirmationDialog(
-            "Move “\(noteToTrash?.title ?? "")” to the Trash?",
+            "Delete “\(noteToTrash?.title ?? "")”?",
             isPresented: isPresent($noteToTrash),
             presenting: noteToTrash
         ) { note in
-            Button("Move to Trash", role: .destructive) { moveToTrash(note) }
+            Button("Delete", role: .destructive) { moveToTrash(note) }
                 .keyboardShortcut(.defaultAction)
             Button("Cancel", role: .cancel) {}
         } message: { _ in
@@ -251,7 +251,7 @@ struct MainView: View {
             try environment.noteTrash.moveToTrash(note)
             library.didRemove(note)
         } catch {
-            failure = Failure(title: "Couldn't Move Note to Trash", message: error.localizedDescription)
+            failure = Failure(title: "Couldn't Delete Note", message: error.localizedDescription)
             return
         }
         if navigation.selectedNoteID == note.id, let index {

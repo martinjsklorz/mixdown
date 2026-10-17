@@ -36,7 +36,7 @@ struct NoteDetailView: View {
             ToolbarItemGroup {
                 Button("Copy Transcript", systemImage: "doc.on.doc") { NoteActions.copyTranscript(of: note) }
                 Button("Rename", systemImage: "pencil") { actions.rename(note) }
-                Button("Move to Trash", systemImage: "trash") { actions.moveToTrash(note) }
+                Button("Delete", systemImage: "trash") { actions.moveToTrash(note) }
             }
             if #available(macOS 26, *) { ToolbarSpacer(.fixed) }
             ToolbarItem {

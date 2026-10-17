@@ -24,7 +24,7 @@ struct NotificationsSettingsView: View {
             } header: {
                 Text("Notifications")
             } footer: {
-                Text("Confirm copying a transcript, and offer Restore after moving a note to the Trash.")
+                Text("Confirm copying a transcript, and offer Restore after deleting a note.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
