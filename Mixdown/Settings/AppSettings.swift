@@ -25,6 +25,10 @@ struct AppSettings {
         static let recordingShortcutEnabled = "recordingShortcutEnabled"
         /// Whether notes get a summary. Absent means yes.
         static let summarizesNotes = "summarizesNotes"
+        /// A `SummaryTemplate` raw value for recordings started by hand. Absent means `.general`.
+        static let summaryTemplate = "summaryTemplate"
+        /// A `SummaryTemplate` raw value for recordings started for a call. Absent means `.general`.
+        static let callSummaryTemplate = "callSummaryTemplate"
         /// Whether Mixdown plays audio cues at all. Absent means yes.
         static let playsSounds = "playsSounds"
         /// Whether to post notifications when calls start and end. Absent means yes.
@@ -40,6 +44,9 @@ struct AppSettings {
         static let islandTimeSide = "islandTimeSide"
         /// Whether the notch island shows the input levels. Absent means yes.
         static let islandShowsLevels = "islandShowsLevels"
+        /// Whether to show the setup assistant at launch. Absent means yes, unless a notes folder
+        /// was chosen before the assistant existed.
+        static let needsSetup = "needsSetup"
 
         /// The name of the sound played for `cue`; empty for none. Absent means the cue's default.
         static func sound(for cue: AudioCue) -> String { "sound.\(cue.rawValue)" }
@@ -106,6 +113,16 @@ struct AppSettings {
         nonmutating set { defaults.set(newValue, forKey: Key.summarizesNotes) }
     }
 
+    var summaryTemplate: SummaryTemplate {
+        get { defaults.string(forKey: Key.summaryTemplate).flatMap(SummaryTemplate.init(rawValue:)) ?? .general }
+        nonmutating set { defaults.set(newValue.rawValue, forKey: Key.summaryTemplate) }
+    }
+
+    var callSummaryTemplate: SummaryTemplate {
+        get { defaults.string(forKey: Key.callSummaryTemplate).flatMap(SummaryTemplate.init(rawValue:)) ?? .general }
+        nonmutating set { defaults.set(newValue.rawValue, forKey: Key.callSummaryTemplate) }
+    }
+
     var playsSounds: Bool {
         get { defaults.object(forKey: Key.playsSounds) as? Bool ?? true }
         nonmutating set { defaults.set(newValue, forKey: Key.playsSounds) }
@@ -144,6 +161,13 @@ struct AppSettings {
     var showsRecordingInNotch: Bool {
         get { defaults.object(forKey: Key.showsRecordingInNotch) as? Bool ?? true }
         nonmutating set { defaults.set(newValue, forKey: Key.showsRecordingInNotch) }
+    }
+
+    /// Whether the setup assistant opens at launch. Until it's finished or put off, and on first
+    /// run; not for those who chose a notes folder in a version without it.
+    var needsSetup: Bool {
+        get { defaults.object(forKey: Key.needsSetup) as? Bool ?? (notesFolderBookmark == nil) }
+        nonmutating set { defaults.set(newValue, forKey: Key.needsSetup) }
     }
 
     /// What the notch island shows, and where.

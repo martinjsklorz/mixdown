@@ -95,7 +95,12 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
 
             ## Set up
 
-            Open **Record** at the top of the sidebar. Recording stays off until these two are done:
+            The first time Mixdown opens, the setup assistant walks you through choosing a notes \
+            folder, downloading a speech model, picking inputs and allowing the permissions. Open \
+            it again with **Help → Setup Assistant…**.
+
+            If you skipped it, open **Record** at the top of the sidebar. Recording stays off until \
+            these two are done:
 
             1. Click **Choose Folder…** and pick where your notes go, for example a new `Mixdown` \
             folder in Documents (use **New Folder** in the dialog).
@@ -232,9 +237,11 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             **Cancel Download** stops it; files already fetched are kept, so the next download picks \
             up where it left off.
 
-            To free up disk space, select a model under **Settings → Transcription** and choose \
-            **Delete**. You'll need to download it again before recording with it. Apple Speech \
-            belongs to macOS, which removes it when no app needs it any more.
+            The model menu under **Settings → Transcription** marks downloaded models with a green \
+            check. To free up disk space, select a model there and click the trash button next to \
+            the menu. You'll need to download it again before recording with it. Apple Speech \
+            belongs to macOS, which removes it when no app needs it any more, so it has no trash \
+            button.
 
             ## Speakers
 
@@ -252,6 +259,19 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             recorded from Mixdown's call notification, or automatically, are titled as calls, e.g. \
             "Call about Release timeline". Without a summary, a note is titled with the date and \
             time it was recorded.
+
+            ## Templates
+
+            Under **Settings → Transcription**, pick a summary template for manual recordings and \
+            one for detected calls (recordings started from the call notification or \
+            automatically). **General** is the overview, key points and action items above. \
+            **1:1**, **Standup** and **Client Call** always have the same four sections: TL;DR, \
+            Decisions, Action Items (as checkboxes) and Open Questions. A section with nothing in \
+            it says _None._
+
+            That template is preselected for each recording. To use another one for this \
+            recording only, pick it on **Record** while recording or transcribing, until the \
+            summary starts.
 
             Turn summaries off under **Settings → Transcription → Summarize recordings**. That \
             section also says why summaries aren't available on this Mac if they aren't.

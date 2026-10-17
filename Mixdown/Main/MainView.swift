@@ -109,6 +109,16 @@ struct MainView: View {
         } message: { failure in
             Text(failure.message)
         }
+        .sheet(
+            isPresented: Binding(
+                get: { navigation.isShowingSetup },
+                set: { navigation.isShowingSetup = $0 }
+            )
+        ) {
+            SetupAssistantView()
+                .environment(environment)
+                .environment(navigation)
+        }
     }
 
     /// Whether `item` is set; setting it to `false` clears `item`.

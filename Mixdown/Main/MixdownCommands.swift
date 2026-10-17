@@ -69,6 +69,8 @@ private struct HelpMenuItems: View {
         Button("Mixdown Help") { navigation.showHelp(using: openWindow) }
             .keyboardShortcut("?", modifiers: .command)
         Button("Keyboard Shortcuts") { navigation.showHelp(.shortcuts, using: openWindow) }
+        Divider()
+        Button("Setup Assistant…") { navigation.showSetup(using: openWindow) }
     }
 }
 

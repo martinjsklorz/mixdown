@@ -47,17 +47,17 @@ public actor AppleSpeechEngine: TranscriptionEngine {
         state.withLock { $0.language = language }
     }
 
+    /// Whether macOS has the model for `language` (`nil` for the Mac's), without downloading it.
+    /// `false` for a language or Mac the model doesn't support.
+    public static func isInstalled(language: String?) async -> Bool {
+        guard isSupported else { return false }
+        return (try? await AppleSpeech.isInstalled(language: language)) ?? false
+    }
+
     public func refreshDownloadStatus() async {
         let language = currentLanguage
-        guard Self.isSupported else { return }
-        let installed: Bool
-        do {
-            installed = try await AppleSpeech.isInstalled(language: language)
-        } catch {
-            // An unsupported language isn't installed either; `prepare` says why.
-            installed = false
-        }
-        setInstalled(installed, for: language)
+        // An unsupported language isn't installed either; `prepare` says why.
+        setInstalled(await Self.isInstalled(language: language), for: language)
     }
 
     /// Asks macOS to download the model for the current language, if it isn't on the Mac already.

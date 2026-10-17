@@ -7,9 +7,15 @@ struct MixdownApp: App {
     @State private var navigation: MainNavigation
 
     init() {
+        let settings = AppSettings()
         let navigation = MainNavigation()
+        // Written down, so choosing a folder in the assistant and quitting doesn't count as having
+        // set up before the assistant existed.
+        let needsSetup = settings.needsSetup
+        settings.needsSetup = needsSetup
+        navigation.isShowingSetup = needsSetup
         _navigation = State(initialValue: navigation)
-        _environment = State(initialValue: AppEnvironment(navigation: navigation))
+        _environment = State(initialValue: AppEnvironment(navigation: navigation, settings: settings))
     }
 
     var body: some Scene {

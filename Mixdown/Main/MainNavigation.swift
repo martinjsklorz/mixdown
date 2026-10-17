@@ -39,6 +39,9 @@ final class MainNavigation {
     /// its notification. The window clears it when it takes it.
     var noteToShow: URL?
     var settingsTab: SettingsTab = .general
+    /// Whether the main window shows the setup assistant. Set at launch until it's been through
+    /// once, and by Help › Setup Assistant….
+    var isShowingSetup = false
     var helpTopic: HelpTopic = .gettingStarted
     /// What the Help window's sidebar is filtered by.
     var helpSearchText = ""
@@ -68,6 +71,12 @@ final class MainNavigation {
     func takeNoteToShow() -> URL? {
         defer { noteToShow = nil }
         return noteToShow
+    }
+
+    /// Brings the main window forward with the setup assistant over it.
+    func showSetup(using openWindow: OpenWindowAction) {
+        isShowingSetup = true
+        show(.recorder, using: openWindow)
     }
 
     /// Opens the Settings window, at `tab` if given.
