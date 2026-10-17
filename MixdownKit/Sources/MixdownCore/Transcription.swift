@@ -89,6 +89,14 @@ public protocol TranscriptionEngine: Sendable {
     /// next `prepare` downloads it again. Only called while nothing is preparing or transcribing.
     func deleteModel() async throws
 
+    /// Called as a recording starts. An engine that frees its model when idle should load it now
+    /// and keep it until the matching `recordingDidFinish()`, so stopping doesn't wait on a load.
+    /// Returns right away; any loading happens in the background.
+    func recordingWillStart()
+
+    /// Balances `recordingWillStart()` once the recording has been transcribed, discarded or failed.
+    func recordingDidFinish()
+
     /// Transcribes 16 kHz mono Float32 samples (see `AudioChunk.sampleRate`).
     /// Calls `prepare` implicitly if it hasn't completed yet. Honors task cancellation.
     /// - Parameter progress: Reports 0...1 as the work gets done, never moving backwards. An engine
@@ -98,6 +106,11 @@ public protocol TranscriptionEngine: Sendable {
         options: TranscriptionOptions,
         progress: (@Sendable (Double) -> Void)?
     ) async throws -> Transcript
+}
+
+extension TranscriptionEngine {
+    public func recordingWillStart() {}
+    public func recordingDidFinish() {}
 }
 
 public enum TranscriptionError: LocalizedError, Sendable {

@@ -192,6 +192,19 @@ struct RecordingCoordinatorTests {
         #expect(coordinator.lastNoteURL == URL(fileURLWithPath: "/tmp/mixdown-test-1.md"))
     }
 
+    @Test func engineKeepsModelFromStartUntilTranscribed() async {
+        let engine = MockEngine()
+        let coordinator = makeCoordinator(capture: MockCapture(chunks: [Fixtures.chunk(seconds: 1)]), engine: engine)
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        #expect(engine.recordingsInProgress.current == 1)
+
+        await coordinator.stopRecording()
+        #expect(await engine.recordingsInProgressWhileTranscribing == [1])
+        #expect(engine.recordingsInProgress.current == 0)
+    }
+
     @Test func toggleStartsAndStops() async {
         let writer = InMemoryNoteWriter()
         let coordinator = makeCoordinator(
@@ -224,6 +237,7 @@ struct RecordingCoordinatorTests {
         #expect(coordinator.lastNoteURL == nil)
         #expect(await engine.receivedSampleCounts.isEmpty)
         #expect(await writer.notes.isEmpty)
+        #expect(engine.recordingsInProgress.current == 0)
     }
 
     @Test func engineErrorFails() async {
@@ -262,12 +276,14 @@ struct RecordingCoordinatorTests {
 
     @Test func startErrorFailsAndDismissReturnsToIdle() async {
         let error = AudioCaptureError.microphonePermissionDenied
-        let coordinator = makeCoordinator(capture: MockCapture(startError: error))
+        let engine = MockEngine()
+        let coordinator = makeCoordinator(capture: MockCapture(startError: error), engine: engine)
         await coordinator.monitorDevices()
 
         await coordinator.startRecording()
 
         #expect(coordinator.phase == .failed(message: error.localizedDescription))
+        #expect(engine.recordingsInProgress.current == 0)
         #expect(coordinator.modelError == nil)
         #expect(!coordinator.isRecording)
         #expect(coordinator.canStartRecording)
