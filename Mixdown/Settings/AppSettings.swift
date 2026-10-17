@@ -20,6 +20,9 @@ struct AppSettings {
         static let suppressesTrashConfirmation = "suppressesTrashConfirmation"
         /// Whether Mixdown posts notifications at all. Absent means yes.
         static let showsNotifications = "showsNotifications"
+        /// Whether the sidebar's pinned notes are folded away. Absent means no. Read with
+        /// `@AppStorage`.
+        static let collapsesPinnedNotes = "collapsesPinnedNotes"
         /// Whether the global recording shortcut is on. Absent means yes. The shortcut itself is
         /// stored by KeyboardShortcuts.
         static let recordingShortcutEnabled = "recordingShortcutEnabled"

@@ -191,13 +191,16 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
         case .notes:
             """
             Your recordings are listed in the sidebar under **Today**, **Previous 7 Days** and then \
-            each month. Search the sidebar (⌘F) to find older recordings.
+            each month. Pinned notes stay at the top under **Pinned**; click that heading to fold \
+            them away or show them again. Search the sidebar (⌘F) to find older recordings.
 
             ## Working with a note
 
             The buttons above a note, right-clicking it in the sidebar, and the File and Edit menus \
             can:
 
+            - **Pin** it to keep it at the top of the sidebar, and **Unpin** it again. This sets \
+            `pinned: true` in the note's frontmatter.
             - **Rename** it. This changes both the title inside the note and its file name.
             - **Copy Transcript** as plain text.
             - **Share** it.

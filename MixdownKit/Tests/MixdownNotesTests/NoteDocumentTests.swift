@@ -34,6 +34,16 @@ struct NoteDocumentTests {
         #expect(unknown.trigger == nil)
     }
 
+    @Test func readsPinned() {
+        let note = NoteFixtures.note()
+        #expect(!NoteDocument(url: url, contents: MarkdownNoteRenderer.render(note), fileDate: fileDate).isPinned)
+
+        for (value, isPinned) in [("true", true), ("True", true), ("\"true\"", true), ("false", false), ("1", false)] {
+            let document = NoteDocument(url: url, contents: "---\npinned: \(value)\n---\n", fileDate: fileDate)
+            #expect(document.isPinned == isPinned, "pinned: \(value)")
+        }
+    }
+
     @Test func displayBlocksDropLeadingTitleHeading() {
         let note = NoteFixtures.note()
 

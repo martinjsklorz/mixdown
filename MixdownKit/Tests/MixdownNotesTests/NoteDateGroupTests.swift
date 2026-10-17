@@ -40,9 +40,28 @@ struct NoteDateGroupTests {
 
         #expect(
             sections.map(\.group) == [
-                .today, .previousSevenDays, .month(date(10, 1, 0)), .month(date(9, 1, 0)), .month(date(8, 1, 0)),
+                .date(.today), .date(.previousSevenDays), .date(.month(date(10, 1, 0))),
+                .date(.month(date(9, 1, 0))), .date(.month(date(8, 1, 0))),
             ]
         )
         #expect(sections.map(\.notes.count) == [2, 2, 1, 1, 1])
+    }
+
+    @Test func pinnedNotesComeFirstInTheirOwnSection() {
+        let notes = [(date(10, 14, 2), false), (date(10, 14, 1), true), (date(10, 12), false), (date(8, 1), true)]
+            .map { date, isPinned in
+                var note = NoteDocument(
+                    url: URL(filePath: "/\(date.timeIntervalSince1970).md"),
+                    contents: "",
+                    fileDate: date
+                )
+                note.isPinned = isPinned
+                return note
+            }
+
+        let sections = NoteSection.sections(for: notes, now: date(10, 14, 3), calendar: calendar)
+
+        #expect(sections.map(\.group) == [.pinned, .date(.today), .date(.previousSevenDays)])
+        #expect(sections[0].notes == [notes[1], notes[3]])
     }
 }
