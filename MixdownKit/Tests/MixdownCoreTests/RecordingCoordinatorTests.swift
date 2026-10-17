@@ -221,6 +221,70 @@ struct RecordingCoordinatorTests {
         #expect(await writer.notes.count == 1)
     }
 
+    @Test func stopWhileStartingStopsOnceStarted() async throws {
+        let gate = Gate()
+        let capture = MockCapture(chunks: [Fixtures.chunk(seconds: 1)], startGate: gate)
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(capture: capture, writer: writer)
+        await coordinator.monitorDevices()
+
+        let starting = Task { await coordinator.startRecording() }
+        try await waitUntil { capture.startCount == 1 }
+        #expect(coordinator.phase == .startingCapture)
+        #expect(!coordinator.isRecording)
+        #expect(coordinator.canStopRecording)
+        #expect(!coordinator.canStartRecording)
+
+        await coordinator.stopRecording()
+        #expect(coordinator.phase == .startingCapture)
+
+        await gate.open()
+        await starting.value
+        #expect(coordinator.phase == .idle)
+        #expect(capture.stopCount == 1)
+        #expect(await writer.notes.count == 1)
+        #expect(coordinator.canStartRecording)
+    }
+
+    @Test func toggleWhileStartingStopsOnceStarted() async throws {
+        let gate = Gate()
+        let capture = MockCapture(chunks: [Fixtures.chunk(seconds: 1)], startGate: gate)
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(capture: capture, writer: writer)
+        await coordinator.monitorDevices()
+
+        let starting = Task { await coordinator.toggleRecording() }
+        try await waitUntil { capture.startCount == 1 }
+        await coordinator.toggleRecording()
+
+        await gate.open()
+        await starting.value
+        #expect(coordinator.phase == .idle)
+        #expect(capture.startCount == 1)
+        #expect(await writer.notes.count == 1)
+    }
+
+    @Test func stopWhileStartingIsForgottenWhenStartFails() async throws {
+        let gate = Gate()
+        let error = AudioCaptureError.microphonePermissionDenied
+        let failing = MockCapture(startError: error, startGate: gate)
+        let next = MockCapture(chunks: [Fixtures.chunk(seconds: 1)])
+        let coordinator = makeCoordinator(queuedCaptures: [Fixtures.builtInMic.id: [failing, next]])
+        await coordinator.monitorDevices()
+
+        let starting = Task { await coordinator.startRecording() }
+        try await waitUntil { failing.startCount == 1 }
+        await coordinator.stopRecording()
+        await gate.open()
+        await starting.value
+        #expect(coordinator.phase == .failed(message: error.localizedDescription))
+
+        // The stop doesn't carry over to the next recording.
+        await coordinator.startRecording()
+        #expect(coordinator.isRecording)
+        await coordinator.stopRecording()
+    }
+
     @Test func tooShortRecordingIsDiscarded() async {
         let engine = MockEngine()
         let writer = InMemoryNoteWriter()
