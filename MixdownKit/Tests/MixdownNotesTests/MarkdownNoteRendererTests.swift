@@ -193,6 +193,47 @@ struct MarkdownNoteRendererTests {
         #expect(!MarkdownNoteRenderer.render(NoteFixtures.note()).contains("## Summary"))
     }
 
+    @Test func templateSummaryHasFixedSections() {
+        let summary = NoteSummary(
+            template: .clientCall,
+            title: "Onboarding",
+            overview: "The client wants SSO.",
+            keyPoints: ["Ignored outside General"],
+            actionItems: ["Send the *quote*"],
+            openQuestions: ["Which IdP?"]
+        )
+        let markdown = MarkdownNoteRenderer.render(NoteFixtures.note(summary: summary))
+
+        let expected = """
+            ## Summary
+
+            ### TL;DR
+
+            The client wants SSO.
+
+            ### Decisions
+
+            _None._
+
+            ### Action Items
+
+            - [ ] Send the \\*quote\\*
+
+            ### Open Questions
+
+            - Which IdP?
+
+            ## Transcript
+            """
+        #expect(markdown.contains(expected))
+        #expect(!markdown.contains("Ignored outside General"))
+    }
+
+    @Test func templateSummaryWithNothingInItsSectionsIsLeftOut() {
+        let summary = NoteSummary(template: .standup, title: "Standup", decisions: [" "])
+        #expect(!MarkdownNoteRenderer.render(NoteFixtures.note(summary: summary)).contains("## Summary"))
+    }
+
     @Test func transcriptTextSkipsSummary() {
         let markdown = MarkdownNoteRenderer.render(
             NoteFixtures.note(summary: NoteSummary(overview: "Overview.", actionItems: ["Do it"]))

@@ -1,3 +1,4 @@
+import AppKit
 import MixdownCore
 import MixdownSpeechSwift
 import SwiftUI
@@ -14,18 +15,35 @@ struct TranscriptionSettingsView: View {
 
         Form {
             Section {
-                Picker(
-                    "Model",
-                    selection: Binding(
-                        get: { environment.model },
-                        set: { environment.setModel($0) }
-                    )
-                ) {
-                    ForEach(SpeechSwiftModel.allCases) { model in
-                        Text(model.displayName).tag(model)
+                LabeledContent("Model") {
+                    HStack {
+                        Picker(
+                            "Model",
+                            selection: Binding(
+                                get: { environment.model },
+                                set: { environment.setModel($0) }
+                            )
+                        ) {
+                            ForEach(SpeechSwiftModel.allCases) { model in
+                                Label {
+                                    Text(model.displayName)
+                                } icon: {
+                                    downloadIcon(for: model)
+                                }
+                                .tag(model)
+                            }
+                        }
+                        .labelsHidden()
+                        .fixedSize()
+                        .disabled(!environment.canChangeModel)
+
+                        // macOS push buttons drop the icon unless asked to show it.
+                        downloadAccessory(for: coordinator.phase)
+                            .labelStyle(.titleAndIcon)
                     }
                 }
-                .disabled(!environment.canChangeModel)
+
+                modelStatus(for: coordinator.phase)
 
                 Picker(
                     "Language",
@@ -47,16 +65,6 @@ struct TranscriptionSettingsView: View {
                 Text(footer(for: environment.model))
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            }
-
-            Section("Model") {
-                HStack {
-                    modelStatus(for: coordinator.phase)
-                    Spacer()
-                    // macOS push buttons drop the icon unless asked to show it.
-                    downloadAccessory(for: coordinator.phase)
-                        .labelStyle(.titleAndIcon)
-                }
             }
 
             Section {
@@ -96,6 +104,23 @@ struct TranscriptionSettingsView: View {
                         set: { environment.summarizesNotes = $0 }
                     )
                 )
+                Group {
+                    templatePicker(
+                        "Manual recordings",
+                        selection: Binding(
+                            get: { environment.summaryTemplate },
+                            set: { environment.summaryTemplate = $0 }
+                        )
+                    )
+                    templatePicker(
+                        "Detected calls",
+                        selection: Binding(
+                            get: { environment.callSummaryTemplate },
+                            set: { environment.callSummaryTemplate = $0 }
+                        )
+                    )
+                }
+                .disabled(!environment.summarizesNotes)
             } header: {
                 Text("Summary")
             } footer: {
@@ -107,6 +132,8 @@ struct TranscriptionSettingsView: View {
         .formStyle(.grouped)
     }
 
+    /// A row under the model while it downloads or after it failed; nothing otherwise, as the
+    /// model menu marks downloaded models.
     @ViewBuilder
     private func modelStatus(for phase: RecordingCoordinator.Phase) -> some View {
         switch phase {
@@ -128,17 +155,43 @@ struct TranscriptionSettingsView: View {
             if let modelError = environment.coordinator.modelError {
                 Text(modelError)
                     .foregroundStyle(.red)
-            } else {
-                Text(environment.coordinator.engineInfo.displayName)
-                    .foregroundStyle(.secondary)
             }
         }
     }
 
-    /// "Downloaded" and a Delete button once the model is on disk, otherwise a button to fetch it;
-    /// recording needs it. A Cancel button while preparing (files land on disk mid-download, so
-    /// "Downloaded" would be premature). After a model error, Retry and Delete for files on disk
-    /// (they may be broken), else Download.
+    /// A green check for models on disk, else a download arrow, so the menu says which models are
+    /// ready without picking them.
+    @ViewBuilder
+    private func downloadIcon(for model: SpeechSwiftModel) -> some View {
+        let isDownloaded =
+            model == environment.model
+            ? environment.coordinator.isModelDownloaded
+            : SpeechSwiftEngine.isDownloaded(model)
+        if isDownloaded {
+            Image(nsImage: Self.downloadedImage)
+                .accessibilityLabel("Downloaded")
+        } else {
+            Image(systemName: "arrow.down.circle")
+                .accessibilityLabel("Not downloaded")
+        }
+    }
+
+    /// `checkmark.circle.fill` in green. Menus draw SF Symbols as monochrome templates, so the
+    /// colors are baked into a non-template image.
+    private static let downloadedImage: NSImage = {
+        let configuration = NSImage.SymbolConfiguration(paletteColors: [.white, .systemGreen])
+        guard
+            let image = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: "Downloaded")?
+                .withSymbolConfiguration(configuration)
+        else { return NSImage() }
+        image.isTemplate = false
+        return image
+    }()
+
+    /// Download next to the model menu while the model isn't on disk, Delete once it is; recording
+    /// needs it. A Cancel button while preparing (files land on disk mid-download, so the menu's
+    /// check would be premature). After a model error, Retry and Delete for files on disk (they may
+    /// be broken), else Download.
     @ViewBuilder
     private func downloadAccessory(for phase: RecordingCoordinator.Phase) -> some View {
         switch phase {
@@ -153,14 +206,9 @@ struct TranscriptionSettingsView: View {
                     .disabled(!environment.canChangeModel)
                 deleteButton
             } else if environment.coordinator.isModelDownloaded {
-                Label {
-                    Text("Downloaded")
-                } icon: {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                }
-                .foregroundStyle(.secondary)
                 deleteButton
+                    .labelStyle(.iconOnly)
+                    .help("Delete \(environment.model.displayName)")
             } else {
                 downloadButton
             }
@@ -191,6 +239,14 @@ struct TranscriptionSettingsView: View {
         Task { await environment.coordinator.prepareEngine() }
     }
 
+    private func templatePicker(_ title: String, selection: Binding<SummaryTemplate>) -> some View {
+        Picker(title, selection: selection) {
+            ForEach(SummaryTemplate.allCases) { template in
+                Text(template.displayName).tag(template)
+            }
+        }
+    }
+
     private func footer(for model: SpeechSwiftModel) -> String {
         var lines = [
             "Larger models are more accurate but slower and take more disk space.",
@@ -207,8 +263,10 @@ struct TranscriptionSettingsView: View {
         let summarizer = environment.summarizer
         switch summarizer.availability {
         case .available:
-            return "Adds an overview, key points and action items above the transcript, and names the note "
-                + "after its topic. \(summarizer.info.displayName) makes them on this Mac."
+            return "Adds a summary above the transcript and names the note after its topic. 1:1, Standup "
+                + "and Client Call always have TL;DR, Decisions, Action Items and Open Questions. Detected "
+                + "calls are recordings started from a call notification or automatically. "
+                + "\(summarizer.info.displayName) makes summaries on this Mac."
         case .unavailable(let reason):
             return reason
         }

@@ -229,8 +229,9 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             **Cancel Download** stops it; files already fetched are kept, so the next download picks \
             up where it left off.
 
-            To free up disk space, select a model under **Settings → Transcription** and choose \
-            **Delete**. You'll need to download it again before recording with it.
+            The model menu under **Settings → Transcription** marks downloaded models with a green \
+            check. To free up disk space, select a model there and click the trash button next to \
+            the menu. You'll need to download it again before recording with it.
 
             ## Speakers
 
@@ -247,6 +248,19 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             recorded from Mixdown's call notification, or automatically, are titled as calls, e.g. \
             "Call about Release timeline". Without a summary, a note is titled with the date and \
             time it was recorded.
+
+            ## Templates
+
+            Under **Settings → Transcription**, pick a summary template for manual recordings and \
+            one for detected calls (recordings started from the call notification or \
+            automatically). **General** is the overview, key points and action items above. \
+            **1:1**, **Standup** and **Client Call** always have the same four sections: TL;DR, \
+            Decisions, Action Items (as checkboxes) and Open Questions. A section with nothing in \
+            it says _None._
+
+            That template is preselected for each recording. To use another one for this \
+            recording only, pick it on **Record** while recording or transcribing, until the \
+            summary starts.
 
             Turn summaries off under **Settings → Transcription → Summarize recordings**. That \
             section also says why summaries aren't available on this Mac if they aren't.

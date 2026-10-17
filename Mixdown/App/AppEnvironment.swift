@@ -120,6 +120,8 @@ final class AppEnvironment {
             engine: SpeechSwiftEngine(model: model),
             noteWriter: notesDirectory.map { MarkdownNoteWriter(directory: $0) },
             summarizer: summarizer,
+            summaryTemplate: settings.summaryTemplate,
+            callSummaryTemplate: settings.callSummaryTemplate,
             options: TranscriptionOptions(language: settings.language),
             sourceLabels: settings.sourceLabels,
             preferredDeviceIDs: settings.selectedDeviceIDs,
@@ -388,6 +390,25 @@ final class AppEnvironment {
         set {
             settings.summarizesNotes = newValue
             coordinator.summarizer = newValue ? summarizer : nil
+        }
+    }
+
+    /// The summary template for recordings started by hand. Takes effect from the next summary.
+    var summaryTemplate: SummaryTemplate {
+        get { coordinator.summaryTemplate }
+        set {
+            settings.summaryTemplate = newValue
+            coordinator.summaryTemplate = newValue
+        }
+    }
+
+    /// The summary template for recordings started for a call, from the call notification or
+    /// automatically. Takes effect from the next summary.
+    var callSummaryTemplate: SummaryTemplate {
+        get { coordinator.callSummaryTemplate }
+        set {
+            settings.callSummaryTemplate = newValue
+            coordinator.callSummaryTemplate = newValue
         }
     }
 
