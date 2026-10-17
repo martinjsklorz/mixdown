@@ -42,6 +42,16 @@ struct MixdownApp: App {
         }
         .menuBarExtraStyle(.menu)
 
+        Window("Mixdown Help", id: HelpView.windowID) {
+            HelpView()
+                .environment(navigation)
+        }
+        .defaultSize(width: 820, height: 600)
+        .defaultLaunchBehavior(.suppressed)
+        .restorationBehavior(.disabled)
+        // Opened from the Help menu, so it isn't listed in the Window menu too.
+        .commandsRemoved()
+
         Settings {
             SettingsView()
                 .environment(environment)
