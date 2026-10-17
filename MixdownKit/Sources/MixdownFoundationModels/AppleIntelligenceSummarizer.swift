@@ -82,7 +82,9 @@ enum SystemModelSummary {
         language: String?
     ) async throws -> NoteSummary {
         let rules = instructions(for: kind, template: template, language: language)
-        let session = LanguageModelSession(model: model) { rules }
+        // macOS 27 adds an initializer for any `LanguageModel` next to the `SystemLanguageModel` one,
+        // and a `SystemLanguageModel` matches both. As `any LanguageModel` only the new one fits.
+        let session = LanguageModelSession(model: model as any LanguageModel) { rules }
         let prompt = kind == .transcript ? "Transcript:\n\(text)" : text
         // The explicit `includeSchemaInPrompt` picks the macOS 26 overload over macOS 27's
         // metadata one, whose other parameters have defaults too.
