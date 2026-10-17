@@ -13,19 +13,20 @@ final class NoteLibraryModel {
     @ObservationIgnored private var generation = 0
 
     /// Without a `directory` (no notes folder, or it can't be reached) the list is empty.
-    func reload(from directory: URL?) async {
+    /// Returns `false` if a newer reload started meanwhile, leaving `notes` to that one.
+    func reload(from directory: URL?) async -> Bool {
         generation += 1
         let current = generation
         guard let directory else {
             notes = []
             errorMessage = nil
             hasLoaded = true
-            return
+            return true
         }
         let result = await Task.detached(priority: .userInitiated) {
             Result { try NoteLibrary.loadNotes(in: directory) }
         }.value
-        guard current == generation else { return }
+        guard current == generation else { return false }
 
         switch result {
         case .success(let notes):
@@ -36,6 +37,7 @@ final class NoteLibraryModel {
             errorMessage = error.localizedDescription
         }
         hasLoaded = true
+        return true
     }
 
     /// Renames the note and its file, off the main thread. Returns the note's new URL.
