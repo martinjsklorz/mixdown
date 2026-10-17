@@ -100,6 +100,8 @@ Two switches under **Settings → Recording → Calls** decide what happens:
   the same way, and stops when the call ends. With notifications on, **Recording Call** and **Call
   Recording Stopped** say so instead of asking, and if Mixdown can't record yet, it asks with
   **Record This Call?** after all. With notifications off, the menu bar icon is the only sign.
+  A recording you started yourself isn't stopped when a call ends; with notifications on, Mixdown
+  asks **Stop Recording?** instead.
 
 With both off, calls aren't watched. Turning off **Show notifications** under **Settings → Notifications**
 turns off the call notifications too, but not automatic recording.
