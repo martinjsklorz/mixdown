@@ -72,6 +72,14 @@ final class NoteLibraryModel {
         }.value
     }
 
+    /// Pins or unpins the note, off the main thread.
+    func setPinned(_ isPinned: Bool, _ note: NoteDocument) async throws {
+        let url = note.url
+        try await Task.detached(priority: .userInitiated) {
+            try NoteLibrary.setPinned(isPinned, noteAt: url)
+        }.value
+    }
+
     /// Drops a note that was moved away from `notes` right away, ahead of the next reload.
     func didRemove(_ note: NoteDocument) {
         withAnimation(.snappy) { notes.removeAll { $0.id == note.id } }

@@ -87,6 +87,10 @@ private struct NotesFileMenuItems: View {
 
         Divider()
 
+        Button(shownNote?.note.isPinned == true ? "Unpin Note" : "Pin Note") {
+            if let shownNote { shownNote.actions.togglePinned(shownNote.note) }
+        }
+        .disabled(shownNote == nil)
         Button("Rename Note…") {
             if let shownNote { shownNote.actions.rename(shownNote.note) }
         }
