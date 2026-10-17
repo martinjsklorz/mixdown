@@ -183,7 +183,8 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             This Call?** Click it to record with System Audio turned on, plus your microphone if one \
             is selected. When the call ends, a notification asks **Stop Recording?**
             - **Record calls automatically** (off by default): recording starts by itself when a \
-            call starts and stops when it ends. With notifications on, Mixdown says so.
+            call starts and stops when it ends. With notifications on, Mixdown says so. A \
+            recording you started yourself keeps going when a call ends.
 
             With both off, calls aren't watched.
             """
