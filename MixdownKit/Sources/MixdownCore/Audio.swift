@@ -99,6 +99,9 @@ public enum AudioCaptureError: LocalizedError, Equatable, Sendable {
     case microphonePermissionDenied
     case deviceNotFound(String)
     case deviceUnavailable(String)
+    /// The macOS audio service (`coreaudiod`) restarted, which ends every capture. The device
+    /// itself may still be there.
+    case audioServiceRestarted
     case alreadyRunning
 
     public var errorDescription: String? {
@@ -109,6 +112,8 @@ public enum AudioCaptureError: LocalizedError, Equatable, Sendable {
             "The audio device “\(name)” is no longer connected."
         case .deviceUnavailable(let reason):
             "The audio device couldn't be opened: \(reason)"
+        case .audioServiceRestarted:
+            "The macOS audio service restarted."
         case .alreadyRunning:
             "A recording is already in progress."
         }

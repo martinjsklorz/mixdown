@@ -65,7 +65,7 @@ public final class CoreAudioDeviceProvider: AudioDeviceProvider {
 private final class DeviceListWatcher: @unchecked Sendable {
     private let queue = DispatchQueue(label: "app.mixdown.audio.device-list")
     private let onChange: @Sendable ([AudioInputDevice]) -> Void
-    private var systemListener: HALPropertyListener?
+    private var systemListeners: [HALPropertyListener] = []
     private var deviceListeners: [AudioDeviceID: HALPropertyListener] = [:]
     private var lastDevices: [AudioInputDevice] = []
     private var isStopped = false
@@ -78,13 +78,17 @@ private final class DeviceListWatcher: @unchecked Sendable {
     func start() {
         queue.sync { [self] in
             lastDevices = CoreAudioDeviceProvider.currentDevices()
-            let listener = HALPropertyListener(
-                selectors: [kAudioHardwarePropertyDevices, kAudioHardwarePropertyDefaultInputDevice]
-            ) { [weak self] in
-                self?.scheduleRefresh()
-            }
-            listener.install()
-            systemListener = listener
+            systemListeners = [
+                HALPropertyListener(
+                    selectors: [kAudioHardwarePropertyDevices, kAudioHardwarePropertyDefaultInputDevice]
+                ) { [weak self] in
+                    self?.scheduleRefresh()
+                },
+                HALPropertyListener(selectors: [kAudioHardwarePropertyServiceRestarted]) { [weak self] in
+                    self?.scheduleRefresh(afterServiceRestart: true)
+                },
+            ]
+            systemListeners.forEach { $0.install() }
             watchDevices()
         }
     }
@@ -92,28 +96,37 @@ private final class DeviceListWatcher: @unchecked Sendable {
     func stop() {
         queue.async { [self] in
             isStopped = true
-            systemListener?.remove()
-            systemListener = nil
-            for listener in deviceListeners.values {
-                listener.remove(logsFailures: false)
-            }
-            deviceListeners = [:]
+            systemListeners.forEach { $0.remove() }
+            systemListeners = []
+            removeDeviceListeners()
         }
     }
 
     /// Listener blocks run on their own queues; the work happens on `queue`.
-    private func scheduleRefresh() {
-        queue.async { [weak self] in self?.refresh() }
+    /// - Parameter afterServiceRestart: The audio service restarted, so the devices' listeners
+    ///   are gone and their IDs may now belong to other devices.
+    private func scheduleRefresh(afterServiceRestart: Bool = false) {
+        queue.async { [weak self] in self?.refresh(afterServiceRestart: afterServiceRestart) }
     }
 
-    private func refresh() {
+    private func refresh(afterServiceRestart: Bool = false) {
         guard !isStopped else { return }
+        if afterServiceRestart {
+            removeDeviceListeners()
+        }
         watchDevices()
         let devices = CoreAudioDeviceProvider.currentDevices()
         // A single plug/unplug fires several notifications; only report real changes.
         guard devices != lastDevices else { return }
         lastDevices = devices
         onChange(devices)
+    }
+
+    private func removeDeviceListeners() {
+        for listener in deviceListeners.values {
+            listener.remove(logsFailures: false)
+        }
+        deviceListeners = [:]
     }
 
     /// Listens to every device the HAL knows, and stops listening to those that are gone.

@@ -34,6 +34,12 @@ final class MicrophoneCapture: AudioCapturing, @unchecked Sendable {
         resampler = try AudioResampler()
     }
 
+    deinit {
+        // Released without `stop()`: end the stream so its reader isn't left waiting. The device
+        // input stops itself when it's released along with `state`.
+        state.withLockUnchecked { $0.continuation }?.finish()
+    }
+
     func start() async throws -> AsyncThrowingStream<AudioChunk, any Error> {
         let (stream, continuation) = AsyncThrowingStream<AudioChunk, any Error>.makeStream()
         try state.withLockUnchecked { state in
@@ -50,9 +56,9 @@ final class MicrophoneCapture: AudioCapturing, @unchecked Sendable {
             try input.start(
                 uid: device.id,
                 on: sampleQueue,
-                onDisconnect: { [weak self, name = device.name] in
+                onFailure: { [weak self] error in
                     guard let self else { return }
-                    Task { await self.finish(throwing: AudioCaptureError.deviceNotFound(name)) }
+                    Task { await self.finish(throwing: error) }
                 },
                 ioBlock: { [weak self] bufferList, time, format in
                     self?.consume(bufferList, at: time, format: format)
@@ -145,18 +151,23 @@ final class MicrophoneCapture: AudioCapturing, @unchecked Sendable {
     }
 }
 
-/// An IO proc on one input device, plus a listener that keeps its format current and notices
-/// when the device goes away.
+/// An IO proc on one input device, plus listeners that keep its format current and notice when
+/// the device goes away or stops being an input, or the audio service restarts.
 ///
 /// `@unchecked Sendable`: `start` and `invalidate` are called one after another, never
 /// concurrently; `format` is behind a lock because the listener and IO queues both use it.
 private final class DeviceInput: @unchecked Sendable {
     typealias IOBlock = @Sendable (UnsafePointer<AudioBufferList>, AudioTimeStamp, AVAudioFormat) -> Void
+    typealias FailureHandler = @Sendable (AudioCaptureError) -> Void
+
+    /// How long a device may be without input streams before it counts as gone. A Bluetooth
+    /// headset can drop them for a moment while it switches profiles.
+    private static let lostInputGracePeriod: DispatchTimeInterval = .seconds(1)
 
     private let name: String
     private var deviceID = AudioObjectID(kAudioObjectUnknown)
     private var ioProcID: AudioDeviceIOProcID?
-    private var listener: HALPropertyListener?
+    private var listeners: [HALPropertyListener] = []
     /// The format of the device's first input stream, the one the IO block reads.
     private let format = OSAllocatedUnfairLock<AVAudioFormat?>(uncheckedState: nil)
 
@@ -164,10 +175,14 @@ private final class DeviceInput: @unchecked Sendable {
         self.name = name
     }
 
+    deinit { invalidate() }
+
+    /// - Parameter onFailure: Called, possibly more than once, when the device can't be recorded
+    ///   from anymore.
     func start(
         uid: String,
         on queue: DispatchQueue,
-        onDisconnect: @escaping @Sendable () -> Void,
+        onFailure: @escaping FailureHandler,
         ioBlock: @escaping IOBlock
     ) throws {
         guard let deviceID = try CoreAudioHAL.deviceID(forUID: uid) else {
@@ -180,23 +195,30 @@ private final class DeviceInput: @unchecked Sendable {
         }
         format.withLockUnchecked { $0 = initialFormat }
 
-        let listener = HALPropertyListener(
-            objectID: deviceID,
-            selectors: [
-                kAudioDevicePropertyDeviceIsAlive,
-                kAudioDevicePropertyNominalSampleRate,
-                kAudioDevicePropertyStreams,
-                kAudioDevicePropertyStreamConfiguration,
-            ],
-            scope: kAudioObjectPropertyScopeWildcard
-        ) { [weak self] in
-            self?.deviceChanged(deviceID, onDisconnect: onDisconnect)
-        }
-        listener.install()
-        self.listener = listener
+        listeners = [
+            HALPropertyListener(
+                objectID: deviceID,
+                selectors: [
+                    kAudioDevicePropertyDeviceIsAlive,
+                    kAudioDevicePropertyNominalSampleRate,
+                    kAudioDevicePropertyStreams,
+                    kAudioDevicePropertyStreamConfiguration,
+                ],
+                scope: kAudioObjectPropertyScopeWildcard
+            ) { [weak self] in
+                self?.deviceChanged(deviceID, onFailure: onFailure)
+            },
+            // The IO proc dies with the service, without a word from the device.
+            HALPropertyListener(selectors: [kAudioHardwarePropertyServiceRestarted]) {
+                onFailure(.audioServiceRestarted)
+            },
+        ]
+        listeners.forEach { $0.install() }
 
-        let block: AudioDeviceIOBlock = { [weak self] _, inputData, inputTime, _, _ in
-            guard let format = self?.format.withLockUnchecked({ $0 }) else { return }
+        // Holds the lock, not `self`, so `self` is never released on the IO queue.
+        let format = format
+        let block: AudioDeviceIOBlock = { _, inputData, inputTime, _, _ in
+            guard let format = format.withLockUnchecked({ $0 }) else { return }
             CoreAudioHAL.withFirstInputStream(inputData, matching: format) { ioBlock($0, inputTime.pointee, format) }
         }
         try CoreAudioHAL.check(
@@ -208,8 +230,8 @@ private final class DeviceInput: @unchecked Sendable {
 
     /// Stops IO and removes whatever `start` set up. Safe after a partial setup.
     func invalidate() {
-        listener?.remove()
-        listener = nil
+        listeners.forEach { $0.remove(logsFailures: false) }
+        listeners = []
         if deviceID != AudioObjectID(kAudioObjectUnknown), let ioProcID {
             logFailure(AudioDeviceStop(deviceID, ioProcID), "AudioDeviceStop")
             logFailure(AudioDeviceDestroyIOProcID(deviceID, ioProcID), "AudioDeviceDestroyIOProcID")
@@ -218,14 +240,24 @@ private final class DeviceInput: @unchecked Sendable {
         deviceID = AudioObjectID(kAudioObjectUnknown)
     }
 
-    /// A Bluetooth headset changes sample rate and streams when its microphone opens, and an
-    /// unplugged device stops being alive.
-    private func deviceChanged(_ deviceID: AudioDeviceID, onDisconnect: @escaping @Sendable () -> Void) {
+    /// A Bluetooth headset changes sample rate and streams when its microphone opens, an
+    /// unplugged device stops being alive, and a device can lose its input streams while staying
+    /// connected, which leaves the IO proc running without audio.
+    private func deviceChanged(_ deviceID: AudioDeviceID, onFailure: @escaping FailureHandler) {
         guard CoreAudioHAL.isAlive(deviceID) else {
-            onDisconnect()
+            onFailure(.deviceNotFound(name))
             return
         }
-        guard let newFormat = CoreAudioHAL.inputFormat(of: deviceID) else { return }
+        guard let newFormat = CoreAudioHAL.inputFormat(of: deviceID) else {
+            let deadline = DispatchTime.now() + Self.lostInputGracePeriod
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: deadline) { [weak self, name] in
+                // Once stopped, it's released, and the stream has ended anyway.
+                guard self != nil, CoreAudioHAL.inputFormat(of: deviceID) == nil else { return }
+                audioLogger.error("“\(name, privacy: .public)” has no input streams anymore")
+                onFailure(.deviceNotFound(name))
+            }
+            return
+        }
         let changed = format.withLockUnchecked { format -> Bool in
             guard format != newFormat else { return false }
             format = newFormat
