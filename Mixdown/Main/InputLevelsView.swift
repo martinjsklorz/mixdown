@@ -1,7 +1,7 @@
 import MixdownCore
 import SwiftUI
 
-/// The running recording's inputs as one waveform, the same as in the notch island, and a warning
+/// The running recording's inputs as one waveform, the same as in the Dynamic Island, and a warning
 /// for inputs that stay silent.
 ///
 /// Its own view so the levels, which change about ten times a second, only redraw the waveform

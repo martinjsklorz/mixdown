@@ -8,7 +8,7 @@ import SwiftUI
 /// macOS has no API for the notch, so this is an ordinary borderless panel above the menu bar,
 /// placed over the notch. On a screen without one, it hangs from the top center of the menu bar.
 @MainActor
-final class NotchIsland {
+final class DynamicIsland {
     enum Side: String, CaseIterable, Identifiable {
         case left
         case right
@@ -121,7 +121,7 @@ final class NotchIsland {
         guard let screen = Self.screen else { return }
         let notch = Self.notch(on: screen)
         let hostingView = NSHostingView(
-            rootView: NotchIslandView(
+            rootView: DynamicIslandView(
                 environment: environment,
                 notchWidth: notch.width,
                 layout: layout,
@@ -145,7 +145,7 @@ final class NotchIsland {
 
     /// The island's frame: the wings, each as wide as its content, either side of `notch`.
     private func frame(around notch: NSRect) -> NSRect {
-        let levelsWidth = layout.showsLevels ? NotchIslandView.levelsWingWidth : 0
+        let levelsWidth = layout.showsLevels ? DynamicIslandView.levelsWingWidth : 0
         let (left, right) =
             layout.timeSide == .left ? (timeWingWidth, levelsWidth) : (levelsWidth, timeWingWidth)
         let width = left + notch.width + right
@@ -186,7 +186,7 @@ final class NotchIsland {
 }
 
 /// A panel that floats over the menu bar on every Space, and never takes focus from the app in
-/// front. `NotchIsland` decides whether it also shows over full-screen apps.
+/// front. `DynamicIsland` decides whether it also shows over full-screen apps.
 private final class IslandPanel: NSPanel {
     convenience init() {
         self.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
