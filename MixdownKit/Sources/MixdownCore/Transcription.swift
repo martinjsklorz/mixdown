@@ -89,6 +89,23 @@ public protocol TranscriptionEngine: Sendable {
     /// next `prepare` downloads it again. Only called while nothing is preparing or transcribing.
     func deleteModel() async throws
 
+    /// Called as a recording starts. An engine that frees its model when idle should load it now
+    /// and keep it until the matching `recordingDidFinish()`, so stopping doesn't wait on a load.
+    /// Returns right away; any loading happens in the background.
+    func recordingWillStart()
+
+    /// Balances `recordingWillStart()` once the recording has been transcribed, discarded or failed.
+    func recordingDidFinish()
+
+    /// Called with `TranscriptionOptions.language` before the first `isDownloaded`, and whenever it
+    /// changes. For an engine with a model per language; `isDownloaded`, `prepare` and `deleteModel`
+    /// then refer to this language's.
+    func languageDidChange(to language: String?)
+
+    /// Brings `isDownloaded` up to date, for an engine that can only check asynchronously. Until it
+    /// has, such an engine reports `false`.
+    func refreshDownloadStatus() async
+
     /// Whether recordings are transcribed while they're recorded, by `makeLiveSession`, rather than
     /// afterwards by `transcribe`. Live engines get no audio kept, however long the recording.
     var transcribesLive: Bool { get }
@@ -148,6 +165,19 @@ public protocol LiveTranscriptionSession: Sendable {
     /// Transcribes whatever audio the session still holds once the input has ended. Called once,
     /// after the last `push`.
     func finish() async throws -> LiveTranscriptUpdate
+}
+
+extension TranscriptionEngine {
+    public func recordingWillStart() {}
+    public func recordingDidFinish() {}
+    public func languageDidChange(to language: String?) {}
+    public func refreshDownloadStatus() async {}
+
+    public var transcribesLive: Bool { false }
+
+    public func makeLiveSession(options: TranscriptionOptions) async throws -> any LiveTranscriptionSession {
+        throw TranscriptionError.failed("\(info.displayName) transcribes once the recording ends")
+    }
 }
 
 public enum TranscriptionError: LocalizedError, Sendable {

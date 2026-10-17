@@ -9,14 +9,16 @@ Everything happens on your Mac. Your audio never leaves it.
 
 ## Using Mixdown
 
-Mixdown's window has a sidebar with **Record** at the top and your recordings below it, in
-collapsible sections by day. The cog above the sidebar, next to the sidebar button, opens Settings.
+Mixdown's window has a sidebar with a search field and the **Record** button (●) at the top, and
+your recordings below it under **Today**, **Previous 7 Days** and then each month. The cog above the sidebar, next to the sidebar button, opens Settings.
 
 1. Open Mixdown. **Record** shows the big record button and what the next recording uses:
    microphone, system audio, speech model, language and notes folder.
-2. The first time, click **Choose Folder…** and pick where your notes go (see [Notes](#notes)),
-   then click **Download Model** and wait for it to finish (see [Speech models](#speech-models)).
-   Recording stays off until both are done.
+2. The first time, the setup assistant walks you through choosing where your notes go (see
+   [Notes](#notes)), downloading a speech model (see [Speech models](#speech-models)), picking
+   inputs, allowing the microphone and notifications, call detection, the global shortcut and
+   launching at login. **Help → Setup Assistant…** opens it again. If you skip it, click **Choose
+   Folder…** and **Download Model** on Record instead; recording stays off until both are done.
 3. Pick your inputs in the **Recording** menu (a microphone, **System Audio**, or both), or with
    **Change…** next to the setup summary.
 4. Click the red button (or press ⌘R) to record, and again to stop. From any other app, press
@@ -28,10 +30,13 @@ behind and labeled **Me** and **Others** when you record a call. That text is th
 Soon after you stop, the note appears under **Today** in the sidebar and opens, rendered much like
 Apple Notes. A **Note Ready** notification says so too, with **Open** to show the note in Mixdown
 and **Show in Finder** for its file, so you can stop from the menu bar and carry on elsewhere.
-Click a day to fold it away, and search the sidebar to find older recordings.
+Search the sidebar (⌘F) to find older recordings. Notes you file into
+subfolders of the notes folder are listed too, with their folder under the title; hidden folders
+like Obsidian's `.obsidian` and `.trash` are skipped.
 The buttons above a note, or right-clicking it in the sidebar, rename it, copy its transcript as
 plain text, share it, or move it to the Trash (⌘⌫, or Delete in the sidebar). Renaming changes
-both the title inside the note and its file name. The File and Edit menus have the same commands
+both the title inside the note and its file name. File names leave out characters that break
+Obsidian links: `[ ]` become `( )`, `|` becomes `-`, and `#` and `^` are dropped. The File and Edit menus have the same commands
 for the note that's open.
 Mixdown asks before moving a note to the Trash (tick **Do not ask again**, or turn it back on under
 **Settings → General**), then shows a notification with **Restore** to put the note back. Copying
@@ -50,7 +55,8 @@ audio, but without headphones your microphone may hear the start sound.
 opens Settings. The waveform icon in the menu bar can start and stop recording and pick inputs
 without the window, and has **Settings…** too. Recording carries on there if
 you close the window; **Open Mixdown** in that menu, **Window → Mixdown** (⌘0) or the Dock icon
-brings it back.
+brings it back. **Help → Mixdown Help** (⌘?) explains all of this inside the app, and the Help
+menu's search field finds its topics as well as menu commands.
 
 The first time, macOS asks for permission: **Microphone** to record your voice, or **System
 Audio Recording** to record what your Mac plays. If system audio comes out silent, check that
@@ -97,6 +103,8 @@ Two switches under **Settings → Recording → Calls** decide what happens:
   the same way, and stops when the call ends. With notifications on, **Recording Call** and **Call
   Recording Stopped** say so instead of asking, and if Mixdown can't record yet, it asks with
   **Record This Call?** after all. With notifications off, the menu bar icon is the only sign.
+  A recording you started yourself isn't stopped when a call ends; with notifications on, Mixdown
+  asks **Stop Recording?** instead.
 
 With both off, calls aren't watched. Turning off **Show notifications** under **Settings → Notifications**
 turns off the call notifications too, but not automatic recording.
@@ -108,14 +116,15 @@ Choose a model under **Settings → Transcription**, in one of two categories:
 - **Live** transcribes while you record, so the note is ready when you stop. The audio isn't kept,
   so an hours-long meeting takes no more memory than a short one.
 - **Offline** transcribes the whole recording once you stop. The audio is kept in memory until
-  then. It's more accurate, and MOSS can tell speakers apart.
+  then. Qwen3 and MOSS are more accurate than the live model, and MOSS can tell speakers apart.
 
 A model is downloaded once, from **Download
 Model** in the window, the Recording menu or Settings, and the time left shows next to the menu bar icon. After
 switching models, download the new one before recording. **Cancel Download** in the menu (or **Cancel** in Settings) stops
 it; files already fetched are kept, so the next download picks up where it left off.
-To free up disk space, select a model under **Settings → Transcription** and choose **Delete**;
-you'll need to download it again before recording with it.
+The model menu there marks downloaded models with a green check. To free up disk space, select
+a model and click the trash button next to the menu; you'll need to download it again before
+recording with it.
 
 | Category | Model | Size | Good for |
 | -------- | ----- | ---- | -------- |
@@ -123,6 +132,11 @@ you'll need to download it again before recording with it.
 | Offline · Low | Qwen3-ASR 0.6B | ~0.9 GB | Fast, everyday notes |
 | Offline · High | Qwen3-ASR 1.7B | ~2.3 GB | Better accuracy, on Macs with 24 GB+ memory |
 | Offline · Speakers | MOSS Transcribe Diarize 0.9B | ~1 GB | Meetings: labels who is speaking |
+| Offline | Apple Speech | Managed by macOS | Light on memory; kept up to date by macOS |
+
+Apple Speech is Apple's on-device model, the one Notes and Voice Memos use. macOS downloads it
+once per language, keeps it up to date and shares it with other apps, so it has no trash
+button. It doesn't detect the language: **Automatic** uses your Mac's language.
 
 With MOSS, speaker numbers start over every 10 minutes, so "Speaker 1" may be someone else
 later in a long recording. When recording a call, MOSS numbers the speakers within each input,
@@ -135,17 +149,32 @@ text on screen still shows it while you record.
 
 ## Summaries
 
-On macOS 26 or later with Apple Intelligence turned on, each note starts with a summary: a short
-overview, the key points and any action items, in the language of the recording. Apple
-Intelligence writes it on your Mac after the transcript is ready, so the note takes a little
-longer to appear. Nothing extra is downloaded, and the transcript doesn't leave your Mac. Long
-recordings are summarized in parts, which are then combined.
+With Apple Intelligence turned on, each note starts with a summary: a short overview, the key
+points and any action items, in the language of the recording. Apple Intelligence writes it on
+your Mac after the transcript is ready, so the note takes a little longer to appear. Nothing extra is downloaded, and the transcript doesn't leave your Mac. Long
+recordings are summarized in parts, which are then combined. Action items are saved as Markdown
+checkboxes (`- [ ]`), so you can tick them off in editors like Obsidian.
 
 The summary also names the note after its topic, e.g. "Release timeline". A call recorded from
 Mixdown's call notification, or automatically (see **Settings → Recording**), is titled as one in
 the language of the recording, e.g. "Call about Release timeline" or "Anruf zu Budgetplanung".
 Recordings started any other way aren't, even during a call. Without a summary, a note is titled
 with the date and time it was recorded.
+
+### Templates
+
+Under **Settings → Transcription**, pick a summary template for manual recordings and one for
+detected calls (recordings started from the call notification or automatically):
+
+- **General** (the default): overview, key points and action items, as above.
+- **1:1**, **Standup** and **Client Call**: always the same four sections, `### TL;DR`,
+  `### Decisions`, `### Action Items` (as `- [ ]` checkboxes) and `### Open Questions`, so every
+  note of a kind reads the same. A section with nothing in it says _None._ Each template tells
+  Apple Intelligence what to look out for, e.g. blockers in a standup or promises made to a
+  client.
+
+That template is preselected for each recording. To use another one for this recording only, pick
+it under **Record** while recording or transcribing, until the summary starts.
 
 Turn summaries off under **Settings → Transcription**, which also says why summaries aren't
 available on this Mac if they aren't. Without them, or if summarizing fails, the note is saved
@@ -189,7 +218,7 @@ The team went through the release timeline for the weekly sync.
 
 ### Action Items
 
-- Speaker 2 updates the release notes.
+- [ ] Speaker 2 updates the release notes.
 
 ## Transcript
 
@@ -212,7 +241,7 @@ speakers: ["Me", "Others"]
 
 ## Building from source
 
-You need a Mac with Apple Silicon running macOS 15 or later, Xcode, and
+You need a Mac with Apple Silicon running macOS 26 or later, Xcode, and
 [Homebrew](https://brew.sh).
 
 ```sh
@@ -224,9 +253,9 @@ make clean       # quit Mixdown, delete all build output and refresh the Dock ic
 
 To sign the app with your Apple developer account, set `DEVELOPMENT_TEAM` in `project.yml`.
 
-The speech engine sits behind one interface (`TranscriptionEngine`), and so does the summarizer
-(`Summarizer`), so either can be replaced by changing a single line in
-`Mixdown/App/AppEnvironment.swift`.
+The speech engines sit behind one interface (`TranscriptionEngine`), and so does the summarizer
+(`Summarizer`). Speech models from any engine are listed in `Mixdown/App/TranscriptionModel.swift`;
+the summarizer is chosen in `Mixdown/App/AppEnvironment.swift`.
 
 ## License
 

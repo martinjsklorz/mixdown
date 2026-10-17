@@ -1,6 +1,7 @@
 import Foundation
 import MixdownNotes
 import Observation
+import SwiftUI
 
 /// The notes listed in the main window's sidebar, read from the notes folder off the main thread.
 @MainActor @Observable
@@ -9,33 +10,58 @@ final class NoteLibraryModel {
     private(set) var errorMessage: String?
     private(set) var hasLoaded = false
 
-    /// Bumped per reload so a slow, older reload can't overwrite a newer result.
-    @ObservationIgnored private var generation = 0
+    /// The notes read last time, so a reload only reads the files that changed.
+    @ObservationIgnored private var cache = NoteLibrary.Cache()
+    /// The folder the latest `reload(from:)` asked for.
+    @ObservationIgnored private var directory: URL?
+    /// Counts calls to `reload(from:)`, and the call the shown `notes` are as new as.
+    @ObservationIgnored private var requested = 0
+    @ObservationIgnored private var loaded = 0
+    /// Reads the folder until `notes` catch up with `requested`. Only one runs at a time.
+    @ObservationIgnored private var loading: Task<Void, Never>?
 
+    /// Reads the folder again and returns once `notes` show it as it was at the time of the call
+    /// or later, so a note written just before can be selected. Calls made while a read is
+    /// running share one more read after it.
+    ///
     /// Without a `directory` (no notes folder, or it can't be reached) the list is empty.
     func reload(from directory: URL?) async {
-        generation += 1
-        let current = generation
-        guard let directory else {
-            notes = []
-            errorMessage = nil
-            hasLoaded = true
-            return
-        }
-        let result = await Task.detached(priority: .userInitiated) {
-            Result { try NoteLibrary.loadNotes(in: directory) }
-        }.value
-        guard current == generation else { return }
+        self.directory = directory
+        requested += 1
+        let task = loading ?? Task { await loadUntilCurrent() }
+        loading = task
+        await task.value
+    }
 
-        switch result {
-        case .success(let notes):
-            self.notes = notes
-            errorMessage = nil
-        case .failure(let error):
-            notes = []
-            errorMessage = error.localizedDescription
+    private func loadUntilCurrent() async {
+        while loaded < requested {
+            let target = requested
+            let directory = self.directory
+            let cache = self.cache
+            let (result, newCache) = await Task.detached(priority: .userInitiated) {
+                var cache = cache
+                guard let directory else { return (Result<[NoteDocument], any Error>.success([]), cache) }
+                return (Result { try NoteLibrary.loadNotes(in: directory, cache: &cache) }, cache)
+            }.value
+            self.cache = newCache
+            // Asked again meanwhile: the next pass shows the newer state, without briefly
+            // showing this one (e.g. a note just moved to the Trash).
+            guard requested == target else { continue }
+
+            switch result {
+            case .success(let notes):
+                // Notes written or removed since slide in and out of the sidebar; the first
+                // load just appears.
+                withAnimation(hasLoaded ? .snappy : nil) { self.notes = notes }
+                errorMessage = nil
+            case .failure(let error):
+                notes = []
+                errorMessage = error.localizedDescription
+            }
+            hasLoaded = true
+            loaded = target
         }
-        hasLoaded = true
+        loading = nil
     }
 
     /// Renames the note and its file, off the main thread. Returns the note's new URL.
@@ -48,6 +74,6 @@ final class NoteLibraryModel {
 
     /// Drops a note that was moved away from `notes` right away, ahead of the next reload.
     func didRemove(_ note: NoteDocument) {
-        notes.removeAll { $0.id == note.id }
+        withAnimation(.snappy) { notes.removeAll { $0.id == note.id } }
     }
 }

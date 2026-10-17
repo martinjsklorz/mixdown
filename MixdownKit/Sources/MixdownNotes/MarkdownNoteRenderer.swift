@@ -11,7 +11,7 @@ public enum MarkdownNoteRenderer {
 
     public static func render(_ note: Note) -> String {
         let title = singleLine(note.title)
-        let blocks = [frontmatter(for: note), "# \(title.isEmpty ? "Untitled" : escapedMarkdown(title))"]
+        let blocks = [frontmatter(for: note), "# \(title.isEmpty ? "Untitled" : headingText(title))"]
             + bodySections(for: note)
         return blocks.joined(separator: "\n\n") + "\n"
     }
@@ -31,6 +31,7 @@ public enum MarkdownNoteRenderer {
             lines.append("source_kinds: [\(note.sources.map(\.kind.rawValue).joined(separator: ", "))]")
         }
         lines.append("engine: \(yamlQuoted(note.engine.displayName))")
+        lines.append("trigger: \(note.trigger.rawValue)")
         if let language = note.transcript.language, !language.isEmpty {
             // Quoted so codes like `no` (Norwegian) aren't read as YAML booleans.
             lines.append("language: \(yamlQuoted(language))")
@@ -58,16 +59,36 @@ public enum MarkdownNoteRenderer {
         "## \(heading)\n\n\(body)"
     }
 
-    /// The overview, then `###` lists of key points and action items. Empty parts are left out;
-    /// `nil` if that's all of them.
+    /// Shown under a fixed summary section the summary has nothing for.
+    public static let emptySectionPlaceholder = "_None._"
+
+    /// Templates with fixed sections get `###` TL;DR, Decisions, Action Items and Open Questions,
+    /// each shown even when empty, so every note of a kind reads the same. The `general` template
+    /// gets the overview, then `###` lists of key points and action items, leaving out empty parts.
+    /// Action items are `- [ ]` task items to tick off. `nil` if the summary has nothing to show.
     static func summaryBody(_ summary: NoteSummary) -> String? {
-        var blocks: [String] = []
         let overview = escapedMarkdown(singleLine(summary.overview))
-        if !overview.isEmpty { blocks.append(overview) }
-        for (heading, items) in [("Key Points", summary.keyPoints), ("Action Items", summary.actionItems)] {
-            let list = items.map { escapedMarkdown(singleLine($0)) }.filter { !$0.isEmpty }.map { "- \($0)" }
-            if !list.isEmpty {
-                blocks.append("### \(heading)\n\n" + list.joined(separator: "\n"))
+        let list = { (marker: String, items: [String]) -> String in
+            items.map { escapedMarkdown(singleLine($0)) }.filter { !$0.isEmpty }.map { marker + $0 }
+                .joined(separator: "\n")
+        }
+        var blocks: [String] = []
+        if summary.template.hasFixedSections {
+            let sections = [
+                ("TL;DR", overview), ("Decisions", list("- ", summary.decisions)),
+                ("Action Items", list("- [ ] ", summary.actionItems)),
+                ("Open Questions", list("- ", summary.openQuestions)),
+            ]
+            guard sections.contains(where: { !$0.1.isEmpty }) else { return nil }
+            for (heading, body) in sections {
+                blocks.append("### \(heading)\n\n" + (body.isEmpty ? emptySectionPlaceholder : body))
+            }
+        } else {
+            if !overview.isEmpty { blocks.append(overview) }
+            for (heading, body) in [
+                ("Key Points", list("- ", summary.keyPoints)), ("Action Items", list("- [ ] ", summary.actionItems)),
+            ] where !body.isEmpty {
+                blocks.append("### \(heading)\n\n" + body)
             }
         }
         return blocks.isEmpty ? nil : blocks.joined(separator: "\n\n")
@@ -137,6 +158,15 @@ public enum MarkdownNoteRenderer {
             escaped.append(character)
         }
         return escaped
+    }
+
+    /// `escapedMarkdown(_:)` for the text of a `#` heading, also escaping trailing `#`s that
+    /// would otherwise close the heading and be dropped.
+    static func headingText(_ text: String) -> String {
+        let escaped = escapedMarkdown(text)
+        guard let closing = escaped.range(of: #"(^|\s)#+$"#, options: .regularExpression) else { return escaped }
+        let marks = escaped[closing].firstIndex(of: "#")!
+        return String(escaped[..<marks]) + "\\" + escaped[marks...]
     }
 
     /// Collapses line breaks so multi-line text stays a single Markdown line or paragraph.

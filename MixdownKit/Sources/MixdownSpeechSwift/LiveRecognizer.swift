@@ -54,8 +54,6 @@ final class LiveRecognizer: @unchecked Sendable {
 /// `SpeechSwiftEngine` actor, which runs every model call.
 final class LiveSessionState: @unchecked Sendable {
     private let session: NemotronMLXStreamingSession
-    /// Whether the engine still counts the session as keeping the models in use.
-    var isOpen = true
     private var reportedWordCount = 0
     private var lastReportedWord: String?
 

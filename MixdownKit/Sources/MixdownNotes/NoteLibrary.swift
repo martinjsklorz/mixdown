@@ -4,47 +4,132 @@ import Foundation
 public enum NoteLibrary {
     static let fileExtensions: Set<String> = ["md", "markdown"]
 
-    /// Every Markdown file directly inside `directory`, newest first. Hidden files and
-    /// subfolders are skipped, and a folder that doesn't exist yet has no notes.
+    /// Every Markdown file in `directory` and its subfolders, newest first. Hidden files and
+    /// folders (like Obsidian's `.obsidian` and `.trash`) and packages are skipped, and a folder
+    /// that doesn't exist yet has no notes.
     public static func loadNotes(in directory: URL) throws -> [NoteDocument] {
-        let fileManager = FileManager.default
-        guard fileManager.fileExists(atPath: directory.path(percentEncoded: false)) else { return [] }
+        var cache = Cache()
+        return try loadNotes(in: directory, cache: &cache)
+    }
 
-        let keys: Set<URLResourceKey> = [.isRegularFileKey, .creationDateKey, .contentModificationDateKey]
-        let urls = try fileManager.contentsOfDirectory(
-            at: directory,
-            includingPropertiesForKeys: Array(keys),
-            options: [.skipsHiddenFiles]
-        )
-        let notes = urls.compactMap { url -> NoteDocument? in
-            guard fileExtensions.contains(url.pathExtension.lowercased()),
-                let values = try? url.resourceValues(forKeys: keys),
-                values.isRegularFile == true,
-                let data = try? Data(contentsOf: url)
-            else { return nil }
-            return NoteDocument(
-                url: url,
-                contents: String(decoding: data, as: UTF8.self),
-                fileDate: values.creationDate ?? values.contentModificationDate ?? .distantPast
-            )
+    /// Like `loadNotes(in:)`, but only reads the files that are new or changed since `cache` last
+    /// saw them, and updates `cache`.
+    public static func loadNotes(in directory: URL, cache: inout Cache) throws -> [NoteDocument] {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: directory.path(percentEncoded: false)) else {
+            cache = Cache()
+            return []
         }
+
+        let keys: Set<URLResourceKey> = [
+            .isRegularFileKey, .isDirectoryKey, .isPackageKey, .creationDateKey, .contentModificationDateKey,
+            .fileSizeKey,
+        ]
+        var entries: [URL: Cache.Entry] = [:]
+        // Folders still to read, with their paths relative to `directory`.
+        var folders: [(url: URL, path: String?)] = [(directory, nil)]
+        while let folder = folders.popLast() {
+            let urls: [URL]
+            do {
+                urls = try fileManager.contentsOfDirectory(
+                    at: folder.url,
+                    includingPropertiesForKeys: Array(keys),
+                    options: [.skipsHiddenFiles]
+                )
+            } catch {
+                // Only the notes folder itself has to be readable.
+                if folder.path == nil { throw error }
+                continue
+            }
+            for url in urls {
+                guard let values = try? url.resourceValues(forKeys: keys) else { continue }
+                // Symbolic links aren't followed, so a link to a parent folder can't loop.
+                if values.isDirectory == true, values.isPackage != true {
+                    let name = url.lastPathComponent
+                    folders.append((url, folder.path.map { "\($0)/\(name)" } ?? name))
+                    continue
+                }
+                guard isNote(url), values.isRegularFile == true else { continue }
+                let stamp = Cache.Stamp(values)
+                if let entry = cache.entries[url], entry.stamp == stamp {
+                    entries[url] = entry
+                    continue
+                }
+                guard let data = try? Data(contentsOf: url) else { continue }
+                var note = NoteDocument(
+                    url: url,
+                    contents: String(decoding: data, as: UTF8.self),
+                    fileDate: values.creationDate ?? values.contentModificationDate ?? .distantPast
+                )
+                note.folder = folder.path
+                entries[url] = Cache.Entry(stamp: stamp, note: note)
+            }
+        }
+        cache.entries = entries
+
         // The file name breaks ties so the order is stable between reloads.
-        return notes.sorted {
+        return entries.values.map(\.note).sorted {
             ($0.createdAt, $0.url.lastPathComponent) > ($1.createdAt, $1.url.lastPathComponent)
         }
+    }
+
+    /// The notes `loadNotes(in:cache:)` read last time, by file, so it can skip the ones whose
+    /// files haven't changed.
+    public struct Cache: Sendable {
+        /// What tells a changed file apart: a note is read again if either differs.
+        struct Stamp: Equatable, Sendable {
+            var modificationDate: Date?
+            var size: Int?
+
+            init(_ values: URLResourceValues) {
+                modificationDate = values.contentModificationDate
+                size = values.fileSize
+            }
+        }
+
+        struct Entry: Sendable {
+            var stamp: Stamp
+            var note: NoteDocument
+        }
+
+        var entries: [URL: Entry] = [:]
+
+        public init() {}
+    }
+
+    /// Whether the file at `url` would be listed as a note, judged by its name alone: a Markdown
+    /// file that isn't hidden. Lets a folder watcher skip changes to `.DS_Store` and editors'
+    /// temporary files.
+    public static func isNote(_ url: URL) -> Bool {
+        !url.lastPathComponent.hasPrefix(".") && fileExtensions.contains(url.pathExtension.lowercased())
+    }
+
+    /// Whether a change to the item at `url` can change the notes listed for `directory`: it's a
+    /// note or a folder (renaming or removing one moves every note in it), and neither it nor a
+    /// folder it's in is hidden. Judged by the path alone, for a folder watcher.
+    public static func affectsNotes(_ url: URL, isDirectory: Bool, in directory: URL) -> Bool {
+        let components = url.standardizedFileURL.pathComponents
+        let root = directory.standardizedFileURL.pathComponents
+        // A path outside `directory` (one spelled differently, say) is judged by its name only.
+        let relative = components.starts(with: root) ? components.dropFirst(root.count) : components.suffix(1)
+        if relative.contains(where: { $0.hasPrefix(".") }) { return false }
+        return isDirectory || isNote(url)
     }
 
     /// Changes the title of the note at `url` and renames its file to match. Returns the new URL.
     ///
     /// See `NoteDocument.retitled(_:url:to:)` for how the contents change. The file keeps its
     /// `yyyy-MM-dd HHmm ` prefix and extension, and gets ` 2`, ` 3`, … if the new name is taken.
-    /// A blank title becomes "Untitled".
+    /// Runs of whitespace in the title become one space, and a blank title becomes "Untitled".
+    /// A note that isn't valid UTF-8 is left alone: writing it back would garble it.
     public static func rename(noteAt url: URL, to title: String) throws -> URL {
         let fileManager = FileManager.default
-        var title = MarkdownNoteRenderer.singleLine(title)
+        var title = title.split(whereSeparator: \.isWhitespace).joined(separator: " ")
         if title.isEmpty { title = "Untitled" }
 
-        let contents = String(decoding: try Data(contentsOf: url), as: UTF8.self)
+        guard let contents = String(data: try Data(contentsOf: url), encoding: .utf8) else {
+            throw CocoaError(.fileReadInapplicableStringEncoding, userInfo: [NSURLErrorKey: url])
+        }
         let temporaryURL = url.deletingLastPathComponent().appending(
             path: ".\(UUID().uuidString).mixdown-tmp",
             directoryHint: .notDirectory

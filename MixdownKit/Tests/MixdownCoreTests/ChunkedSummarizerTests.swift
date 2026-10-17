@@ -172,4 +172,21 @@ struct ChunkedSummarizerTests {
         #expect(NoteSummary(title: " ", overview: "\n", keyPoints: [" "], actionItems: [""]).isEmpty)
         #expect(!NoteSummary(title: "Release").isEmpty)
     }
+
+    @Test func plainTextIncludesFixedSections() {
+        let summary = NoteSummary(
+            template: .standup,
+            overview: "Status.",
+            decisions: ["Ship Friday"],
+            actionItems: ["Anna fixes the build"],
+            openQuestions: ["Who reviews?"]
+        )
+        #expect(
+            summary.plainText
+                == "Status.\n\nDecisions:\n- Ship Friday\n\nAction items:\n- Anna fixes the build"
+                + "\n\nOpen questions:\n- Who reviews?"
+        )
+        #expect(!NoteSummary(template: .oneOnOne, openQuestions: ["Why?"]).isEmpty)
+        #expect(NoteSummary(template: .oneOnOne, decisions: [" "], openQuestions: [""]).isEmpty)
+    }
 }

@@ -7,9 +7,15 @@ struct MixdownApp: App {
     @State private var navigation: MainNavigation
 
     init() {
+        let settings = AppSettings()
         let navigation = MainNavigation()
+        // Written down, so choosing a folder in the assistant and quitting doesn't count as having
+        // set up before the assistant existed.
+        let needsSetup = settings.needsSetup
+        settings.needsSetup = needsSetup
+        navigation.isShowingSetup = needsSetup
         _navigation = State(initialValue: navigation)
-        _environment = State(initialValue: AppEnvironment(navigation: navigation))
+        _environment = State(initialValue: AppEnvironment(navigation: navigation, settings: settings))
     }
 
     var body: some Scene {
@@ -41,6 +47,16 @@ struct MixdownApp: App {
             MenuBarLabel(environment: environment)
         }
         .menuBarExtraStyle(.menu)
+
+        Window("Mixdown Help", id: HelpView.windowID) {
+            HelpView()
+                .environment(navigation)
+        }
+        .defaultSize(width: 820, height: 600)
+        .defaultLaunchBehavior(.suppressed)
+        .restorationBehavior(.disabled)
+        // Opened from the Help menu, so it isn't listed in the Window menu too.
+        .commandsRemoved()
 
         Settings {
             SettingsView()

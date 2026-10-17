@@ -59,14 +59,24 @@ public struct MarkdownNoteWriter: NoteWriting {
         return "\(formatter.string(from: note.createdAt)) \(sanitizedTitle(note.title))"
     }
 
-    /// Replaces path separators and `:` with `-`, turns control characters into spaces,
-    /// collapses whitespace and caps the length in characters and bytes.
+    /// Replaces path separators, `:` and `|` with `-` and square brackets with parentheses, drops
+    /// `#` and `^`, turns control characters into spaces, collapses whitespace, drops leading
+    /// dots, which would hide the file, and caps the length in characters and bytes.
+    ///
+    /// `# ^ [ ] |` are allowed in file names but break `[[wiki links]]` to the note in Obsidian,
+    /// which won't create a file with them either.
     static func sanitizedTitle(_ title: String) -> String {
         var scalars = String.UnicodeScalarView()
         for scalar in title.unicodeScalars {
             switch scalar {
-            case "/", ":", "\\":
+            case "/", ":", "\\", "|":
                 scalars.append("-")
+            case "[":
+                scalars.append("(")
+            case "]":
+                scalars.append(")")
+            case "#", "^":
+                break
             default:
                 scalars.append(scalar.properties.generalCategory == .control ? " " : scalar)
             }
@@ -74,6 +84,7 @@ public struct MarkdownNoteWriter: NoteWriting {
         var result = String(scalars)
             .split(whereSeparator: \.isWhitespace)
             .joined(separator: " ")
+        result = String(result.drop { $0 == "." || $0.isWhitespace })
         if result.count > maxTitleLength {
             result = String(result.prefix(maxTitleLength))
         }

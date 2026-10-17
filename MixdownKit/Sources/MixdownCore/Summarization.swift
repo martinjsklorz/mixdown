@@ -1,34 +1,73 @@
 import Foundation
 
+/// The shape of a summary, chosen per kind of recording.
+public enum SummaryTemplate: String, Sendable, Codable, CaseIterable, Identifiable {
+    /// An overview, key points and action items, for any recording.
+    case general
+    case oneOnOne
+    case standup
+    case clientCall
+
+    public var id: Self { self }
+
+    public var displayName: String {
+        switch self {
+        case .general: "General"
+        case .oneOnOne: "1:1"
+        case .standup: "Standup"
+        case .clientCall: "Client Call"
+        }
+    }
+
+    /// Whether summaries have the fixed sections TL;DR, Decisions, Action Items and Open
+    /// Questions, instead of an overview and key points. All but `general` do; they differ in what
+    /// the summarizer looks out for.
+    public var hasFixedSections: Bool { self != .general }
+}
+
 /// What a summarizer makes of a transcript. Any part may be empty.
 public struct NoteSummary: Sendable, Codable, Equatable {
+    /// The template the summary was made with, which decides its sections.
+    public var template: SummaryTemplate
     /// The topic in a few words, to name the note after.
     public var title: String
-    /// A few sentences on what the recording was about.
+    /// A few sentences on what the recording was about; the TL;DR of templates with fixed
+    /// sections.
     public var overview: String
+    /// Only made with the `general` template.
     public var keyPoints: [String]
+    /// Only made with templates with fixed sections.
+    public var decisions: [String]
     /// Tasks someone agreed to do, naming the person where the transcript does.
     public var actionItems: [String]
+    /// Questions left unanswered. Only made with templates with fixed sections.
+    public var openQuestions: [String]
     /// ISO 639-1 code of the language the summary is written in, if known.
     public var language: String?
 
     public init(
+        template: SummaryTemplate = .general,
         title: String = "",
         overview: String = "",
         keyPoints: [String] = [],
+        decisions: [String] = [],
         actionItems: [String] = [],
+        openQuestions: [String] = [],
         language: String? = nil
     ) {
+        self.template = template
         self.title = title
         self.overview = overview
         self.keyPoints = keyPoints
+        self.decisions = decisions
         self.actionItems = actionItems
+        self.openQuestions = openQuestions
         self.language = language
     }
 
     public var isEmpty: Bool {
-        Self.isBlank(title) && Self.isBlank(overview) && keyPoints.allSatisfy(Self.isBlank)
-            && actionItems.allSatisfy(Self.isBlank)
+        Self.isBlank(title) && Self.isBlank(overview)
+            && [keyPoints, decisions, actionItems, openQuestions].allSatisfy { $0.allSatisfy(Self.isBlank) }
     }
 
     /// The summary as plain text, for handing it back to a model. Leaves out the title, which the
@@ -38,7 +77,11 @@ public struct NoteSummary: Sendable, Codable, Equatable {
         if !Self.isBlank(overview) {
             blocks.append(overview.trimmingCharacters(in: .whitespacesAndNewlines))
         }
-        for (heading, items) in [("Key points", keyPoints), ("Action items", actionItems)] {
+        let lists = [
+            ("Key points", keyPoints), ("Decisions", decisions), ("Action items", actionItems),
+            ("Open questions", openQuestions),
+        ]
+        for (heading, items) in lists {
             let lines = items.filter { !Self.isBlank($0) }.map {
                 "- \($0.trimmingCharacters(in: .whitespacesAndNewlines))"
             }
@@ -85,8 +128,9 @@ public protocol Summarizer: Sendable {
     /// turns a system feature on. Read on the main actor; keep it cheap.
     var availability: SummarizerAvailability { get }
 
-    /// Summarizes a transcript, which isn't empty. Honors task cancellation.
-    func summarize(_ transcript: Transcript) async throws -> NoteSummary
+    /// Summarizes a transcript, which isn't empty, in the shape of `template`. Honors task
+    /// cancellation.
+    func summarize(_ transcript: Transcript, template: SummaryTemplate) async throws -> NoteSummary
 }
 
 public enum SummarizationError: LocalizedError, Sendable, Equatable {

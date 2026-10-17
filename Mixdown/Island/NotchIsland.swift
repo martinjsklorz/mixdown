@@ -2,7 +2,8 @@ import AppKit
 import SwiftUI
 
 /// A Dynamic Island for the Mac: a black panel that grows out of the camera notch while recording,
-/// with the time on its left and the input levels on its right.
+/// with the time on one side and the input levels on the other, each only as wide as it needs to be
+/// so it hides as little of the menu bar as it can.
 ///
 /// macOS has no API for the notch, so this is an ordinary borderless panel above the menu bar,
 /// placed over the notch. On a screen without one, it hangs from the top center of the menu bar.
@@ -30,12 +31,25 @@ final class NotchIsland {
         var showsLevels = true
     }
 
+    /// Whether the wings are out. They grow out of the notch on `show(_:)` and back into it on
+    /// `hide()`, while the panel keeps its full size.
+    @MainActor @Observable
+    final class Presence {
+        var isExpanded = false
+    }
+
+    private static let expandAnimation = Animation.smooth(duration: 0.35)
+    private static let collapseAnimation = Animation.smooth(duration: 0.3)
+
     private let environment: AppEnvironment
     private let openRecorder: () -> Void
     /// Created on first `show()`, as windows shouldn't be made before the app has launched.
     private var panel: IslandPanel?
     private(set) var isShown = false
     private var layout = Layout()
+    private let presence = Presence()
+    /// The time's wing as wide as the view last measured it, which grows with the time.
+    private var timeWingWidth: CGFloat = 56
 
     init(environment: AppEnvironment, openRecorder: @escaping () -> Void) {
         self.environment = environment
@@ -52,26 +66,30 @@ final class NotchIsland {
         }
         isShown = true
         let panel = panel ?? makePanel()
-        place(panel)
-        panel.alphaValue = 0
+        // Still on screen if shown again while collapsing, where the wings grow back out from there.
+        if !panel.isVisible || layoutChanged { place(panel) }
         panel.orderFrontRegardless()
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.2
-            panel.animator().alphaValue = 1
+        // On the next turn of the run loop, after the view has been drawn collapsed.
+        Task { @MainActor [weak self] in
+            // Hidden again in the meantime.
+            guard let self, self.isShown else { return }
+            withAnimation(Self.expandAnimation) { self.presence.isExpanded = true }
         }
     }
 
     func hide() {
         guard isShown, let panel else { return }
         isShown = false
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.2
-            panel.animator().alphaValue = 0
-        } completionHandler: {
+        withAnimation(Self.collapseAnimation) {
+            presence.isExpanded = false
+        } completion: {
             Task { @MainActor [weak self] in
-                // Shown again while fading out.
-                guard let self, !self.isShown else { return }
-                self.panel?.orderOut(nil)
+                // Shown again while collapsing.
+                guard let self, !self.isShown, let panel = self.panel else { return }
+                panel.orderOut(nil)
+                // Ends the view's clock and level sampling, which an ordered-out window keeps
+                // running. `place(_:)` makes a new view on the next `show(_:)`.
+                panel.contentView = nil
             }
         }
     }
@@ -86,43 +104,62 @@ final class NotchIsland {
             queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, let panel = self.panel else { return }
+                guard let self, self.isShown, let panel = self.panel else { return }
                 self.place(panel)
             }
         }
         return panel
     }
 
-    /// Sizes `panel` around the notch of the screen that has one, else the main screen, and gives it
-    /// a view laid out for that notch and `layout`.
+    /// The screen that has a notch, else the main screen.
+    private static var screen: NSScreen? {
+        NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.screens.first
+    }
+
+    /// Gives `panel` a view laid out for the notch and `layout`, and sizes it around the notch.
     private func place(_ panel: IslandPanel) {
-        guard let screen = NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.screens.first
-        else { return }
+        guard let screen = Self.screen else { return }
         let notch = Self.notch(on: screen)
-        let wing = NotchIslandView.wingWidth
-        let width = notch.width + (layout.showsLevels ? 2 : 1) * wing
-        let x =
-            if notch.width == 0 {
-                // No notch to grow out of: centered.
-                notch.midX - width / 2
-            } else if layout.showsLevels || layout.timeSide == .left {
-                notch.minX - wing
-            } else {
-                notch.minX
-            }
-        let frame = NSRect(x: x, y: notch.minY, width: width, height: notch.height)
         let hostingView = NSHostingView(
             rootView: NotchIslandView(
                 environment: environment,
                 notchWidth: notch.width,
                 layout: layout,
-                openRecorder: openRecorder
+                presence: presence,
+                openRecorder: openRecorder,
+                timeWingWidthChanged: { [weak self] width in self?.timeWingWidthChanged(width) }
             )
         )
         // The panel is sized here, not by the view.
         hostingView.sizingOptions = []
         panel.contentView = hostingView
-        panel.setFrame(frame, display: true)
+        // Over full-screen apps only beside a notch, where they leave the menu bar black. Without
+        // one, the island would cover the app.
+        if notch.width > 0 {
+            panel.collectionBehavior.insert(.fullScreenAuxiliary)
+        } else {
+            panel.collectionBehavior.remove(.fullScreenAuxiliary)
+        }
+        panel.setFrame(frame(around: notch), display: true)
+    }
+
+    /// The island's frame: the wings, each as wide as its content, either side of `notch`.
+    private func frame(around notch: NSRect) -> NSRect {
+        let levelsWidth = layout.showsLevels ? NotchIslandView.levelsWingWidth : 0
+        let (left, right) =
+            layout.timeSide == .left ? (timeWingWidth, levelsWidth) : (levelsWidth, timeWingWidth)
+        let width = left + notch.width + right
+        // Without a notch to grow out of: centered.
+        let x = notch.width == 0 ? notch.midX - width / 2 : notch.minX - left
+        return NSRect(x: x, y: notch.minY, width: width, height: notch.height)
+    }
+
+    /// Widens or narrows the island as the time gets longer, such as from "9:59" to "10:00".
+    private func timeWingWidthChanged(_ width: CGFloat) {
+        guard abs(width - timeWingWidth) >= 0.5 else { return }
+        timeWingWidth = width
+        guard isShown, let panel, let screen = Self.screen else { return }
+        panel.setFrame(frame(around: Self.notch(on: screen)), display: true)
     }
 
     /// The notch in screen coordinates. On a screen without one, a zero-width rectangle at the top
@@ -148,8 +185,8 @@ final class NotchIsland {
     }
 }
 
-/// A panel that floats over the menu bar on every Space, including full-screen apps, and never
-/// takes focus from the app in front.
+/// A panel that floats over the menu bar on every Space, and never takes focus from the app in
+/// front. `NotchIsland` decides whether it also shows over full-screen apps.
 private final class IslandPanel: NSPanel {
     convenience init() {
         self.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
@@ -163,7 +200,7 @@ private final class IslandPanel: NSPanel {
         isMovable = false
         isExcludedFromWindowsMenu = true
         isReleasedWhenClosed = false
-        collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
+        collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
     }
 
     override var canBecomeKey: Bool { false }

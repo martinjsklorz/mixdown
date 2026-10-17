@@ -3,12 +3,15 @@ import PackageDescription
 
 let package = Package(
     name: "MixdownKit",
-    // macOS 15 is speech-swift's minimum (its CoreML pipelines use MLState).
-    platforms: [.macOS(.v15)],
+    // macOS 26 for Apple's speech model (`SpeechAnalyzer`) and Foundation Models, so neither needs
+    // availability checks; only their macOS 27 additions do. A string, as this tools version has no
+    // `.v26`.
+    platforms: [.macOS("26.0")],
     products: [
         .library(name: "MixdownCore", targets: ["MixdownCore"]),
         .library(name: "MixdownAudio", targets: ["MixdownAudio"]),
         .library(name: "MixdownSpeechSwift", targets: ["MixdownSpeechSwift"]),
+        .library(name: "MixdownAppleSpeech", targets: ["MixdownAppleSpeech"]),
         .library(name: "MixdownFoundationModels", targets: ["MixdownFoundationModels"]),
         .library(name: "MixdownNotes", targets: ["MixdownNotes"]),
     ],
@@ -43,15 +46,13 @@ let package = Package(
             ]
         ),
 
+        // Speech framework (`SpeechAnalyzer`) implementation of `TranscriptionEngine`: Apple's
+        // on-device speech model, which macOS downloads and keeps up to date.
+        .target(name: "MixdownAppleSpeech", dependencies: ["MixdownCore"]),
+
         // Foundation Models (Apple Intelligence) implementation of `Summarizer`. The only module
         // that knows about FoundationModels, so summaries can come from elsewhere too.
-        .target(
-            name: "MixdownFoundationModels",
-            dependencies: ["MixdownCore"],
-            // FoundationModels ships with macOS 26. Weak linking lets the app still launch on
-            // macOS 15, where the summarizer reports itself unavailable instead.
-            linkerSettings: [.unsafeFlags(["-Xlinker", "-weak_framework", "-Xlinker", "FoundationModels"])]
-        ),
+        .target(name: "MixdownFoundationModels", dependencies: ["MixdownCore"]),
 
         // Markdown rendering and persistence of notes.
         .target(name: "MixdownNotes", dependencies: ["MixdownCore"]),

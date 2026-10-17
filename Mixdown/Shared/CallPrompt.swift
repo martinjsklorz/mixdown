@@ -15,10 +15,13 @@ import os
 ///   pointer is over the banner.
 /// - Recording automatically: Starts and stops recording by itself, and, if notifying, posts a
 ///   notification saying so. If it can't record, e.g. as the model isn't downloaded, it asks
-///   instead (if notifying), and clicking that opens Record, which says why.
+///   instead (if notifying), and clicking that opens Record, which says why. It only stops
+///   recordings started for a call: one started by hand goes on, and it asks instead (if
+///   notifying), as a call app may just have used the microphone briefly.
 ///
 /// A recording it starts, from a notification or automatically, is marked as a call, so its note
-/// is titled as one. Recordings started any other way aren't, even during a call.
+/// is titled as one. Recordings started any other way aren't, even during a call. Only automatic
+/// ones are marked as started automatically: clicking a notification is the user's choice.
 ///
 /// Call `recordingDidStart()` and `recordingDidStop()` as recordings come and go.
 /// `NotificationResponder` hands it the buttons, on notifications from an earlier run, too.
@@ -41,7 +44,7 @@ final class CallPrompt {
     private let isRecording: () -> Bool
     private let startRecording: () -> Bool
     private let stopRecording: () -> Void
-    private let markRecordingAsCall: () -> Void
+    private let markRecordingAsCall: (_ automatically: Bool) -> Void
     private let showRecorder: () -> Void
     private var detector: CallDetector?
     private var detection: Task<Void, Never>?
@@ -54,6 +57,8 @@ final class CallPrompt {
     /// Whether a recording was started for a call, from a notification or automatically, until it
     /// has started.
     private var isStartingCall = false
+    /// Whether the recording going on was started for a call, from a notification or automatically.
+    private var isRecordingCall = false
     /// The notification saying an automatic recording is going on.
     private var recordingNoticeID: String?
 
@@ -81,13 +86,14 @@ final class CallPrompt {
     ///   - isRecording: Whether Mixdown is recording.
     ///   - startRecording: Starts recording, returning `false` if it can't.
     ///   - stopRecording: Stops recording.
-    ///   - markRecordingAsCall: Marks the recording in progress as a call.
+    ///   - markRecordingAsCall: Marks the recording in progress as a call, and whether it was
+    ///     started automatically rather than from a notification.
     ///   - showRecorder: Opens Record in the main window.
     init(
         isRecording: @escaping () -> Bool,
         startRecording: @escaping () -> Bool,
         stopRecording: @escaping () -> Void,
-        markRecordingAsCall: @escaping () -> Void,
+        markRecordingAsCall: @escaping (_ automatically: Bool) -> Void,
         showRecorder: @escaping () -> Void
     ) {
         self.isRecording = isRecording
@@ -142,9 +148,10 @@ final class CallPrompt {
     /// call if it was started for one, and says so if that was automatic.
     func recordingDidStart() {
         withdrawRecordPrompts()
+        isRecordingCall = isStartingCall
         if isStartingCall {
             isStartingCall = false
-            markRecordingAsCall()
+            markRecordingAsCall(startingFor != nil)
         }
         guard let app = startingFor else { return }
         startingFor = nil
@@ -159,6 +166,7 @@ final class CallPrompt {
         withdrawStopPrompt()
         startingFor = nil
         isStartingCall = false
+        isRecordingCall = false
         withdrawRecordingNotice()
     }
 
@@ -232,7 +240,9 @@ final class CallPrompt {
             Self.logger.info("\(app.name, privacy: .public) ended its call")
             return
         }
-        if recordsAutomatically {
+        // A recording started by hand isn't the call's to stop, e.g. a call app used the
+        // microphone briefly during an in-person recording.
+        if recordsAutomatically, isRecordingCall {
             Self.logger.info("\(app.name, privacy: .public) ended its call; stopping the recording")
             stopRecording()
             if notifies { post(title: "Call Recording Stopped", body: "The \(app.name) call has ended.") }

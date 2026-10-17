@@ -1,38 +1,56 @@
+import AppKit
+import MixdownAppleSpeech
 import MixdownCore
-import MixdownSpeechSwift
 import SwiftUI
 
 struct TranscriptionSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
     @State private var isConfirmingDelete = false
+    /// Whether macOS has Apple's speech model for the chosen language, for the model menu while
+    /// another model is selected. macOS only says so asynchronously.
+    @State private var isAppleSpeechInstalled = false
 
     /// ISO 639-1 codes offered besides "Automatic". The models support many more.
-    private static let languages = ["en", "de", "fr", "es", "it", "pt", "nl", "pl", "ja", "zh"]
+    static let languages = ["en", "de", "fr", "es", "it", "pt", "nl", "pl", "ja", "zh"]
 
     var body: some View {
         let coordinator = environment.coordinator
 
         Form {
             Section {
-                Picker(
-                    "Model",
-                    selection: Binding(
-                        get: { environment.model },
-                        set: { environment.setModel($0) }
-                    )
-                ) {
-                    Section("Offline: transcribed when you stop") {
-                        ForEach(SpeechSwiftModel.allCases.filter { !$0.isLive }) { model in
-                            Text(Self.label(for: model)).tag(model)
+                LabeledContent("Model") {
+                    HStack {
+                        Picker(
+                            "Model",
+                            selection: Binding(
+                                get: { environment.model },
+                                set: { environment.setModel($0) }
+                            )
+                        ) {
+                            Section("Offline: transcribed when you stop") {
+                                ForEach(TranscriptionModel.available.filter { !$0.isLive }) { model in
+                                    menuTitle(for: model)
+                                        .tag(model)
+                                }
+                            }
+                            Section("Live: transcribed while you record") {
+                                ForEach(TranscriptionModel.available.filter(\.isLive)) { model in
+                                    menuTitle(for: model)
+                                        .tag(model)
+                                }
+                            }
                         }
-                    }
-                    Section("Live: transcribed while you record") {
-                        ForEach(SpeechSwiftModel.allCases.filter(\.isLive)) { model in
-                            Text(Self.label(for: model)).tag(model)
-                        }
+                        .labelsHidden()
+                        .fixedSize()
+                        .disabled(!environment.canChangeModel)
+
+                        // macOS push buttons drop the icon unless asked to show it.
+                        downloadAccessory(for: coordinator.phase)
+                            .labelStyle(.titleAndIcon)
                     }
                 }
-                .disabled(!environment.canChangeModel)
+
+                modelStatus(for: coordinator.phase)
 
                 Picker(
                     "Language",
@@ -54,16 +72,6 @@ struct TranscriptionSettingsView: View {
                 Text(footer(for: environment.model))
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            }
-
-            Section("Model") {
-                HStack {
-                    modelStatus(for: coordinator.phase)
-                    Spacer()
-                    // macOS push buttons drop the icon unless asked to show it.
-                    downloadAccessory(for: coordinator.phase)
-                        .labelStyle(.titleAndIcon)
-                }
             }
 
             Section {
@@ -103,6 +111,23 @@ struct TranscriptionSettingsView: View {
                         set: { environment.summarizesNotes = $0 }
                     )
                 )
+                Group {
+                    templatePicker(
+                        "Manual recordings",
+                        selection: Binding(
+                            get: { environment.summaryTemplate },
+                            set: { environment.summaryTemplate = $0 }
+                        )
+                    )
+                    templatePicker(
+                        "Detected calls",
+                        selection: Binding(
+                            get: { environment.callSummaryTemplate },
+                            set: { environment.callSummaryTemplate = $0 }
+                        )
+                    )
+                }
+                .disabled(!environment.summarizesNotes)
             } header: {
                 Text("Summary")
             } footer: {
@@ -112,8 +137,13 @@ struct TranscriptionSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .task(id: environment.language) {
+            isAppleSpeechInstalled = await AppleSpeechEngine.isInstalled(language: environment.language)
+        }
     }
 
+    /// A row under the model while it downloads or after it failed; nothing otherwise, as the
+    /// model menu marks downloaded models.
     @ViewBuilder
     private func modelStatus(for phase: RecordingCoordinator.Phase) -> some View {
         switch phase {
@@ -135,17 +165,39 @@ struct TranscriptionSettingsView: View {
             if let modelError = environment.coordinator.modelError {
                 Text(modelError)
                     .foregroundStyle(.red)
-            } else {
-                Text(environment.coordinator.engineInfo.displayName)
-                    .foregroundStyle(.secondary)
             }
         }
     }
 
-    /// "Downloaded" and a Delete button once the model is on disk, otherwise a button to fetch it;
-    /// recording needs it. A Cancel button while preparing (files land on disk mid-download, so
-    /// "Downloaded" would be premature). After a model error, Retry and Delete for files on disk
-    /// (they may be broken), else Download.
+    /// The model's name, followed by a green check for models on disk, so the menu says which
+    /// models are ready without picking them. Nothing for models not downloaded yet.
+    private func menuTitle(for model: TranscriptionModel) -> Text {
+        let isDownloaded =
+            model == environment.model
+            ? environment.coordinator.isModelDownloaded
+            : model.isDownloaded ?? isAppleSpeechInstalled
+        let label = Self.label(for: model)
+        guard isDownloaded else { return Text(label) }
+        return Text("\(label)  \(Image(nsImage: Self.downloadedImage))")
+            .accessibilityLabel("\(label), downloaded")
+    }
+
+    /// `checkmark.circle.fill` in green. Menus draw SF Symbols as monochrome templates, so the
+    /// colors are baked into a non-template image.
+    private static let downloadedImage: NSImage = {
+        let configuration = NSImage.SymbolConfiguration(paletteColors: [.white, .systemGreen])
+        guard
+            let image = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: "Downloaded")?
+                .withSymbolConfiguration(configuration)
+        else { return NSImage() }
+        image.isTemplate = false
+        return image
+    }()
+
+    /// Download next to the model menu while the model isn't on disk, Delete once it is; recording
+    /// needs it. A Cancel button while preparing (files land on disk mid-download, so the menu's
+    /// check would be premature). After a model error, Retry and Delete for files on disk (they may
+    /// be broken), else Download. No Delete for a model macOS manages.
     @ViewBuilder
     private func downloadAccessory(for phase: RecordingCoordinator.Phase) -> some View {
         switch phase {
@@ -158,16 +210,14 @@ struct TranscriptionSettingsView: View {
             } else if environment.coordinator.isModelDownloaded, environment.coordinator.modelError != nil {
                 Button("Retry", systemImage: "arrow.clockwise") { prepare() }
                     .disabled(!environment.canChangeModel)
-                deleteButton
+                if !environment.model.isManagedBySystem { deleteButton }
             } else if environment.coordinator.isModelDownloaded {
-                Label {
-                    Text("Downloaded")
-                } icon: {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
+                // macOS decides when to remove its own model.
+                if !environment.model.isManagedBySystem {
+                    deleteButton
+                        .labelStyle(.iconOnly)
+                        .help("Delete \(environment.model.displayName)")
                 }
-                .foregroundStyle(.secondary)
-                deleteButton
             } else {
                 downloadButton
             }
@@ -198,7 +248,20 @@ struct TranscriptionSettingsView: View {
         Task { await environment.coordinator.prepareEngine() }
     }
 
-    private func footer(for model: SpeechSwiftModel) -> String {
+    private func templatePicker(_ title: String, selection: Binding<SummaryTemplate>) -> some View {
+        Picker(title, selection: selection) {
+            ForEach(SummaryTemplate.allCases) { template in
+                Text(template.displayName).tag(template)
+            }
+        }
+    }
+
+    private func footer(for model: TranscriptionModel) -> String {
+        if model.isManagedBySystem {
+            return "Apple's speech model is part of macOS. It's downloaded from Apple once per language and "
+                + "shared with other apps, and transcription runs on this Mac. Automatic uses your Mac's "
+                + "language. This model doesn't label speakers."
+        }
         var lines: [String]
         if model.isLive {
             lines = [
@@ -219,8 +282,8 @@ struct TranscriptionSettingsView: View {
     }
 
     /// "Low · Qwen3-ASR 0.6B": what the model is for, then which it is.
-    static func label(for model: SpeechSwiftModel) -> String {
-        "\(model.purpose) · \(model.displayName)"
+    static func label(for model: TranscriptionModel) -> String {
+        model.purpose.map { "\($0) · \(model.displayName)" } ?? model.displayName
     }
 
     /// What a summary is and who makes it, or why it can't be made right now.
@@ -228,8 +291,10 @@ struct TranscriptionSettingsView: View {
         let summarizer = environment.summarizer
         switch summarizer.availability {
         case .available:
-            return "Adds an overview, key points and action items above the transcript, and names the note "
-                + "after its topic. \(summarizer.info.displayName) makes them on this Mac."
+            return "Adds a summary above the transcript and names the note after its topic. 1:1, Standup "
+                + "and Client Call always have TL;DR, Decisions, Action Items and Open Questions. Detected "
+                + "calls are recordings started from a call notification or automatically. "
+                + "\(summarizer.info.displayName) makes summaries on this Mac."
         case .unavailable(let reason):
             return reason
         }

@@ -4,8 +4,9 @@ import MixdownCore
 import MixdownNotes
 import SwiftUI
 
-/// The main window: Record at the top of the sidebar, the notes folder by day below it, and the
-/// recorder or the selected note on the right. Above the sidebar are the notes folder and Settings.
+/// The main window: search and Record at the top of the sidebar, the notes folder by date below
+/// it, and the recorder or the selected note on the right. Above the sidebar are the notes folder
+/// and Settings.
 struct MainView: View {
     static let windowID = "main"
 
@@ -42,9 +43,16 @@ struct MainView: View {
                     }
                 }
         }
-        .searchable(text: $searchText, placement: .sidebar, prompt: "Search Recordings")
         .frame(minWidth: 720, minHeight: 480)
-        .task(id: environment.notesFolder.directory) { await reload(selecting: navigation.takeNoteToShow()) }
+        // Reads the folder and watches it for changes; again for each folder the user chooses.
+        .task(id: environment.notesFolder.directory) {
+            let directory = environment.notesFolder.directory
+            // Started first, so nothing that changes during the first reload is missed.
+            let changes = directory.map { NotesFolderWatcher.changes(in: $0) }
+            await reload(selecting: navigation.takeNoteToShow())
+            guard let changes else { return }
+            for await _ in changes { await reload() }
+        }
         .onChange(of: environment.coordinator.lastNoteURL) { _, url in
             Task {
                 await reload(selecting: url)
@@ -52,17 +60,18 @@ struct MainView: View {
                 if url != nil, navigation.destination == .recorder { navigation.destination = .notes }
             }
         }
-        // Picks up notes edited, added or removed in other apps when the user comes back.
+        // In case the watcher missed a change. FSEvents doesn't see changes made by other
+        // computers on a network volume, for one.
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await reload() }
         }
         .focusedSceneValue(\.shownNote, shownNote.map { ShownNote(note: $0, actions: noteActions) })
         .confirmationDialog(
-            "Move “\(noteToTrash?.title ?? "")” to the Trash?",
+            "Delete “\(noteToTrash?.title ?? "")”?",
             isPresented: isPresent($noteToTrash),
             presenting: noteToTrash
         ) { note in
-            Button("Move to Trash", role: .destructive) { moveToTrash(note) }
+            Button("Delete", role: .destructive) { moveToTrash(note) }
                 .keyboardShortcut(.defaultAction)
             Button("Cancel", role: .cancel) {}
         } message: { _ in
@@ -100,6 +109,16 @@ struct MainView: View {
         } message: { failure in
             Text(failure.message)
         }
+        .sheet(
+            isPresented: Binding(
+                get: { navigation.isShowingSetup },
+                set: { navigation.isShowingSetup = $0 }
+            )
+        ) {
+            SetupAssistantView()
+                .environment(environment)
+                .environment(navigation)
+        }
     }
 
     /// Whether `item` is set; setting it to `false` clears `item`.
@@ -115,7 +134,27 @@ struct MainView: View {
     private var sidebar: some View {
         let notes = filteredNotes
 
-        return NoteListView(
+        return VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                SidebarSearchField(text: $searchText)
+                RecordButton(coordinator: environment.coordinator)
+            }
+            .padding(.horizontal, 10)
+            .padding(.top, 8)
+            .padding(.bottom, 2)
+
+            noteList(notes)
+        }
+        // Toolbar items on the sidebar sit above it, next to the sidebar toggle.
+        .toolbar {
+            if !isSidebarCollapsed {
+                ToolbarItemGroup { folderAndSettingsButtons }
+            }
+        }
+    }
+
+    private func noteList(_ notes: [NoteDocument]) -> some View {
+        NoteListView(
             sections: NoteSection.sections(for: notes),
             selection: Binding(
                 get: { navigation.selectedNoteID },
@@ -127,17 +166,7 @@ struct MainView: View {
             showsSelection: navigation.destination == .notes,
             actions: noteActions
         ) {
-            SidebarRow("Record", systemImage: "record.circle", destination: .recorder) {
-                RecorderStatusBadge(coordinator: environment.coordinator)
-            }
-        } footer: {
             notesPlaceholder(isEmptyAfterSearch: notes.isEmpty)
-        }
-        // Toolbar items on the sidebar sit above it, next to the sidebar toggle.
-        .toolbar {
-            if !isSidebarCollapsed {
-                ToolbarItemGroup { folderAndSettingsButtons }
-            }
         }
     }
 
@@ -242,7 +271,7 @@ struct MainView: View {
             try environment.noteTrash.moveToTrash(note)
             library.didRemove(note)
         } catch {
-            failure = Failure(title: "Couldn't Move Note to Trash", message: error.localizedDescription)
+            failure = Failure(title: "Couldn't Delete Note", message: error.localizedDescription)
             return
         }
         if navigation.selectedNoteID == note.id, let index {
@@ -257,6 +286,7 @@ struct MainView: View {
         guard !query.isEmpty else { return library.notes }
         return library.notes.filter {
             $0.title.localizedStandardContains(query) || $0.body.localizedStandardContains(query)
+                || $0.folder?.localizedStandardContains(query) == true
         }
     }
 
@@ -265,8 +295,14 @@ struct MainView: View {
     private func reload(selecting url: URL? = nil) async {
         await library.reload(from: environment.notesFolder.directory)
         let notes = library.notes
-        // By name: the writer's URL and the directory listing's can differ in form.
-        if let url, let note = notes.first(where: { $0.url.lastPathComponent == url.lastPathComponent }) {
+        // By name: the writer's URL and the directory listing's can differ in form. Notes in
+        // different subfolders can share a name, so then by resolved path.
+        let named = url.map { url in notes.filter { $0.url.lastPathComponent == url.lastPathComponent } } ?? []
+        let resolvedPath = { (url: URL) in url.resolvingSymlinksInPath().path(percentEncoded: false) }
+        if let url,
+            let note = named.count > 1
+                ? named.first(where: { resolvedPath($0.url) == resolvedPath(url) }) ?? named.first : named.first
+        {
             navigation.selectedNoteID = note.id
         } else if !notes.contains(where: { $0.id == navigation.selectedNoteID }) {
             navigation.selectedNoteID = notes.first?.id
@@ -274,45 +310,77 @@ struct MainView: View {
     }
 }
 
-/// A section row at the top of the sidebar, highlighted like a selected note.
-private struct SidebarRow<Accessory: View>: View {
-    @Environment(MainNavigation.self) private var navigation
-    let title: String
-    let systemImage: String
-    let destination: MainNavigation.Destination
-    let accessory: Accessory
-
-    init(
-        _ title: String,
-        systemImage: String,
-        destination: MainNavigation.Destination,
-        @ViewBuilder accessory: () -> Accessory
-    ) {
-        self.title = title
-        self.systemImage = systemImage
-        self.destination = destination
-        self.accessory = accessory()
-    }
+/// The sidebar's search field, drawn by hand so Record fits beside it: `searchable` in the
+/// sidebar takes its whole width.
+private struct SidebarSearchField: View {
+    @Binding var text: String
+    @FocusState private var isFocused: Bool
 
     var body: some View {
-        let isSelected = navigation.destination == destination
-        HStack {
-            Label(title, systemImage: systemImage)
-                .font(.headline)
-            Spacer()
-            accessory
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            TextField("Search Recordings", text: $text)
+                .textFieldStyle(.plain)
+                .focused($isFocused)
+                .onExitCommand { text = "" }
+            if !text.isEmpty {
+                Button("Clear", systemImage: "xmark.circle.fill") { text = "" }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+            }
         }
-        .padding(.vertical, 8)
         .padding(.horizontal, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(isSelected ? Color("NoteSelection") : .clear, in: RoundedRectangle(cornerRadius: 8))
-        .contentShape(Rectangle())
-        .onTapGesture { navigation.destination = destination }
-        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+        .frame(height: SidebarControl.height)
+        .background(.quaternary, in: Capsule())
+        // ⌘F, as `searchable` had it, from an invisible button: hidden ones don't take shortcuts.
+        .background {
+            Button("Search Recordings") { isFocused = true }
+                .keyboardShortcut("f")
+                .opacity(0)
+                .accessibilityHidden(true)
+        }
     }
 }
 
-/// What the recorder is doing, next to its sidebar row: the time while recording, progress
+/// Shows the recorder, beside the search field. Highlighted like a selected note while it's
+/// shown, and says what the recorder is doing while it's busy.
+private struct RecordButton: View {
+    @Environment(MainNavigation.self) private var navigation
+    let coordinator: RecordingCoordinator
+
+    var body: some View {
+        let isSelected = navigation.destination == .recorder
+        Button {
+            navigation.destination = .recorder
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "record.circle")
+                    .font(.headline)
+                RecorderStatusBadge(coordinator: coordinator)
+            }
+            .padding(.horizontal, 10)
+            .frame(minWidth: SidebarControl.height, minHeight: SidebarControl.height)
+            .background(
+                isSelected ? AnyShapeStyle(Color("NoteSelection")) : AnyShapeStyle(.quaternary),
+                in: Capsule()
+            )
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Record")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .help("Record (⌘1)")
+    }
+}
+
+private enum SidebarControl {
+    static let height: CGFloat = 30
+}
+
+/// What the recorder is doing, next to the Record icon: the time while recording, progress
 /// while downloading, transcribing or summarizing.
 private struct RecorderStatusBadge: View {
     let coordinator: RecordingCoordinator

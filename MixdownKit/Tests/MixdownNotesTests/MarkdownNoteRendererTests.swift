@@ -17,7 +17,8 @@ enum NoteFixtures {
         sources: [AudioInputDevice] = [
             AudioInputDevice(id: "builtin", name: "MacBook Pro Microphone", kind: .microphone)
         ],
-        summary: NoteSummary? = nil
+        summary: NoteSummary? = nil,
+        trigger: RecordingTrigger = .manual
     ) -> Note {
         Note(
             title: title,
@@ -26,7 +27,8 @@ enum NoteFixtures {
             sources: sources,
             engine: TranscriptionEngineInfo(id: "speech-swift", displayName: "Qwen3-ASR 0.6B"),
             transcript: Transcript(segments: segments, language: language),
-            summary: summary
+            summary: summary,
+            trigger: trigger
         )
     }
 }
@@ -49,6 +51,7 @@ struct MarkdownNoteRendererTests {
         #expect(lines.contains("source_kind: microphone"))
         #expect(lines.contains(#"engine: "Qwen3-ASR 0.6B""#))
         #expect(lines.contains(#"language: "en""#))
+        #expect(lines.contains("trigger: manual"))
         #expect(lines.contains("tags: [mixdown]"))
 
         let created = try #require(lines.first { $0.hasPrefix("created: ") })
@@ -68,6 +71,11 @@ struct MarkdownNoteRendererTests {
         #expect(lines.contains(#"sources: ["MacBook Pro Microphone", "System Audio"]"#))
         #expect(lines.contains("source_kinds: [microphone, systemAudio]"))
         #expect(!lines.contains { $0.hasPrefix("source:") || $0.hasPrefix("source_kind:") })
+    }
+
+    @Test func recordsAutomaticTrigger() {
+        let markdown = MarkdownNoteRenderer.render(NoteFixtures.note(trigger: .automatic))
+        #expect(frontmatterLines(markdown).contains("trigger: automatic"))
     }
 
     @Test func omitsLanguageWhenUnknown() {
@@ -121,6 +129,15 @@ struct MarkdownNoteRendererTests {
         #expect(markdown.contains(#"# Say "hi" \\ now"#))
     }
 
+    @Test(arguments: [("C# *draft* #", "# C# \\*draft\\* \\#"), ("##", "# \\##"), ("Foo#", "# Foo#")])
+    func escapesTitleHeading(title: String, heading: String) {
+        let markdown = MarkdownNoteRenderer.render(NoteFixtures.note(title: title))
+        #expect(markdown.contains("\n\(heading)\n"))
+        // The heading reads as the title, so the note window doesn't show it twice.
+        let blocks = NoteDocument(url: URL(filePath: "/n.md"), contents: markdown, fileDate: .now).displayBlocks()
+        #expect(!blocks.contains { $0 == .heading(level: 1, text: String(heading.dropFirst(2))) })
+    }
+
     @Test func escapesMarkdownInTranscript() {
         let markdown = MarkdownNoteRenderer.render(
             NoteFixtures.note(segments: [
@@ -166,7 +183,7 @@ struct MarkdownNoteRendererTests {
 
             ### Action Items
 
-            - Anna writes the notes
+            - [ ] Anna writes the notes
 
             ## Transcript
             """
@@ -183,6 +200,47 @@ struct MarkdownNoteRendererTests {
         let empty = MarkdownNoteRenderer.render(NoteFixtures.note(summary: NoteSummary(overview: " ")))
         #expect(!empty.contains("## Summary"))
         #expect(!MarkdownNoteRenderer.render(NoteFixtures.note()).contains("## Summary"))
+    }
+
+    @Test func templateSummaryHasFixedSections() {
+        let summary = NoteSummary(
+            template: .clientCall,
+            title: "Onboarding",
+            overview: "The client wants SSO.",
+            keyPoints: ["Ignored outside General"],
+            actionItems: ["Send the *quote*"],
+            openQuestions: ["Which IdP?"]
+        )
+        let markdown = MarkdownNoteRenderer.render(NoteFixtures.note(summary: summary))
+
+        let expected = """
+            ## Summary
+
+            ### TL;DR
+
+            The client wants SSO.
+
+            ### Decisions
+
+            _None._
+
+            ### Action Items
+
+            - [ ] Send the \\*quote\\*
+
+            ### Open Questions
+
+            - Which IdP?
+
+            ## Transcript
+            """
+        #expect(markdown.contains(expected))
+        #expect(!markdown.contains("Ignored outside General"))
+    }
+
+    @Test func templateSummaryWithNothingInItsSectionsIsLeftOut() {
+        let summary = NoteSummary(template: .standup, title: "Standup", decisions: [" "])
+        #expect(!MarkdownNoteRenderer.render(NoteFixtures.note(summary: summary)).contains("## Summary"))
     }
 
     @Test func transcriptTextSkipsSummary() {

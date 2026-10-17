@@ -42,9 +42,9 @@ final class SystemAudioCapture: AudioCapturing, @unchecked Sendable {
 
         let tap = ProcessTap()
         do {
-            let format = try tap.create(excluding: Self.ownProcessObjectID())
-            try tap.start(on: sampleQueue) { [weak self] _, inputData, inputTime, _, _ in
-                self?.consume(inputData, at: inputTime.pointee, format: format)
+            try tap.create(excluding: Self.ownProcessObjectID())
+            try tap.start(on: sampleQueue) { [weak self] bufferList, time, format in
+                self?.consume(bufferList, at: time, format: format)
             }
         } catch {
             tap.invalidate()
@@ -128,18 +128,24 @@ final class SystemAudioCapture: AudioCapturing, @unchecked Sendable {
     }
 }
 
-/// A global process tap and the private aggregate device it's read through. A tap delivers no
-/// buffers on its own; it has to be part of an aggregate device with an IO proc.
+/// A global process tap, the private aggregate device it's read through, and listeners that
+/// keep the format current. A tap delivers no buffers on its own; it has to be part of an
+/// aggregate device with an IO proc.
 ///
 /// `@unchecked Sendable`: `create`, `start` and `invalidate` are called one after another, never
-/// concurrently.
+/// concurrently; `format` is behind a lock because the listener and IO queues both use it.
 private final class ProcessTap: @unchecked Sendable {
+    typealias IOBlock = @Sendable (UnsafePointer<AudioBufferList>, AudioTimeStamp, AVAudioFormat) -> Void
+
     private var tapID = AudioObjectID(kAudioObjectUnknown)
     private var aggregateID = AudioObjectID(kAudioObjectUnknown)
     private var ioProcID: AudioDeviceIOProcID?
+    private var listeners: [HALPropertyListener] = []
+    /// The format of the aggregate device's input stream, the one the IO block reads.
+    private let format = OSAllocatedUnfairLock<AVAudioFormat?>(uncheckedState: nil)
 
-    /// Creates the tap and its aggregate device and returns the format of the tapped audio.
-    func create(excluding ownProcess: AudioObjectID?) throws -> AVAudioFormat {
+    /// Creates the tap and its aggregate device and starts following the device's format.
+    func create(excluding ownProcess: AudioObjectID?) throws {
         let description = CATapDescription(stereoGlobalTapButExcludeProcesses: ownProcess.map { [$0] } ?? [])
         description.name = "Mixdown System Audio"
         description.uuid = UUID()
@@ -166,23 +172,41 @@ private final class ProcessTap: @unchecked Sendable {
             "create the system audio device"
         )
 
-        var address = CoreAudioHAL.propertyAddress(kAudioTapPropertyFormat)
-        var streamDescription = AudioStreamBasicDescription()
-        var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
-        try CoreAudioHAL.check(
-            AudioObjectGetPropertyData(tapID, &address, 0, nil, &size, &streamDescription),
-            "read the system audio format"
-        )
-        guard let format = AVAudioFormat(streamDescription: &streamDescription) else {
+        guard let initialFormat = Self.currentFormat(aggregateID: aggregateID, tapID: tapID) else {
             throw AudioCaptureError.deviceUnavailable("The system audio format isn't supported")
         }
-        return format
+        format.withLockUnchecked { $0 = initialFormat }
+
+        // The tap follows the output device, so connecting AirPods, which switch to a lower
+        // sample rate for calls, can change its format mid-recording. The IDs are captured by
+        // value because the listener runs on its own queue and `invalidate` resets them.
+        let onChange: @Sendable () -> Void = { [weak self, aggregateID = self.aggregateID, tapID = self.tapID] in
+            self?.formatChanged(aggregateID: aggregateID, tapID: tapID)
+        }
+        listeners = [
+            HALPropertyListener(
+                objectID: aggregateID,
+                selectors: [
+                    kAudioDevicePropertyNominalSampleRate,
+                    kAudioDevicePropertyStreams,
+                    kAudioDevicePropertyStreamConfiguration,
+                ],
+                scope: kAudioObjectPropertyScopeWildcard,
+                onChange: onChange
+            ),
+            HALPropertyListener(objectID: tapID, selectors: [kAudioTapPropertyFormat], onChange: onChange),
+        ]
+        listeners.forEach { $0.install() }
     }
 
     /// Starts IO. macOS asks for the System Audio Recording permission the first time.
-    func start(on queue: DispatchQueue, ioBlock: @escaping AudioDeviceIOBlock) throws {
+    func start(on queue: DispatchQueue, ioBlock: @escaping IOBlock) throws {
+        let block: AudioDeviceIOBlock = { [weak self] _, inputData, inputTime, _, _ in
+            guard let format = self?.format.withLockUnchecked({ $0 }) else { return }
+            CoreAudioHAL.withFirstInputStream(inputData, matching: format) { ioBlock($0, inputTime.pointee, format) }
+        }
         try CoreAudioHAL.check(
-            AudioDeviceCreateIOProcIDWithBlock(&ioProcID, aggregateID, queue, ioBlock),
+            AudioDeviceCreateIOProcIDWithBlock(&ioProcID, aggregateID, queue, block),
             "read from the system audio device"
         )
         try CoreAudioHAL.check(AudioDeviceStart(aggregateID, ioProcID), "start the system audio device")
@@ -190,6 +214,8 @@ private final class ProcessTap: @unchecked Sendable {
 
     /// Stops IO and destroys whatever `create`/`start` set up. Safe after a partial setup.
     func invalidate() {
+        listeners.forEach { $0.remove() }
+        listeners = []
         if aggregateID != AudioObjectID(kAudioObjectUnknown) {
             if let ioProcID {
                 logFailure(AudioDeviceStop(aggregateID, ioProcID), "AudioDeviceStop")
@@ -203,6 +229,33 @@ private final class ProcessTap: @unchecked Sendable {
         ioProcID = nil
         aggregateID = AudioObjectID(kAudioObjectUnknown)
         tapID = AudioObjectID(kAudioObjectUnknown)
+    }
+
+    /// The format the IO proc receives: the aggregate device's input stream, which is what the
+    /// buffers actually arrive in. Falls back to the tap's own format if the device's streams
+    /// can't be read.
+    private static func currentFormat(aggregateID: AudioObjectID, tapID: AudioObjectID) -> AVAudioFormat? {
+        if let format = CoreAudioHAL.inputFormat(of: aggregateID) { return format }
+        var address = CoreAudioHAL.propertyAddress(kAudioTapPropertyFormat)
+        var streamDescription = AudioStreamBasicDescription()
+        var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+        guard AudioObjectGetPropertyData(tapID, &address, 0, nil, &size, &streamDescription) == noErr,
+              let format = AVAudioFormat(streamDescription: &streamDescription)
+        else { return nil }
+        audioLogger.warning("System audio device format unreadable, using the tap's \(format, privacy: .public)")
+        return format
+    }
+
+    private func formatChanged(aggregateID: AudioObjectID, tapID: AudioObjectID) {
+        guard let newFormat = Self.currentFormat(aggregateID: aggregateID, tapID: tapID) else { return }
+        let changed = format.withLockUnchecked { format -> Bool in
+            guard format != newFormat else { return false }
+            format = newFormat
+            return true
+        }
+        if changed {
+            audioLogger.info("System audio switched to \(newFormat, privacy: .public)")
+        }
     }
 
     private func logFailure(_ status: OSStatus, _ call: String) {

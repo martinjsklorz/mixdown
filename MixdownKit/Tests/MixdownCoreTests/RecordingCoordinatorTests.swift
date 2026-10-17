@@ -145,7 +145,8 @@ struct RecordingCoordinatorTests {
         #expect(coordinator.selectedDevices == [Fixtures.usbMic])
 
         await coordinator.stopRecording()
-        #expect(coordinator.phase == .idle)
+        // The mocks record nothing.
+        #expect(coordinator.phase == .failed(message: RecordingCoordinator.tooShortMessage))
     }
 
     // MARK: - Recording
@@ -192,6 +193,19 @@ struct RecordingCoordinatorTests {
         #expect(coordinator.lastNoteURL == URL(fileURLWithPath: "/tmp/mixdown-test-1.md"))
     }
 
+    @Test func engineKeepsModelFromStartUntilTranscribed() async {
+        let engine = MockEngine()
+        let coordinator = makeCoordinator(capture: MockCapture(chunks: [Fixtures.chunk(seconds: 1)]), engine: engine)
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        #expect(engine.recordingsInProgress.current == 1)
+
+        await coordinator.stopRecording()
+        #expect(await engine.recordingsInProgressWhileTranscribing == [1])
+        #expect(engine.recordingsInProgress.current == 0)
+    }
+
     @Test func toggleStartsAndStops() async {
         let writer = InMemoryNoteWriter()
         let coordinator = makeCoordinator(
@@ -220,10 +234,16 @@ struct RecordingCoordinatorTests {
         await coordinator.startRecording()
         await coordinator.stopRecording()
 
-        #expect(coordinator.phase == .idle)
+        #expect(coordinator.phase == .failed(message: RecordingCoordinator.tooShortMessage))
+        #expect(coordinator.modelError == nil)
         #expect(coordinator.lastNoteURL == nil)
         #expect(await engine.receivedSampleCounts.isEmpty)
         #expect(await writer.notes.isEmpty)
+        #expect(engine.recordingsInProgress.current == 0)
+        #expect(coordinator.canStartRecording)
+
+        coordinator.dismissError()
+        #expect(coordinator.phase == .idle)
     }
 
     @Test func engineErrorFails() async {
@@ -262,12 +282,14 @@ struct RecordingCoordinatorTests {
 
     @Test func startErrorFailsAndDismissReturnsToIdle() async {
         let error = AudioCaptureError.microphonePermissionDenied
-        let coordinator = makeCoordinator(capture: MockCapture(startError: error))
+        let engine = MockEngine()
+        let coordinator = makeCoordinator(capture: MockCapture(startError: error), engine: engine)
         await coordinator.monitorDevices()
 
         await coordinator.startRecording()
 
         #expect(coordinator.phase == .failed(message: error.localizedDescription))
+        #expect(engine.recordingsInProgress.current == 0)
         #expect(coordinator.modelError == nil)
         #expect(!coordinator.isRecording)
         #expect(coordinator.canStartRecording)
@@ -336,7 +358,10 @@ struct RecordingCoordinatorTests {
     private func recordNote(
         transcript: Transcript = Transcript(segments: [TranscriptSegment(start: 0, end: 1, text: "Hello.")]),
         summarizer: MockSummarizer?,
-        isCall: Bool = false
+        isCall: Bool = false,
+        automatically: Bool = false,
+        configure: (RecordingCoordinator) -> Void = { _ in },
+        whileRecording: (RecordingCoordinator) -> Void = { _ in }
     ) async throws -> (RecordingCoordinator, Note) {
         let writer = InMemoryNoteWriter()
         let coordinator = makeCoordinator(
@@ -345,9 +370,11 @@ struct RecordingCoordinatorTests {
             writer: writer,
             summarizer: summarizer
         )
+        configure(coordinator)
         await coordinator.monitorDevices()
         await coordinator.startRecording()
-        if isCall { coordinator.markRecordingAsCall() }
+        if isCall { coordinator.markRecordingAsCall(automatically: automatically) }
+        whileRecording(coordinator)
         await coordinator.stopRecording()
         return (coordinator, try #require(await writer.notes.first))
     }
@@ -361,6 +388,62 @@ struct RecordingCoordinatorTests {
         #expect(coordinator.phase == .idle)
         #expect(note.summary == summary)
         #expect(summarizer.receivedTranscripts == [note.transcript])
+        #expect(summarizer.receivedTemplates == [.general])
+    }
+
+    @Test func summaryTemplateDependsOnHowRecordingStarted() async throws {
+        let setTemplates = { (coordinator: RecordingCoordinator) in
+            coordinator.summaryTemplate = .standup
+            coordinator.callSummaryTemplate = .clientCall
+        }
+
+        let manual = MockSummarizer()
+        _ = try await recordNote(summarizer: manual, configure: setTemplates)
+        #expect(manual.receivedTemplates == [.standup])
+
+        let call = MockSummarizer()
+        _ = try await recordNote(summarizer: call, isCall: true, configure: setTemplates)
+        #expect(call.receivedTemplates == [.clientCall])
+    }
+
+    @Test func recordingSummaryTemplateCanBeChosenWhileRecording() async throws {
+        let summarizer = MockSummarizer()
+        var seen: [SummaryTemplate?] = []
+        let (coordinator, _) = try await recordNote(
+            summarizer: summarizer,
+            configure: { coordinator in
+                coordinator.callSummaryTemplate = .clientCall
+                seen.append(coordinator.recordingSummaryTemplate)
+            },
+            whileRecording: { coordinator in
+                seen.append(coordinator.recordingSummaryTemplate)
+                coordinator.chooseSummaryTemplate(.oneOnOne)
+                // A call detected after the user chose keeps their choice.
+                coordinator.markRecordingAsCall()
+                seen.append(coordinator.recordingSummaryTemplate)
+            }
+        )
+
+        #expect(seen == [nil, .general, .oneOnOne])
+        #expect(summarizer.receivedTemplates == [.oneOnOne])
+        #expect(coordinator.recordingSummaryTemplate == nil)
+    }
+
+    @Test func markingAsCallPreselectsCallTemplate() async throws {
+        var seen: SummaryTemplate?
+        _ = try await recordNote(
+            summarizer: MockSummarizer(),
+            isCall: true,
+            configure: { $0.callSummaryTemplate = .standup },
+            whileRecording: { seen = $0.recordingSummaryTemplate }
+        )
+        #expect(seen == .standup)
+    }
+
+    @Test func choosingSummaryTemplateOutsideARecordingIsIgnored() {
+        let coordinator = makeCoordinator()
+        coordinator.chooseSummaryTemplate(.standup)
+        #expect(coordinator.recordingSummaryTemplate == nil)
     }
 
     @Test func noteIsSavedWithoutSummaryWhenSummarizingFails() async throws {
@@ -415,6 +498,17 @@ struct RecordingCoordinatorTests {
         german.language = "de"
         let (_, germanCall) = try await recordNote(summarizer: MockSummarizer(summary: german), isCall: true)
         #expect(germanCall.title == "Anruf zu Release timeline")
+    }
+
+    @Test func notesSayHowTheRecordingWasStarted() async throws {
+        let (_, manual) = try await recordNote(summarizer: nil)
+        #expect(manual.trigger == .manual)
+
+        let (_, prompted) = try await recordNote(summarizer: nil, isCall: true)
+        #expect(prompted.trigger == .manual)
+
+        let (_, automatic) = try await recordNote(summarizer: nil, isCall: true, automatically: true)
+        #expect(automatic.trigger == .automatic)
     }
 
     @Test func markingAsCallOutsideARecordingIsIgnored() async throws {
@@ -624,7 +718,8 @@ struct RecordingCoordinatorTests {
 
         await coordinator.stopRecording()
         #expect(secondUSB.stopCount == 1)
-        #expect(coordinator.phase == .idle)
+        // The mocks record nothing.
+        #expect(coordinator.phase == .failed(message: RecordingCoordinator.tooShortMessage))
     }
 
     @Test func followsNewDefaultMicrophoneWhileRecording() async throws {
@@ -767,7 +862,8 @@ struct RecordingCoordinatorTests {
 
         await coordinator.stopRecording()
         #expect(second.stopCount == 1)
-        #expect(coordinator.phase == .idle)
+        // The mocks record nothing.
+        #expect(coordinator.phase == .failed(message: RecordingCoordinator.tooShortMessage))
     }
 
     // MARK: - Levels
@@ -1272,6 +1368,33 @@ struct RecordingCoordinatorTests {
         #expect(coordinator.canStartRecording)
         await coordinator.startRecording()
         #expect(coordinator.isRecording)
+    }
+
+    @Test func modelStatusFollowsLanguage() async {
+        let engine = PerLanguageEngine(installed: ["de"])
+        let coordinator = RecordingCoordinator(
+            deviceProvider: MockDeviceProvider(devices: Fixtures.devices),
+            captureFactory: MockCaptureFactory(capture: MockCapture()),
+            engine: engine,
+            noteWriter: InMemoryNoteWriter(),
+            options: TranscriptionOptions(language: "de")
+        )
+        #expect(engine.language.current == "de")
+        // The engine can't tell yet.
+        #expect(!coordinator.isModelDownloaded)
+
+        await coordinator.refreshModelStatus()
+        #expect(coordinator.isModelDownloaded)
+
+        coordinator.options.language = "fr"
+        #expect(engine.language.current == "fr")
+        #expect(!coordinator.isModelDownloaded)
+
+        await coordinator.prepareEngine()
+        #expect(coordinator.isModelDownloaded)
+
+        coordinator.options.language = "de"
+        #expect(coordinator.isModelDownloaded)
     }
 
     @Test func recordingWaitsForNotesFolder() async {

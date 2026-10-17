@@ -200,6 +200,10 @@ actor MockEngine: TranscriptionEngine {
     private(set) var prepareCount = 0
     private(set) var cancelledPrepareCount = 0
     private(set) var deleteCount = 0
+    /// Recordings between `recordingWillStart()` and `recordingDidFinish()`.
+    nonisolated let recordingsInProgress = LockedValue(0)
+    /// `recordingsInProgress` at each `transcribe` call.
+    private(set) var recordingsInProgressWhileTranscribing: [Int] = []
 
     /// - Parameters:
     ///   - isDownloaded: Whether the model starts out on disk. A successful `prepare` downloads it.
@@ -272,12 +276,21 @@ actor MockEngine: TranscriptionEngine {
         downloaded.update { $0 = false }
     }
 
+    nonisolated func recordingWillStart() {
+        recordingsInProgress.update { $0 += 1 }
+    }
+
+    nonisolated func recordingDidFinish() {
+        recordingsInProgress.update { $0 -= 1 }
+    }
+
     func transcribe(
         _ samples: [Float],
         options: TranscriptionOptions,
         progress: (@Sendable (Double) -> Void)?
     ) async throws -> Transcript {
         receivedSampleCounts.append(samples.count)
+        recordingsInProgressWhileTranscribing.append(recordingsInProgress.current)
         if let fraction = progressBySampleCount[samples.count] { progress?(fraction) }
         if !ungatedSampleCounts.contains(samples.count) { await transcriptionGate?.wait() }
         if let transcribeError { throw transcribeError }
@@ -318,6 +331,49 @@ actor MockLiveSession: LiveTranscriptionSession {
     func finish() async throws -> LiveTranscriptUpdate {
         finishCount += 1
         return finishUpdate
+    }
+}
+
+/// An engine with a model per language that only knows asynchronously whether it's downloaded,
+/// like Apple's speech model.
+actor PerLanguageEngine: TranscriptionEngine {
+    nonisolated let info = TranscriptionEngineInfo(id: "per-language", displayName: "Per-Language Engine")
+    nonisolated var isDownloaded: Bool { checked.current.contains(language.current) }
+
+    /// Languages whose model is on disk; `nil` is the automatic one.
+    private nonisolated let installed: LockedValue<Set<String?>>
+    /// `installed` as of the last `refreshDownloadStatus()` or `prepare`.
+    private nonisolated let checked = LockedValue<Set<String?>>([])
+    nonisolated let language = LockedValue<String?>(nil)
+
+    init(installed: Set<String?>) {
+        self.installed = LockedValue(installed)
+    }
+
+    nonisolated func languageDidChange(to language: String?) {
+        self.language.update { $0 = language }
+    }
+
+    func refreshDownloadStatus() async {
+        checked.update { $0 = installed.current }
+    }
+
+    func prepare(progress: (@Sendable (Double) -> Void)?) async throws {
+        installed.update { $0.insert(language.current) }
+        checked.update { $0 = installed.current }
+    }
+
+    func deleteModel() async throws {
+        installed.update { $0.remove(language.current) }
+        checked.update { $0 = installed.current }
+    }
+
+    func transcribe(
+        _ samples: [Float],
+        options: TranscriptionOptions,
+        progress: (@Sendable (Double) -> Void)?
+    ) async throws -> Transcript {
+        Transcript(segments: [], language: language.current)
     }
 }
 
@@ -364,13 +420,14 @@ func waitUntil(
     }
 }
 
-/// Returns `summary`, or throws `error`, and records the transcripts it was given.
+/// Returns `summary`, or throws `error`, and records the transcripts and templates it was given.
 final class MockSummarizer: Summarizer {
     let info = SummarizerInfo(id: "mock", displayName: "Mock Summarizer")
     let availability: SummarizerAvailability
     private let summary: NoteSummary
     private let error: (any Error)?
     private let received = LockedValue<[Transcript]>([])
+    private let receivedTemplateList = LockedValue<[SummaryTemplate]>([])
 
     init(
         summary: NoteSummary = NoteSummary(overview: "A test."),
@@ -383,9 +440,11 @@ final class MockSummarizer: Summarizer {
     }
 
     var receivedTranscripts: [Transcript] { received.current }
+    var receivedTemplates: [SummaryTemplate] { receivedTemplateList.current }
 
-    func summarize(_ transcript: Transcript) async throws -> NoteSummary {
+    func summarize(_ transcript: Transcript, template: SummaryTemplate) async throws -> NoteSummary {
         received.update { $0.append(transcript) }
+        receivedTemplateList.update { $0.append(template) }
         if let error { throw error }
         return summary
     }

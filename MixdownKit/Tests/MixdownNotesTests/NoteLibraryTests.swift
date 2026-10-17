@@ -39,11 +39,141 @@ struct NoteLibraryTests {
         #expect(notes.map(\.title) == ["Plain", "Newer", "Newer", "Older"])
     }
 
+    @Test func loadsNotesInSubfolders() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fileManager = FileManager.default
+        for folder in ["Clients/Acme", ".obsidian", ".trash"] {
+            try fileManager.createDirectory(
+                at: directory.appending(path: folder, directoryHint: .isDirectory),
+                withIntermediateDirectories: true
+            )
+        }
+        try write("# Root", to: "Root.md", in: directory)
+        try write("# Client", to: "Clients/Client.md", in: directory)
+        try write("# Acme", to: "Clients/Acme/Acme.md", in: directory)
+        try write("# Settings", to: ".obsidian/Settings.md", in: directory)
+        try write("# Trashed", to: ".trash/Trashed.md", in: directory)
+
+        let notes = try NoteLibrary.loadNotes(in: directory)
+
+        let folders = Dictionary(uniqueKeysWithValues: notes.map { ($0.title, $0.folder) })
+        #expect(folders == ["Root": nil, "Client": "Clients", "Acme": "Clients/Acme"])
+    }
+
+    @Test func unreadableSubfolderIsLeftOut() throws {
+        let directory = try makeDirectory()
+        let locked = directory.appending(path: "Locked", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: locked, withIntermediateDirectories: false)
+        try write("# Hidden away", to: "Locked/Note.md", in: directory)
+        try write("# Root", to: "Root.md", in: directory)
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: locked.path(percentEncoded: false))
+        defer {
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o755],
+                ofItemAtPath: locked.path(percentEncoded: false)
+            )
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        #expect(try NoteLibrary.loadNotes(in: directory).map(\.title) == ["Root"])
+    }
+
     @Test func missingDirectoryHasNoNotes() throws {
         let directory = FileManager.default.temporaryDirectory
             .appending(path: "NoteLibraryTests-missing-\(UUID().uuidString)", directoryHint: .isDirectory)
 
         #expect(try NoteLibrary.loadNotes(in: directory).isEmpty)
+    }
+
+    // MARK: Reloading with a cache
+
+    private func setModificationDate(_ date: Date, of name: String, in directory: URL) throws {
+        let path = directory.appending(path: name, directoryHint: .notDirectory).path(percentEncoded: false)
+        try FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: path)
+    }
+
+    @Test func cachedReloadPicksUpAddedChangedAndRemovedNotes() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try write("# One", to: "One.md", in: directory)
+        try write("# Two", to: "Two.md", in: directory)
+        try setModificationDate(.now - 60, of: "Two.md", in: directory)
+        var cache = NoteLibrary.Cache()
+        #expect(Set(try NoteLibrary.loadNotes(in: directory, cache: &cache).map(\.title)) == ["One", "Two"])
+
+        try write("# Three", to: "Three.md", in: directory)
+        try write("# Two, edited", to: "Two.md", in: directory)
+        try FileManager.default.removeItem(at: directory.appending(path: "One.md", directoryHint: .notDirectory))
+
+        let titles = try NoteLibrary.loadNotes(in: directory, cache: &cache).map(\.title)
+        #expect(Set(titles) == ["Two, edited", "Three"])
+    }
+
+    @Test func cachedReloadSkipsFilesThatLookUnchanged() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try write("# Old", to: "Note.md", in: directory)
+        let date = Date.now - 60
+        try setModificationDate(date, of: "Note.md", in: directory)
+        var cache = NoteLibrary.Cache()
+        _ = try NoteLibrary.loadNotes(in: directory, cache: &cache)
+
+        // Same size and date: taken from the cache rather than read again.
+        try write("# New", to: "Note.md", in: directory)
+        try setModificationDate(date, of: "Note.md", in: directory)
+        #expect(try NoteLibrary.loadNotes(in: directory, cache: &cache).map(\.title) == ["Old"])
+        // Without the cache it is read.
+        #expect(try NoteLibrary.loadNotes(in: directory).map(\.title) == ["New"])
+    }
+
+    @Test func cachedReloadOfAnotherFolderHasOnlyItsNotes() throws {
+        let first = try makeDirectory()
+        let second = try makeDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: first)
+            try? FileManager.default.removeItem(at: second)
+        }
+        try write("# First", to: "Note.md", in: first)
+        try write("# Second", to: "Note.md", in: second)
+        var cache = NoteLibrary.Cache()
+        _ = try NoteLibrary.loadNotes(in: first, cache: &cache)
+
+        #expect(try NoteLibrary.loadNotes(in: second, cache: &cache).map(\.title) == ["Second"])
+        try FileManager.default.removeItem(at: second)
+        #expect(try NoteLibrary.loadNotes(in: second, cache: &cache).isEmpty)
+        #expect(try NoteLibrary.loadNotes(in: first, cache: &cache).map(\.title) == ["First"])
+    }
+
+    @Test func tellsNotesByName() {
+        let directory = URL(fileURLWithPath: "/Notes", isDirectory: true)
+        let note = { (name: String) in NoteLibrary.isNote(directory.appending(path: name)) }
+
+        #expect(note("2026-10-17 0930 Standup.md"))
+        #expect(note("Plain.MARKDOWN"))
+        #expect(!note(".DS_Store"))
+        #expect(!note(".Standup.md.swp"))
+        #expect(!note(".hidden.md"))
+        #expect(!note("notes.txt"))
+        #expect(!note("Standup.md.sb-1a2b3c"))
+    }
+
+    @Test func tellsChangesThatAffectNotes() {
+        let directory = URL(fileURLWithPath: "/Notes", isDirectory: true)
+        let affects = { (path: String, isDirectory: Bool) in
+            NoteLibrary.affectsNotes(URL(fileURLWithPath: path), isDirectory: isDirectory, in: directory)
+        }
+
+        #expect(affects("/Notes/Clients/Standup.md", false))
+        #expect(affects("/Notes/Clients", true))
+        #expect(affects("/Notes", true))
+        #expect(!affects("/Notes/Clients/.DS_Store", false))
+        #expect(!affects("/Notes/.obsidian/Settings.md", false))
+        #expect(!affects("/Notes/.trash", true))
+        #expect(!affects("/Notes/Clients/notes.txt", false))
+        // Spelled differently from `directory`: by name only.
+        #expect(affects("/private/Notes/.x/Standup.md", false))
+        #expect(!affects("/private/Notes/.Standup.md", false))
     }
 
     // MARK: Renaming
@@ -147,6 +277,51 @@ struct NoteLibraryTests {
 
         #expect(try contents(of: folded) == "---\ntitle: \"One\"\ntags: [x]\n---\nText")
         #expect(try contents(of: heading) == "---\ntitle: \"Two\"\ntags: [x]\n---\n# Two\n")
+    }
+
+    @Test func renameEscapesHeadingAndCollapsesSpaces() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try write("---\ntitle: \"Old  name\"\n---\n# Old  name\n", to: "Old.md", in: directory)
+
+        let renamed = try NoteLibrary.rename(
+            noteAt: directory.appending(path: "Old.md", directoryHint: .notDirectory),
+            to: "C#  *draft*\t#"
+        )
+
+        #expect(try contents(of: renamed) == "---\ntitle: \"C# *draft* #\"\n---\n# C# \\*draft\\* \\#\n")
+        let note = try #require(try NoteLibrary.loadNotes(in: directory).first)
+        #expect(note.title == "C# *draft* #")
+        #expect(note.displayBlocks().isEmpty)
+
+        let again = try NoteLibrary.rename(noteAt: renamed, to: "Plan")
+        #expect(try contents(of: again) == "---\ntitle: \"Plan\"\n---\n# Plan\n")
+    }
+
+    @Test func renameDropsLeadingDotsFromFileName() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try write("# Ideas\n", to: "Ideas.md", in: directory)
+
+        let renamed = try NoteLibrary.rename(
+            noteAt: directory.appending(path: "Ideas.md", directoryHint: .notDirectory),
+            to: ". .env"
+        )
+
+        #expect(renamed.lastPathComponent == "env.md")
+        #expect(try NoteLibrary.loadNotes(in: directory).map(\.title) == [". .env"])
+    }
+
+    @Test func renameLeavesNoteThatIsNotUTF8Alone() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appending(path: "Caf\u{E9}.md", directoryHint: .notDirectory)
+        let latin1 = Data("# Caf".utf8) + Data([0xE9, 0x0A])
+        try latin1.write(to: url)
+
+        #expect(throws: CocoaError.self) { try NoteLibrary.rename(noteAt: url, to: "New") }
+        #expect(try fileNames(in: directory) == [url.lastPathComponent])
+        #expect(try Data(contentsOf: url) == latin1)
     }
 
     @Test func renameToBlankIsUntitled() async throws {

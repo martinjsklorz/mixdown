@@ -148,6 +148,21 @@ enum CoreAudioHAL {
         return nil
     }
 
+    /// Calls `body` with only the first stream of an IO proc's input, if its channel count matches
+    /// `format`. A device with several input streams (some audio interfaces) delivers one buffer
+    /// per stream; the first is the main input. Right after a format change the IO proc can run
+    /// before the format listener has caught up, so a mismatched buffer is dropped.
+    static func withFirstInputStream(
+        _ inputData: UnsafePointer<AudioBufferList>,
+        matching format: AVAudioFormat,
+        _ body: (UnsafePointer<AudioBufferList>) -> Void
+    ) {
+        guard inputData.pointee.mNumberBuffers > 0 else { return }
+        var firstStream = AudioBufferList(mNumberBuffers: 1, mBuffers: inputData.pointee.mBuffers)
+        guard firstStream.mBuffers.mNumberChannels == format.channelCount else { return }
+        withUnsafePointer(to: &firstStream) { body($0) }
+    }
+
     /// Resolves a device UID to its current `AudioDeviceID`, or `nil` if it isn't connected.
     static func deviceID(forUID uid: String) throws -> AudioDeviceID? {
         try allDeviceIDs().first { self.uid(of: $0) == uid }

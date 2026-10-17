@@ -1,4 +1,5 @@
 import Foundation
+import MixdownCore
 
 /// A Markdown note read back from disk: its frontmatter metadata and Markdown body.
 ///
@@ -13,10 +14,16 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
     public var duration: TimeInterval?
     /// Names of the recorded inputs, from the frontmatter's `sources` list or single `source`.
     public var sources: [String]
+    /// How the recording was started. `nil` for notes from before Mixdown recorded it, and ones
+    /// edited to something else.
+    public var trigger: RecordingTrigger?
     /// The Markdown after the frontmatter.
     public var body: String
     /// The first text of the body as a single line of plain text. Empty if there is none.
     public var snippet: String
+    /// The subfolder of the notes folder the note is in, like `Clients/Acme`, or `nil` if it's
+    /// directly inside. Set by `NoteLibrary`.
+    public var folder: String?
 
     public var id: URL { url }
 
@@ -39,6 +46,7 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
         }
         let sources = fields["sources"].flatMap(Self.yamlFlowSequence) ?? scalars["source"].map { [$0] } ?? []
         self.sources = sources.filter { !$0.isEmpty }
+        self.trigger = scalars["trigger"].flatMap(RecordingTrigger.init(rawValue:))
         self.snippet = Self.snippet(from: blocks)
     }
 
@@ -122,13 +130,17 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
 
     // MARK: - Renaming
 
-    /// `contents` of the note at `url` with its title changed to `title`, a single line.
+    /// `contents` of the note at `url` with its title changed to `title`, a single line with no
+    /// runs of whitespace.
     ///
     /// Sets the frontmatter `title`, adding it if missing, and the first `#` heading if it shows
-    /// the current title. A note with neither frontmatter nor such a heading gets frontmatter.
+    /// the current title, escaping Markdown so the heading reads as `title`. A note with neither
+    /// frontmatter nor such a heading gets frontmatter.
     /// Line endings become `\n`.
     static func retitled(_ contents: String, url: URL, to title: String) -> String {
+        // Collapsed like the heading's plain text, so a title with runs of spaces still matches.
         let currentTitle = NoteDocument(url: url, contents: contents, fileDate: .distantPast).title
+            .split(whereSeparator: \.isWhitespace).joined(separator: " ")
         var text = contents.replacingOccurrences(of: "\r\n", with: "\n")
         if text.hasPrefix("\u{FEFF}") { text.removeFirst() }
         var lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
@@ -159,7 +171,7 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
                 fence = open
             } else if let (level, text) = Parser.atxHeading(trimmed), level == 1 {
                 guard MarkdownBlock.plainText(text) == currentTitle else { continue }
-                lines[index] = "# \(title)"
+                lines[index] = "# \(MarkdownNoteRenderer.headingText(title))"
                 renamedHeading = true
                 break
             }

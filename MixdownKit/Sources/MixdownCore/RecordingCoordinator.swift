@@ -34,7 +34,7 @@ public final class RecordingCoordinator {
         case failed(message: String)
     }
 
-    /// Recordings shorter than this are discarded without transcribing.
+    /// Recordings shorter than this are discarded without transcribing, with `tooShortMessage`.
     nonisolated static let minimumRecordingDuration: TimeInterval = 0.5
 
     /// Audio is handed to live sessions in pieces of at least this many samples (320 ms, the step
@@ -60,7 +60,24 @@ public final class RecordingCoordinator {
     public var noteWriter: (any NoteWriting)?
     /// Adds a summary to each note. `nil` while summaries are off.
     public var summarizer: (any Summarizer)?
-    public var options: TranscriptionOptions
+    /// The summary template for recordings started by hand.
+    public var summaryTemplate: SummaryTemplate
+    /// The summary template for recordings started for a call. See `markRecordingAsCall(automatically:)`.
+    public var callSummaryTemplate: SummaryTemplate
+    /// The summary template of the recording in progress, from its start until its summary is
+    /// begun; `nil` otherwise. Starts as `summaryTemplate`, or `callSummaryTemplate` once the
+    /// recording is marked as a call, until the user picks one with `chooseSummaryTemplate(_:)`.
+    public private(set) var recordingSummaryTemplate: SummaryTemplate?
+    /// Whether the user picked `recordingSummaryTemplate`, so marking a call keeps it.
+    @ObservationIgnored private var isRecordingSummaryTemplateChosen = false
+    public var options: TranscriptionOptions {
+        didSet {
+            guard options.language != oldValue.language else { return }
+            engine.languageDidChange(to: options.language)
+            isModelDownloaded = engine.isDownloaded
+            Task { await refreshModelStatus() }
+        }
+    }
     /// Speaker names for multi-source recordings.
     public var sourceLabels: SourceLabels
 
@@ -171,6 +188,7 @@ public final class RecordingCoordinator {
         let startedAt: Date
         /// Whether the recording was started for a call, from a notification or automatically.
         var isCall = false
+        var trigger = RecordingTrigger.manual
         private(set) var lanes: [Lane] = []
         /// Devices that went away or failed to start during this recording. They aren't picked
         /// again until they leave the device list or the user chooses them.
@@ -301,6 +319,8 @@ public final class RecordingCoordinator {
         engine: any TranscriptionEngine,
         noteWriter: (any NoteWriting)?,
         summarizer: (any Summarizer)? = nil,
+        summaryTemplate: SummaryTemplate = .general,
+        callSummaryTemplate: SummaryTemplate = .general,
         options: TranscriptionOptions = .init(),
         sourceLabels: SourceLabels = .init(),
         preferredDeviceIDs: [String] = [],
@@ -310,9 +330,12 @@ public final class RecordingCoordinator {
         self.deviceProvider = deviceProvider
         self.captureFactory = captureFactory
         self.engine = engine
+        engine.languageDidChange(to: options.language)
         self.isModelDownloaded = engine.isDownloaded
         self.noteWriter = noteWriter
         self.summarizer = summarizer
+        self.summaryTemplate = summaryTemplate
+        self.callSummaryTemplate = callSummaryTemplate
         self.options = options
         self.sourceLabels = sourceLabels
         self.preferredDeviceIDs = preferredDeviceIDs
@@ -459,6 +482,13 @@ public final class RecordingCoordinator {
         }
     }
 
+    /// Re-checks whether the model is downloaded, for an engine that can only tell asynchronously
+    /// (see `TranscriptionEngine.refreshDownloadStatus()`). Call it once the coordinator is created.
+    public func refreshModelStatus() async {
+        await engine.refreshDownloadStatus()
+        isModelDownloaded = engine.isDownloaded
+    }
+
     /// Stops an in-progress model download. Files already fetched are kept, so the next
     /// `prepareEngine()` (or recording) resumes from them.
     public func cancelPreparation() {
@@ -505,12 +535,15 @@ public final class RecordingCoordinator {
         guard canStartRecording else { return }
         let devices = selectedDevices
         isStartingCapture = true
+        // Held until `end(_:interruption:)` has transcribed the recording.
+        engine.recordingWillStart()
 
         let startedCaptures: [StartedCapture]
         do {
             startedCaptures = try await startCaptures(for: devices)
         } catch {
             logger.error("Starting capture failed: \(error.localizedDescription, privacy: .public)")
+            engine.recordingDidFinish()
             isStartingCapture = false
             phase = .failed(message: error.localizedDescription)
             reconcileSelection()
@@ -520,6 +553,8 @@ public final class RecordingCoordinator {
         let session = Session(startedAt: now())
         self.session = session
         isStartingCapture = false
+        recordingSummaryTemplate = summaryTemplate
+        isRecordingSummaryTemplateChosen = false
         if engine.transcribesLive {
             liveTranscript = LiveTranscript(speakers: [])
             showsLiveTranscript = true
@@ -712,6 +747,8 @@ public final class RecordingCoordinator {
         let tracks = await endCaptures(of: session)
         let liveError = await finishLiveTranscription(of: session)
         await finish(session, tracks: tracks, interruption: interruption ?? liveError)
+        recordingSummaryTemplate = nil
+        engine.recordingDidFinish()
     }
 
     /// Waits for `session`'s live sessions to transcribe the rest of their input. Returns the
@@ -771,7 +808,8 @@ public final class RecordingCoordinator {
         let duration = tracks.map(\.end).max() ?? 0
         guard duration >= Self.minimumRecordingDuration else {
             logger.info("Discarding \(duration, format: .fixed(precision: 2)) s recording as too short")
-            phase = interruption.map { Phase.failed(message: $0.localizedDescription) } ?? .idle
+            // An interruption this early explains itself, like capture failing to start.
+            phase = .failed(message: interruption?.localizedDescription ?? Self.tooShortMessage)
             return
         }
 
@@ -792,7 +830,10 @@ public final class RecordingCoordinator {
             } else {
                 transcript = try await transcribeSeparately(tracks, session: session)
             }
-            let summary = await summarize(transcript)
+            let template = recordingSummaryTemplate ?? (session.isCall ? callSummaryTemplate : summaryTemplate)
+            // The template can't change once the summary is under way.
+            recordingSummaryTemplate = nil
+            let summary = await summarize(transcript, template: template)
             let note = Note(
                 title: NoteTitle.make(
                     for: session.startedAt,
@@ -805,7 +846,8 @@ public final class RecordingCoordinator {
                 sources: session.devices,
                 engine: engine.info,
                 transcript: transcript,
-                summary: summary
+                summary: summary,
+                trigger: session.trigger
             )
             // The folder can go away mid-recording, e.g. when its drive is disconnected.
             guard let noteWriter else { throw NoteWritingError.noFolder }
@@ -833,7 +875,7 @@ public final class RecordingCoordinator {
 
     /// The transcript's summary, or `nil` if there's no summarizer, it isn't available or it
     /// fails. The note is saved either way, so a failure is only logged.
-    private func summarize(_ transcript: Transcript) async -> NoteSummary? {
+    private func summarize(_ transcript: Transcript, template: SummaryTemplate) async -> NoteSummary? {
         guard let summarizer, !transcript.isEmpty else { return nil }
         let name = summarizer.info.displayName
         if case .unavailable(let reason) = summarizer.availability {
@@ -842,7 +884,7 @@ public final class RecordingCoordinator {
         }
         phase = .summarizing
         do {
-            let summary = try await summarizer.summarize(transcript)
+            let summary = try await summarizer.summarize(transcript, template: template)
             return summary.isEmpty ? nil : summary
         } catch {
             logger.error(
@@ -949,10 +991,23 @@ public final class RecordingCoordinator {
         phase = .transcribing(progress: total)
     }
 
-    /// Marks the recording in progress as a call, so its note is titled as one, e.g. "Call about …".
-    /// Ignored when not recording.
-    public func markRecordingAsCall() {
-        session?.isCall = true
+    /// Marks the recording in progress as a call, so its note is titled as one, e.g. "Call about …",
+    /// and, if Mixdown started it by itself, as started automatically. Ignored when not recording.
+    public func markRecordingAsCall(automatically: Bool = false) {
+        guard let session else { return }
+        session.isCall = true
+        if automatically { session.trigger = .automatic }
+        if !isRecordingSummaryTemplateChosen {
+            recordingSummaryTemplate = callSummaryTemplate
+        }
+    }
+
+    /// Summarizes the recording in progress, or the one being transcribed, with `template`
+    /// instead of the default. Ignored when there's no such recording or its summary has begun.
+    public func chooseSummaryTemplate(_ template: SummaryTemplate) {
+        guard recordingSummaryTemplate != nil else { return }
+        recordingSummaryTemplate = template
+        isRecordingSummaryTemplateChosen = true
     }
 
     public func toggleRecording() async {
@@ -1127,4 +1182,7 @@ public final class RecordingCoordinator {
     nonisolated static func interruptedMessage(for error: any Error) -> String {
         "Recording stopped early. \(error.localizedDescription) The note has what was recorded until then."
     }
+
+    nonisolated static let tooShortMessage =
+        "The recording was too short to save. Record for at least half a second."
 }

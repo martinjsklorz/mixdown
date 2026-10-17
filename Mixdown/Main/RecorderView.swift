@@ -75,6 +75,7 @@ struct RecorderView: View {
                 }
                 caption("Recording · click to stop")
                 InputLevelsView(coordinator: coordinator)
+                summaryTemplatePicker(for: coordinator)
 
             // The live model only finishes its last fraction of a second, too quick to track.
             case .transcribing where environment.model.isLive:
@@ -91,6 +92,7 @@ struct RecorderView: View {
                         .monospacedDigit()
                 }
                 .frame(maxWidth: 320)
+                summaryTemplatePicker(for: coordinator)
 
             case .summarizing:
                 headline(
@@ -119,6 +121,27 @@ struct RecorderView: View {
         }
         .multilineTextAlignment(.center)
         .animation(.default, value: coordinator.isRecording)
+    }
+
+    /// The template this recording's summary gets, preselected from Settings → Transcription and
+    /// changeable until the summary is begun.
+    @ViewBuilder
+    private func summaryTemplatePicker(for coordinator: RecordingCoordinator) -> some View {
+        if environment.summarizesNotes, let template = coordinator.recordingSummaryTemplate {
+            Picker(
+                "Summary:",
+                selection: Binding(
+                    get: { template },
+                    set: { coordinator.chooseSummaryTemplate($0) }
+                )
+            ) {
+                ForEach(SummaryTemplate.allCases) { template in
+                    Text(template.displayName).tag(template)
+                }
+            }
+            .fixedSize()
+            .help("The summary template for this recording")
+        }
     }
 
     private func downloadButton(for coordinator: RecordingCoordinator) -> some View {
