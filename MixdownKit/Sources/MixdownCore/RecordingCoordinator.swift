@@ -30,7 +30,7 @@ public final class RecordingCoordinator {
         case failed(message: String)
     }
 
-    /// Recordings shorter than this are discarded without transcribing.
+    /// Recordings shorter than this are discarded without transcribing, with `tooShortMessage`.
     nonisolated static let minimumRecordingDuration: TimeInterval = 0.5
 
     public private(set) var phase: Phase = .idle {
@@ -641,7 +641,8 @@ public final class RecordingCoordinator {
         let duration = tracks.map(\.end).max() ?? 0
         guard duration >= Self.minimumRecordingDuration else {
             logger.info("Discarding \(duration, format: .fixed(precision: 2)) s recording as too short")
-            phase = interruption.map { Phase.failed(message: $0.localizedDescription) } ?? .idle
+            // An interruption this early explains itself, like capture failing to start.
+            phase = .failed(message: interruption?.localizedDescription ?? Self.tooShortMessage)
             return
         }
 
@@ -968,4 +969,7 @@ public final class RecordingCoordinator {
     nonisolated static func interruptedMessage(for error: any Error) -> String {
         "Recording stopped early. \(error.localizedDescription) The note has what was recorded until then."
     }
+
+    nonisolated static let tooShortMessage =
+        "The recording was too short to save. Record for at least half a second."
 }

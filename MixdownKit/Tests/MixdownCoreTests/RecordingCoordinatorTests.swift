@@ -145,7 +145,8 @@ struct RecordingCoordinatorTests {
         #expect(coordinator.selectedDevices == [Fixtures.usbMic])
 
         await coordinator.stopRecording()
-        #expect(coordinator.phase == .idle)
+        // The mocks record nothing.
+        #expect(coordinator.phase == .failed(message: RecordingCoordinator.tooShortMessage))
     }
 
     // MARK: - Recording
@@ -233,11 +234,16 @@ struct RecordingCoordinatorTests {
         await coordinator.startRecording()
         await coordinator.stopRecording()
 
-        #expect(coordinator.phase == .idle)
+        #expect(coordinator.phase == .failed(message: RecordingCoordinator.tooShortMessage))
+        #expect(coordinator.modelError == nil)
         #expect(coordinator.lastNoteURL == nil)
         #expect(await engine.receivedSampleCounts.isEmpty)
         #expect(await writer.notes.isEmpty)
         #expect(engine.recordingsInProgress.current == 0)
+        #expect(coordinator.canStartRecording)
+
+        coordinator.dismissError()
+        #expect(coordinator.phase == .idle)
     }
 
     @Test func engineErrorFails() async {
@@ -640,7 +646,8 @@ struct RecordingCoordinatorTests {
 
         await coordinator.stopRecording()
         #expect(secondUSB.stopCount == 1)
-        #expect(coordinator.phase == .idle)
+        // The mocks record nothing.
+        #expect(coordinator.phase == .failed(message: RecordingCoordinator.tooShortMessage))
     }
 
     @Test func followsNewDefaultMicrophoneWhileRecording() async throws {
@@ -783,7 +790,8 @@ struct RecordingCoordinatorTests {
 
         await coordinator.stopRecording()
         #expect(second.stopCount == 1)
-        #expect(coordinator.phase == .idle)
+        // The mocks record nothing.
+        #expect(coordinator.phase == .failed(message: RecordingCoordinator.tooShortMessage))
     }
 
     // MARK: - Levels
