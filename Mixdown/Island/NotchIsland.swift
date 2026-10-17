@@ -31,12 +31,23 @@ final class NotchIsland {
         var showsLevels = true
     }
 
+    /// Whether the wings are out. They grow out of the notch on `show(_:)` and back into it on
+    /// `hide()`, while the panel keeps its full size.
+    @MainActor @Observable
+    final class Presence {
+        var isExpanded = false
+    }
+
+    private static let expandAnimation = Animation.smooth(duration: 0.35)
+    private static let collapseAnimation = Animation.smooth(duration: 0.3)
+
     private let environment: AppEnvironment
     private let openRecorder: () -> Void
     /// Created on first `show()`, as windows shouldn't be made before the app has launched.
     private var panel: IslandPanel?
     private(set) var isShown = false
     private var layout = Layout()
+    private let presence = Presence()
     /// The time's wing as wide as the view last measured it, which grows with the time.
     private var timeWingWidth: CGFloat = 56
 
@@ -55,24 +66,25 @@ final class NotchIsland {
         }
         isShown = true
         let panel = panel ?? makePanel()
-        place(panel)
-        panel.alphaValue = 0
+        // Still on screen if shown again while collapsing, where the wings grow back out from there.
+        if !panel.isVisible || layoutChanged { place(panel) }
         panel.orderFrontRegardless()
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.2
-            panel.animator().alphaValue = 1
+        // On the next turn of the run loop, after the view has been drawn collapsed.
+        Task { @MainActor [weak self] in
+            // Hidden again in the meantime.
+            guard let self, self.isShown else { return }
+            withAnimation(Self.expandAnimation) { self.presence.isExpanded = true }
         }
     }
 
     func hide() {
         guard isShown, let panel else { return }
         isShown = false
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.2
-            panel.animator().alphaValue = 0
-        } completionHandler: {
+        withAnimation(Self.collapseAnimation) {
+            presence.isExpanded = false
+        } completion: {
             Task { @MainActor [weak self] in
-                // Shown again while fading out.
+                // Shown again while collapsing.
                 guard let self, !self.isShown, let panel = self.panel else { return }
                 panel.orderOut(nil)
                 // Ends the view's clock and level sampling, which an ordered-out window keeps
@@ -113,6 +125,7 @@ final class NotchIsland {
                 environment: environment,
                 notchWidth: notch.width,
                 layout: layout,
+                presence: presence,
                 openRecorder: openRecorder,
                 timeWingWidthChanged: { [weak self] width in self?.timeWingWidthChanged(width) }
             )
