@@ -476,12 +476,15 @@ public final class RecordingCoordinator {
         guard canStartRecording else { return }
         let devices = selectedDevices
         isStartingCapture = true
+        // Held until `end(_:interruption:)` has transcribed the recording.
+        engine.recordingWillStart()
 
         let startedCaptures: [StartedCapture]
         do {
             startedCaptures = try await startCaptures(for: devices)
         } catch {
             logger.error("Starting capture failed: \(error.localizedDescription, privacy: .public)")
+            engine.recordingDidFinish()
             isStartingCapture = false
             phase = .failed(message: error.localizedDescription)
             reconcileSelection()
@@ -601,6 +604,7 @@ public final class RecordingCoordinator {
         resetLevels()
         let tracks = await endCaptures(of: session)
         await finish(session, tracks: tracks, interruption: interruption)
+        engine.recordingDidFinish()
     }
 
     /// Stops every capture of `session` and joins what each lane recorded into one track per lane.

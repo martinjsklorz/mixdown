@@ -198,6 +198,10 @@ actor MockEngine: TranscriptionEngine {
     private(set) var prepareCount = 0
     private(set) var cancelledPrepareCount = 0
     private(set) var deleteCount = 0
+    /// Recordings between `recordingWillStart()` and `recordingDidFinish()`.
+    nonisolated let recordingsInProgress = LockedValue(0)
+    /// `recordingsInProgress` at each `transcribe` call.
+    private(set) var recordingsInProgressWhileTranscribing: [Int] = []
 
     /// - Parameters:
     ///   - isDownloaded: Whether the model starts out on disk. A successful `prepare` downloads it.
@@ -254,12 +258,21 @@ actor MockEngine: TranscriptionEngine {
         downloaded.update { $0 = false }
     }
 
+    nonisolated func recordingWillStart() {
+        recordingsInProgress.update { $0 += 1 }
+    }
+
+    nonisolated func recordingDidFinish() {
+        recordingsInProgress.update { $0 -= 1 }
+    }
+
     func transcribe(
         _ samples: [Float],
         options: TranscriptionOptions,
         progress: (@Sendable (Double) -> Void)?
     ) async throws -> Transcript {
         receivedSampleCounts.append(samples.count)
+        recordingsInProgressWhileTranscribing.append(recordingsInProgress.current)
         if let fraction = progressBySampleCount[samples.count] { progress?(fraction) }
         if !ungatedSampleCounts.contains(samples.count) { await transcriptionGate?.wait() }
         if let transcribeError { throw transcribeError }
