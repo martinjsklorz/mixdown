@@ -102,6 +102,7 @@ final class MockCapture: AudioCapturing {
     private let finishesOnStart: Bool
     private let stream: AsyncThrowingStream<AudioChunk, any Error>
     private let continuation: AsyncThrowingStream<AudioChunk, any Error>.Continuation
+    private let startCalls = LockedValue(0)
     private let stopCalls = LockedValue(0)
 
     init(
@@ -119,9 +120,11 @@ final class MockCapture: AudioCapturing {
         self.continuation = continuation
     }
 
+    var startCount: Int { startCalls.current }
     var stopCount: Int { stopCalls.current }
 
     func start() async throws -> AsyncThrowingStream<AudioChunk, any Error> {
+        startCalls.update { $0 += 1 }
         if let startError { throw startError }
         for chunk in chunks {
             continuation.yield(chunk)

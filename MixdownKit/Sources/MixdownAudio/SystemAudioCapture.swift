@@ -32,6 +32,12 @@ final class SystemAudioCapture: AudioCapturing, @unchecked Sendable {
         resampler = try AudioResampler()
     }
 
+    deinit {
+        // Released without `stop()`: end the stream so its reader isn't left waiting. The tap
+        // destroys itself when it's released along with `state`.
+        state.withLockUnchecked { $0.continuation }?.finish()
+    }
+
     func start() async throws -> AsyncThrowingStream<AudioChunk, any Error> {
         let (stream, continuation) = AsyncThrowingStream<AudioChunk, any Error>.makeStream()
         try state.withLockUnchecked { state in
@@ -42,7 +48,10 @@ final class SystemAudioCapture: AudioCapturing, @unchecked Sendable {
 
         let tap = ProcessTap()
         do {
-            try tap.create(excluding: Self.ownProcessObjectID())
+            try tap.create(excluding: Self.ownProcessObjectID()) { [weak self] error in
+                guard let self else { return }
+                Task { await self.finish(throwing: error) }
+            }
             try tap.start(on: sampleQueue) { [weak self] bufferList, time, format in
                 self?.consume(bufferList, at: time, format: format)
             }
@@ -77,6 +86,11 @@ final class SystemAudioCapture: AudioCapturing, @unchecked Sendable {
     }
 
     func stop() async {
+        await finish(throwing: nil)
+    }
+
+    /// Destroys the tap and ends the stream, with `error` if the capture failed.
+    private func finish(throwing error: (any Error)?) async {
         let (tap, continuation) = state.withLockUnchecked { state -> (ProcessTap?, Continuation?) in
             guard state.phase != .stopped else { return (nil, nil) }
             state.phase = .stopped
@@ -94,8 +108,13 @@ final class SystemAudioCapture: AudioCapturing, @unchecked Sendable {
         await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
             sampleQueue.async { done.resume() }
         }
-        continuation.finish()
-        audioLogger.info("System audio capture stopped")
+        if let error {
+            audioLogger.error("System audio capture failed: \(error.localizedDescription, privacy: .public)")
+            continuation.finish(throwing: error)
+        } else {
+            continuation.finish()
+            audioLogger.info("System audio capture stopped")
+        }
     }
 
     // MARK: - Samples
@@ -129,8 +148,8 @@ final class SystemAudioCapture: AudioCapturing, @unchecked Sendable {
 }
 
 /// A global process tap, the private aggregate device it's read through, and listeners that
-/// keep the format current. A tap delivers no buffers on its own; it has to be part of an
-/// aggregate device with an IO proc.
+/// keep the format current and notice the audio service restarting, which destroys both. A tap
+/// delivers no buffers on its own; it has to be part of an aggregate device with an IO proc.
 ///
 /// `@unchecked Sendable`: `create`, `start` and `invalidate` are called one after another, never
 /// concurrently; `format` is behind a lock because the listener and IO queues both use it.
@@ -144,8 +163,14 @@ private final class ProcessTap: @unchecked Sendable {
     /// The format of the aggregate device's input stream, the one the IO block reads.
     private let format = OSAllocatedUnfairLock<AVAudioFormat?>(uncheckedState: nil)
 
+    deinit { invalidate() }
+
     /// Creates the tap and its aggregate device and starts following the device's format.
-    func create(excluding ownProcess: AudioObjectID?) throws {
+    /// - Parameter onFailure: Called, possibly more than once, when the tap stops working.
+    func create(
+        excluding ownProcess: AudioObjectID?,
+        onFailure: @escaping @Sendable (AudioCaptureError) -> Void
+    ) throws {
         let description = CATapDescription(stereoGlobalTapButExcludeProcesses: ownProcess.map { [$0] } ?? [])
         description.name = "Mixdown System Audio"
         description.uuid = UUID()
@@ -195,14 +220,19 @@ private final class ProcessTap: @unchecked Sendable {
                 onChange: onChange
             ),
             HALPropertyListener(objectID: tapID, selectors: [kAudioTapPropertyFormat], onChange: onChange),
+            HALPropertyListener(selectors: [kAudioHardwarePropertyServiceRestarted]) {
+                onFailure(.audioServiceRestarted)
+            },
         ]
         listeners.forEach { $0.install() }
     }
 
     /// Starts IO. macOS asks for the System Audio Recording permission the first time.
     func start(on queue: DispatchQueue, ioBlock: @escaping IOBlock) throws {
-        let block: AudioDeviceIOBlock = { [weak self] _, inputData, inputTime, _, _ in
-            guard let format = self?.format.withLockUnchecked({ $0 }) else { return }
+        // Holds the lock, not `self`, so `self` is never released on the IO queue.
+        let format = format
+        let block: AudioDeviceIOBlock = { _, inputData, inputTime, _, _ in
+            guard let format = format.withLockUnchecked({ $0 }) else { return }
             CoreAudioHAL.withFirstInputStream(inputData, matching: format) { ioBlock($0, inputTime.pointee, format) }
         }
         try CoreAudioHAL.check(
@@ -214,7 +244,7 @@ private final class ProcessTap: @unchecked Sendable {
 
     /// Stops IO and destroys whatever `create`/`start` set up. Safe after a partial setup.
     func invalidate() {
-        listeners.forEach { $0.remove() }
+        listeners.forEach { $0.remove(logsFailures: false) }
         listeners = []
         if aggregateID != AudioObjectID(kAudioObjectUnknown) {
             if let ioProcID {
