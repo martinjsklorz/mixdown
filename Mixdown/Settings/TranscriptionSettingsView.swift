@@ -28,12 +28,8 @@ struct TranscriptionSettingsView: View {
                             )
                         ) {
                             ForEach(TranscriptionModel.available) { model in
-                                Label {
-                                    Text(model.displayName)
-                                } icon: {
-                                    downloadIcon(for: model)
-                                }
-                                .tag(model)
+                                menuTitle(for: model)
+                                    .tag(model)
                             }
                         }
                         .labelsHidden()
@@ -165,21 +161,16 @@ struct TranscriptionSettingsView: View {
         }
     }
 
-    /// A green check for models on disk, else a download arrow, so the menu says which models are
-    /// ready without picking them.
-    @ViewBuilder
-    private func downloadIcon(for model: TranscriptionModel) -> some View {
+    /// The model's name, followed by a green check for models on disk, so the menu says which
+    /// models are ready without picking them. Nothing for models not downloaded yet.
+    private func menuTitle(for model: TranscriptionModel) -> Text {
         let isDownloaded =
             model == environment.model
             ? environment.coordinator.isModelDownloaded
             : model.isDownloaded ?? isAppleSpeechInstalled
-        if isDownloaded {
-            Image(nsImage: Self.downloadedImage)
-                .accessibilityLabel("Downloaded")
-        } else {
-            Image(systemName: "arrow.down.circle")
-                .accessibilityLabel("Not downloaded")
-        }
+        guard isDownloaded else { return Text(model.displayName) }
+        return Text("\(model.displayName)  \(Image(nsImage: Self.downloadedImage))")
+            .accessibilityLabel("\(model.displayName), downloaded")
     }
 
     /// `checkmark.circle.fill` in green. Menus draw SF Symbols as monochrome templates, so the
