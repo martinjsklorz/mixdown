@@ -75,9 +75,7 @@ private struct ElapsedWing: View {
     }
 }
 
-/// One waveform for all inputs together, like the music one in the iPhone's Dynamic Island: the
-/// loudest input's last few levels as rounded bars, newest on the right, that shrink to dots in
-/// silence. It turns orange while any input stays silent.
+/// One waveform for all inputs together that turns orange while any input stays silent.
 private struct LevelsWing: View {
     let coordinator: RecordingCoordinator
     let side: NotchIsland.Side
@@ -85,48 +83,10 @@ private struct LevelsWing: View {
     var body: some View {
         let silent = coordinator.silentDevices
 
-        Waveform(coordinator: coordinator, isSilent: !silent.isEmpty)
+        LevelWaveform(coordinator: coordinator, isSilent: !silent.isEmpty, color: .white.opacity(0.75))
             .help(silent.isEmpty ? "Input level" : "No sound from \(silent.map(\.name).formatted(.list(type: .and)))")
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Input level")
             .wingAlignment(side)
-    }
-}
-
-/// The inputs' recent combined levels as bars.
-private struct Waveform: View {
-    static let barCount = 5
-    static let barWidth: CGFloat = 3
-    static let maxBarHeight: CGFloat = 16
-
-    let coordinator: RecordingCoordinator
-    let isSilent: Bool
-    @State private var history = Array(repeating: 0.0, count: barCount)
-
-    /// The loudest selected input right now, system audio included.
-    private var combinedLevel: Double {
-        let levels = coordinator.inputLevels
-        return coordinator.selectedDevices.map { levels[$0.id]?.meterValue ?? 0 }.max() ?? 0
-    }
-
-    var body: some View {
-        HStack(spacing: 2) {
-            ForEach(history.indices, id: \.self) { index in
-                Capsule()
-                    .frame(width: Self.barWidth, height: max(Self.barWidth, history[index] * Self.maxBarHeight))
-            }
-        }
-        .frame(height: Self.maxBarHeight)
-        .foregroundStyle(isSilent ? Color.orange : Color.white.opacity(0.75))
-        .animation(.easeOut(duration: 0.1), value: history)
-        // Sampled on a clock rather than on each new level, so the bars keep moving (to dots) while
-        // the inputs deliver the same level, such as exact silence.
-        .task {
-            while !Task.isCancelled {
-                history.removeFirst()
-                history.append(combinedLevel)
-                try? await Task.sleep(for: .milliseconds(100))
-            }
-        }
     }
 }
