@@ -22,10 +22,10 @@ struct DesignSettingsView: View {
 
             Section {
                 Toggle(
-                    "Show recording in the notch",
+                    "Show recording in the Dynamic Island",
                     isOn: Binding(
-                        get: { environment.showsRecordingInNotch },
-                        set: { environment.setShowsRecordingInNotch($0) }
+                        get: { environment.showsRecordingInDynamicIsland },
+                        set: { environment.setShowsRecordingInDynamicIsland($0) }
                     )
                 )
                 Group {
@@ -36,7 +36,7 @@ struct DesignSettingsView: View {
                             set: { side in environment.setIslandLayout(changedLayout { $0.timeSide = side }) }
                         )
                     ) {
-                        ForEach(NotchIsland.Side.allCases) { side in
+                        ForEach(DynamicIsland.Side.allCases) { side in
                             Text(side.title).tag(side)
                         }
                     }
@@ -49,15 +49,15 @@ struct DesignSettingsView: View {
                         )
                     )
                 }
-                .disabled(!environment.showsRecordingInNotch)
+                .disabled(!environment.showsRecordingInDynamicIsland)
             } header: {
                 Text("Recording")
             } footer: {
                 Text(
-                    "While recording, the time and input levels appear around the camera notch, like the "
-                        + "Dynamic Island, instead of the time in the menu bar. The levels go on the other "
-                        + "side from the time. Without a notch, they appear at the top center of the screen. "
-                        + "Click them to open Record."
+                    "While recording, the time and input levels appear in a Dynamic Island around the "
+                        + "camera notch instead of the time in the menu bar. The levels go on the other side "
+                        + "from the time. Without a notch, the island appears at the top center of the "
+                        + "screen. Click it to open Record."
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -68,7 +68,7 @@ struct DesignSettingsView: View {
     }
 
     /// The island's current layout, changed by `change`.
-    private func changedLayout(_ change: (inout NotchIsland.Layout) -> Void) -> NotchIsland.Layout {
+    private func changedLayout(_ change: (inout DynamicIsland.Layout) -> Void) -> DynamicIsland.Layout {
         var layout = environment.islandLayout
         change(&layout)
         return layout

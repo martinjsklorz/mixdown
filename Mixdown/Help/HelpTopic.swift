@@ -153,8 +153,9 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
 
             - **Record** shows a level meter for each input.
             - The elapsed time shows in the menu bar. With **Settings → Design → Show recording in \
-            the notch** on, the time and levels appear around the camera notch instead (at the top \
-            center of the screen on Macs without one). Click them to open Record.
+            the Dynamic Island** on, the time and levels appear in a Dynamic Island around the camera \
+            notch instead (at the top center of the screen on Macs without one). Click it to open \
+            Record.
             - If an input makes no sound for 10 seconds, Mixdown warns on Record and in the menu \
             bar. See [Troubleshooting](mixdown-help:troubleshooting).
 

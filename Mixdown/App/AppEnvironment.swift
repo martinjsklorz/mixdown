@@ -34,10 +34,10 @@ final class AppEnvironment {
     /// Whether the global shortcut (`KeyboardShortcuts.Name.toggleRecording`) starts and stops
     /// recording. Off, the shortcut is kept but released, so other apps get those keys.
     private(set) var isRecordingShortcutEnabled: Bool
-    /// Whether a recording shows in the notch island rather than the menu bar. See `NotchIsland`.
-    private(set) var showsRecordingInNotch: Bool
-    /// What the notch island shows, and where.
-    private(set) var islandLayout: NotchIsland.Layout
+    /// Whether a recording shows in the Dynamic Island rather than the menu bar. See `DynamicIsland`.
+    private(set) var showsRecordingInDynamicIsland: Bool
+    /// What the Dynamic Island shows, and where.
+    private(set) var islandLayout: DynamicIsland.Layout
 
     private let settings: AppSettings
     @ObservationIgnored private var deviceMonitor: Task<Void, Never>?
@@ -45,7 +45,7 @@ final class AppEnvironment {
     @ObservationIgnored private var recordingClockStart: Date?
     @ObservationIgnored private var callPrompt: CallPrompt?
     /// Created the first time it's shown.
-    @ObservationIgnored private var notchIsland: NotchIsland?
+    @ObservationIgnored private var dynamicIsland: DynamicIsland?
     /// Opens Record in the main window.
     @ObservationIgnored private let showRecorder: () -> Void
     @ObservationIgnored private var notifiedNoteURL: URL?
@@ -76,7 +76,7 @@ final class AppEnvironment {
         )
         self.notifiesAboutCalls = settings.notifiesAboutCalls
         self.recordsCallsAutomatically = settings.recordsCallsAutomatically
-        self.showsRecordingInNotch = settings.showsRecordingInNotch
+        self.showsRecordingInDynamicIsland = settings.showsRecordingInDynamicIsland
         self.islandLayout = settings.islandLayout
         let showRecorder: () -> Void = { [weak navigation] in
             guard let navigation, let openWindow = navigation.openWindow else { return }
@@ -86,7 +86,7 @@ final class AppEnvironment {
         startMonitoringDevices()
         refreshModelStatus()
         observeRecording()
-        observeNotchIsland()
+        observeDynamicIsland()
         observePhaseForCues()
         observeNotesFolder()
         observeNewNotes()
@@ -175,21 +175,21 @@ final class AppEnvironment {
         }
     }
 
-    /// Shows the notch island while recording, if it's turned on, and lays it out again when its
+    /// Shows the Dynamic Island while recording, if it's turned on, and lays it out again when its
     /// settings change. Re-registers itself after every change, including the coordinator being
     /// replaced.
-    private func observeNotchIsland() {
+    private func observeDynamicIsland() {
         let (shows, layout) = withObservationTracking {
-            (coordinator.isRecording && showsRecordingInNotch, islandLayout)
+            (coordinator.isRecording && showsRecordingInDynamicIsland, islandLayout)
         } onChange: { [weak self] in
-            Task { @MainActor in self?.observeNotchIsland() }
+            Task { @MainActor in self?.observeDynamicIsland() }
         }
         if shows {
-            let island = notchIsland ?? NotchIsland(environment: self, openRecorder: showRecorder)
-            notchIsland = island
+            let island = dynamicIsland ?? DynamicIsland(environment: self, openRecorder: showRecorder)
+            dynamicIsland = island
             island.show(layout)
         } else {
-            notchIsland?.hide()
+            dynamicIsland?.hide()
         }
     }
 
@@ -350,12 +350,12 @@ final class AppEnvironment {
 
     // MARK: Design
 
-    func setShowsRecordingInNotch(_ enabled: Bool) {
-        settings.showsRecordingInNotch = enabled
-        showsRecordingInNotch = enabled
+    func setShowsRecordingInDynamicIsland(_ enabled: Bool) {
+        settings.showsRecordingInDynamicIsland = enabled
+        showsRecordingInDynamicIsland = enabled
     }
 
-    func setIslandLayout(_ layout: NotchIsland.Layout) {
+    func setIslandLayout(_ layout: DynamicIsland.Layout) {
         settings.islandLayout = layout
         islandLayout = layout
     }
