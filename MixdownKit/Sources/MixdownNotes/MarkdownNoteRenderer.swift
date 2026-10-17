@@ -11,7 +11,7 @@ public enum MarkdownNoteRenderer {
 
     public static func render(_ note: Note) -> String {
         let title = singleLine(note.title)
-        let blocks = [frontmatter(for: note), "# \(title.isEmpty ? "Untitled" : escapedMarkdown(title))"]
+        let blocks = [frontmatter(for: note), "# \(title.isEmpty ? "Untitled" : headingText(title))"]
             + bodySections(for: note)
         return blocks.joined(separator: "\n\n") + "\n"
     }
@@ -158,6 +158,15 @@ public enum MarkdownNoteRenderer {
             escaped.append(character)
         }
         return escaped
+    }
+
+    /// `escapedMarkdown(_:)` for the text of a `#` heading, also escaping trailing `#`s that
+    /// would otherwise close the heading and be dropped.
+    static func headingText(_ text: String) -> String {
+        let escaped = escapedMarkdown(text)
+        guard let closing = escaped.range(of: #"(^|\s)#+$"#, options: .regularExpression) else { return escaped }
+        let marks = escaped[closing].firstIndex(of: "#")!
+        return String(escaped[..<marks]) + "\\" + escaped[marks...]
     }
 
     /// Collapses line breaks so multi-line text stays a single Markdown line or paragraph.

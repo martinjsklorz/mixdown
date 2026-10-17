@@ -130,13 +130,17 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
 
     // MARK: - Renaming
 
-    /// `contents` of the note at `url` with its title changed to `title`, a single line.
+    /// `contents` of the note at `url` with its title changed to `title`, a single line with no
+    /// runs of whitespace.
     ///
     /// Sets the frontmatter `title`, adding it if missing, and the first `#` heading if it shows
-    /// the current title. A note with neither frontmatter nor such a heading gets frontmatter.
+    /// the current title, escaping Markdown so the heading reads as `title`. A note with neither
+    /// frontmatter nor such a heading gets frontmatter.
     /// Line endings become `\n`.
     static func retitled(_ contents: String, url: URL, to title: String) -> String {
+        // Collapsed like the heading's plain text, so a title with runs of spaces still matches.
         let currentTitle = NoteDocument(url: url, contents: contents, fileDate: .distantPast).title
+            .split(whereSeparator: \.isWhitespace).joined(separator: " ")
         var text = contents.replacingOccurrences(of: "\r\n", with: "\n")
         if text.hasPrefix("\u{FEFF}") { text.removeFirst() }
         var lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
@@ -167,7 +171,7 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
                 fence = open
             } else if let (level, text) = Parser.atxHeading(trimmed), level == 1 {
                 guard MarkdownBlock.plainText(text) == currentTitle else { continue }
-                lines[index] = "# \(title)"
+                lines[index] = "# \(MarkdownNoteRenderer.headingText(title))"
                 renamedHeading = true
                 break
             }

@@ -279,6 +279,51 @@ struct NoteLibraryTests {
         #expect(try contents(of: heading) == "---\ntitle: \"Two\"\ntags: [x]\n---\n# Two\n")
     }
 
+    @Test func renameEscapesHeadingAndCollapsesSpaces() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try write("---\ntitle: \"Old  name\"\n---\n# Old  name\n", to: "Old.md", in: directory)
+
+        let renamed = try NoteLibrary.rename(
+            noteAt: directory.appending(path: "Old.md", directoryHint: .notDirectory),
+            to: "C#  *draft*\t#"
+        )
+
+        #expect(try contents(of: renamed) == "---\ntitle: \"C# *draft* #\"\n---\n# C# \\*draft\\* \\#\n")
+        let note = try #require(try NoteLibrary.loadNotes(in: directory).first)
+        #expect(note.title == "C# *draft* #")
+        #expect(note.displayBlocks().isEmpty)
+
+        let again = try NoteLibrary.rename(noteAt: renamed, to: "Plan")
+        #expect(try contents(of: again) == "---\ntitle: \"Plan\"\n---\n# Plan\n")
+    }
+
+    @Test func renameDropsLeadingDotsFromFileName() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try write("# Ideas\n", to: "Ideas.md", in: directory)
+
+        let renamed = try NoteLibrary.rename(
+            noteAt: directory.appending(path: "Ideas.md", directoryHint: .notDirectory),
+            to: ". .env"
+        )
+
+        #expect(renamed.lastPathComponent == "env.md")
+        #expect(try NoteLibrary.loadNotes(in: directory).map(\.title) == [". .env"])
+    }
+
+    @Test func renameLeavesNoteThatIsNotUTF8Alone() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appending(path: "Caf\u{E9}.md", directoryHint: .notDirectory)
+        let latin1 = Data("# Caf".utf8) + Data([0xE9, 0x0A])
+        try latin1.write(to: url)
+
+        #expect(throws: CocoaError.self) { try NoteLibrary.rename(noteAt: url, to: "New") }
+        #expect(try fileNames(in: directory) == [url.lastPathComponent])
+        #expect(try Data(contentsOf: url) == latin1)
+    }
+
     @Test func renameToBlankIsUntitled() async throws {
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
