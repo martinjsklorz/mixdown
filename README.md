@@ -125,7 +125,8 @@ On macOS 26 or later with Apple Intelligence turned on, each note starts with a 
 overview, the key points and any action items, in the language of the recording. Apple
 Intelligence writes it on your Mac after the transcript is ready, so the note takes a little
 longer to appear. Nothing extra is downloaded, and the transcript doesn't leave your Mac. Long
-recordings are summarized in parts, which are then combined.
+recordings are summarized in parts, which are then combined. Action items are saved as Markdown
+checkboxes (`- [ ]`), so you can tick them off in editors like Obsidian.
 
 The summary also names the note after its topic, e.g. "Release timeline". A call recorded from
 Mixdown's call notification, or automatically (see **Settings → Recording**), is titled as one in
@@ -175,7 +176,7 @@ The team went through the release timeline for the weekly sync.
 
 ### Action Items
 
-- Speaker 2 updates the release notes.
+- [ ] Speaker 2 updates the release notes.
 
 ## Transcript
 
