@@ -5,7 +5,7 @@ name: Mixdown
 options:
   bundleIdPrefix: app.mixdown
   deploymentTarget:
-    macOS: "27.0"
+    macOS: "26.0"
   developmentLanguage: en
   createIntermediateGroups: true
   groupSortPosition: top

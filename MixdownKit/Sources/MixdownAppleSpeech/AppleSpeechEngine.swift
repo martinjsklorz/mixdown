@@ -191,12 +191,7 @@ private enum AppleSpeech {
         ) else {
             throw TranscriptionError.failed("Couldn't create the 16 kHz audio format")
         }
-        let converter: AnalyzerInputConverter
-        do {
-            converter = try await AnalyzerInputConverter.converter(compatibleWith: [transcriber])
-        } catch {
-            throw TranscriptionError.failed(error.localizedDescription)
-        }
+        let converter = try await makeConverter(from: format, for: transcriber)
         let feed = AnalyzerFeed(samples: samples, format: format, converter: converter)
         // Pulled by the analyzer, so the recording is converted as it goes rather than all at once.
         let inputs = AsyncStream<AnalyzerInput>(unfolding: { feed.next() })
@@ -245,6 +240,29 @@ private enum AppleSpeech {
         return Transcript(segments: segments, language: locale?.language.languageCode?.identifier)
     }
 
+    /// Apple's converter on macOS 27, else `AudioFormatConverter` to the format the model prefers.
+    private static func makeConverter(
+        from format: AVAudioFormat,
+        for transcriber: SpeechTranscriber
+    ) async throws -> any AnalyzerInputConverting {
+        if #available(macOS 27, *) {
+            do {
+                return try await AnalyzerInputConverter.converter(compatibleWith: [transcriber])
+            } catch {
+                throw TranscriptionError.failed(error.localizedDescription)
+            }
+        }
+        guard
+            let analyzerFormat = await SpeechAnalyzer.bestAvailableAudioFormat(
+                compatibleWith: [transcriber],
+                considering: format
+            )
+        else {
+            throw TranscriptionError.failed("No audio format for Apple's speech model")
+        }
+        return try AudioFormatConverter(from: format, to: analyzerFormat)
+    }
+
     private static func makeTranscriber(language: String?) async throws -> SpeechTranscriber {
         let locale = try await locale(for: language)
         // Final results only, with no alternatives: the analyzer gets the whole recording at once.
@@ -276,7 +294,7 @@ private enum AppleSpeech {
 private final class AnalyzerFeed: @unchecked Sendable {
     private let samples: [Float]
     private let format: AVAudioFormat
-    private let converter: AnalyzerInputConverter
+    private let converter: any AnalyzerInputConverting
     private var position = 0
     /// Converted audio not handed over yet. A piece can convert into several inputs, or none.
     private var pending: [AnalyzerInput] = []
@@ -284,7 +302,7 @@ private final class AnalyzerFeed: @unchecked Sendable {
     /// Why the feed ended early, if it did.
     private(set) var error: (any Error)?
 
-    init(samples: [Float], format: AVAudioFormat, converter: AnalyzerInputConverter) {
+    init(samples: [Float], format: AVAudioFormat, converter: any AnalyzerInputConverting) {
         self.samples = samples
         self.format = format
         self.converter = converter
@@ -295,7 +313,7 @@ private final class AnalyzerFeed: @unchecked Sendable {
         while pending.isEmpty, !isFlushed, error == nil {
             do {
                 if position < samples.count {
-                    pending = try converter.convert(nextBuffer(), at: nil)
+                    pending = try converter.convert(nextBuffer())
                 } else {
                     // Whatever the converter held back.
                     pending = try converter.flush()
@@ -320,6 +338,96 @@ private final class AnalyzerFeed: @unchecked Sendable {
         }
         buffer.frameLength = AVAudioFrameCount(count)
         position += count
+        return buffer
+    }
+}
+
+/// Turns pieces of a recording into analyzer input, in order.
+private protocol AnalyzerInputConverting {
+    func convert(_ buffer: AVAudioPCMBuffer) throws -> [AnalyzerInput]
+    /// Whatever the converter held back, after the last piece.
+    func flush() throws -> [AnalyzerInput]
+}
+
+@available(macOS 27, *)
+extension AnalyzerInputConverter: AnalyzerInputConverting {
+    fileprivate func convert(_ buffer: AVAudioPCMBuffer) throws -> [AnalyzerInput] {
+        try convert(buffer, at: nil)
+    }
+}
+
+/// `AVAudioConverter` in place of `AnalyzerInputConverter`, which macOS 26 doesn't have.
+private final class AudioFormatConverter: AnalyzerInputConverting {
+    private let inputFormat: AVAudioFormat
+    private let outputFormat: AVAudioFormat
+    /// `nil` when the analyzer takes the audio as it is.
+    private let converter: AVAudioConverter?
+
+    init(from inputFormat: AVAudioFormat, to outputFormat: AVAudioFormat) throws {
+        self.inputFormat = inputFormat
+        self.outputFormat = outputFormat
+        if inputFormat == outputFormat {
+            converter = nil
+        } else {
+            guard let converter = AVAudioConverter(from: inputFormat, to: outputFormat) else {
+                throw TranscriptionError.failed("Can't convert audio to \(outputFormat) for Apple's speech model")
+            }
+            // Without priming, the converted audio isn't shifted, so the segments' times stay right.
+            converter.primeMethod = .none
+            self.converter = converter
+        }
+    }
+
+    func convert(_ buffer: AVAudioPCMBuffer) throws -> [AnalyzerInput] {
+        guard let converter else { return [AnalyzerInput(buffer: buffer)] }
+        return try run(converter, on: buffer, frames: buffer.frameLength)
+    }
+
+    func flush() throws -> [AnalyzerInput] {
+        guard let converter else { return [] }
+        return try run(converter, on: nil, frames: 0)
+    }
+
+    /// Converts `buffer`, or with `nil` ends the stream so the converter hands over what it held back.
+    private func run(_ converter: AVAudioConverter, on buffer: AVAudioPCMBuffer?, frames: AVAudioFrameCount) throws
+        -> [AnalyzerInput]
+    {
+        let ratio = outputFormat.sampleRate / inputFormat.sampleRate
+        // Headroom for samples the converter held back from earlier pieces.
+        let capacity = AVAudioFrameCount((Double(frames) * ratio).rounded(.up)) + 1024
+        guard let output = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: capacity) else {
+            throw TranscriptionError.failed("Out of memory for audio")
+        }
+        // Hand the piece over once, then say more may come (or, flushing, that none will), so the
+        // converter keeps its state between pieces.
+        let pending = PendingBuffer(buffer)
+        let isFlushing = buffer == nil
+        var conversionError: NSError?
+        let status = converter.convert(to: output, error: &conversionError) { _, inputStatus in
+            if let buffer = pending.take() {
+                inputStatus.pointee = .haveData
+                return buffer
+            }
+            inputStatus.pointee = isFlushing ? .endOfStream : .noDataNow
+            return nil
+        }
+        if status == .error {
+            throw TranscriptionError.failed(conversionError?.localizedDescription ?? "Audio conversion failed")
+        }
+        return output.frameLength > 0 ? [AnalyzerInput(buffer: output)] : []
+    }
+}
+
+/// One-shot holder for the converter's input block, which runs synchronously inside `convert`.
+private final class PendingBuffer: @unchecked Sendable {
+    private var buffer: AVAudioPCMBuffer?
+
+    init(_ buffer: AVAudioPCMBuffer?) {
+        self.buffer = buffer
+    }
+
+    func take() -> AVAudioPCMBuffer? {
+        defer { buffer = nil }
         return buffer
     }
 }

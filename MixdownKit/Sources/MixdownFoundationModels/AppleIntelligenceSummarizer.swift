@@ -82,7 +82,12 @@ enum SystemModelSummary {
         language: String?
     ) async throws -> NoteSummary {
         let rules = instructions(for: kind, template: template, language: language)
-        let session = makeSession(model: model, instructions: rules)
+        let session: LanguageModelSession
+        if #available(macOS 27, *) {
+            session = makeSession(model: model, instructions: rules)
+        } else {
+            session = LanguageModelSession(model: model) { rules }
+        }
         let prompt = kind == .transcript ? "Transcript:\n\(text)" : text
         // The explicit `includeSchemaInPrompt` picks the macOS 26 overload over macOS 27's
         // metadata one, whose other parameters have defaults too.
@@ -104,6 +109,7 @@ enum SystemModelSummary {
     /// A session with `instructions`. Generic because macOS 27 adds an initializer for any
     /// `LanguageModel` next to the one for `SystemLanguageModel`, and a `SystemLanguageModel` matches
     /// both; for a generic model only the new one does.
+    @available(macOS 27, *)
     private static func makeSession<Model: LanguageModel>(model: Model, instructions: String) -> LanguageModelSession {
         LanguageModelSession(model: model) { instructions }
     }
@@ -175,7 +181,7 @@ enum SystemModelSummary {
 
     static func isContextOverflow(_ error: any Error) -> Bool {
         if case LanguageModelSession.GenerationError.exceededContextWindowSize = error { return true }
-        if case LanguageModelError.contextSizeExceeded = error { return true }
+        if #available(macOS 27, *), case LanguageModelError.contextSizeExceeded = error { return true }
         return false
     }
 }

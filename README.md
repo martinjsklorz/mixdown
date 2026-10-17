@@ -225,7 +225,7 @@ speakers: ["Me", "Others"]
 
 ## Building from source
 
-You need a Mac with Apple Silicon running macOS 27 or later, Xcode, and
+You need a Mac with Apple Silicon running macOS 26 or later, Xcode, and
 [Homebrew](https://brew.sh).
 
 ```sh
