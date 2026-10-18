@@ -362,6 +362,28 @@ actor InMemoryNoteWriter: NoteWriting {
     }
 }
 
+/// Fails its first `failures` writes, like a folder on a drive that's asleep, then writes like
+/// `InMemoryNoteWriter`.
+actor FlakyNoteWriter: NoteWriting {
+    struct WriteError: Error {}
+
+    private var failures: Int
+    private(set) var notes: [Note] = []
+
+    init(failures: Int) {
+        self.failures = failures
+    }
+
+    func write(_ note: Note) async throws -> URL {
+        if failures > 0 {
+            failures -= 1
+            throw WriteError()
+        }
+        notes.append(note)
+        return URL(fileURLWithPath: "/tmp/mixdown-flaky-\(notes.count).md")
+    }
+}
+
 /// Polls `condition` on the main actor, recording an issue on timeout.
 @MainActor
 func waitUntil(

@@ -45,7 +45,21 @@ public final class RecordingCoordinator {
     /// Location of the most recently written note.
     public private(set) var lastNoteURL: URL?
     /// Saves finished notes. `nil` while there's no folder to save to; recording waits for one.
-    public var noteWriter: (any NoteWriting)?
+    /// Setting it saves `pendingNotes`.
+    public var noteWriter: (any NoteWriting)? {
+        didSet {
+            noteWriterGeneration &+= 1
+            guard !pendingNotes.isEmpty else { return }
+            Task { await savePendingNotes() }
+        }
+    }
+    /// Finished notes that couldn't be saved yet, oldest first, e.g. because the notes folder is on
+    /// a drive that was disconnected or asleep when the recording finished. They're saved as soon
+    /// as there's a `noteWriter` again, and retried every `pendingNoteRetryInterval` meanwhile.
+    /// Only kept in memory, so they're lost if the app quits.
+    public private(set) var pendingNotes: [Note] = []
+    /// True while `pendingNotes` are being written.
+    public private(set) var isSavingPendingNotes = false
     /// Adds a summary to each note. `nil` while summaries are off.
     public var summarizer: (any Summarizer)?
     /// The summary template for recordings started by hand.
@@ -85,6 +99,10 @@ public final class RecordingCoordinator {
     /// How long a source may stay silent before it's listed in `silentDevices`. For system audio,
     /// the time other apps play audio.
     var silenceWarningDelay: Duration = .seconds(10)
+
+    /// How long to wait before trying to save `pendingNotes` again, while there's a `noteWriter`
+    /// that failed to write them.
+    var pendingNoteRetryInterval: Duration = .seconds(30)
 
     /// How long to wait after a device goes away mid-recording before picking its replacement,
     /// so the system has made another device the default by then.
@@ -149,6 +167,12 @@ public final class RecordingCoordinator {
     private let playbackMonitor: (any AudioPlaybackMonitoring)?
     private let now: @Sendable () -> Date
     private let logger = Logger(subsystem: "app.mixdown", category: "coordinator")
+    /// Changes with every `noteWriter`, so a save that failed can tell it has a new one to try.
+    @ObservationIgnored private var noteWriterGeneration = 0
+    @ObservationIgnored private var pendingNoteRetry: Task<Void, Never>?
+    /// The message of the `.failed` phase that says a note is waiting to be saved, cleared once
+    /// it's saved.
+    @ObservationIgnored private var unsavedNoteMessage: String?
 
     /// The user's choice of inputs, by ID. May hold `AudioInputDevice.defaultMicrophoneID` and
     /// devices that aren't connected; `selectedDevices` is what that resolves to.
@@ -306,6 +330,8 @@ public final class RecordingCoordinator {
     }
 
     /// - Parameters:
+    ///   - pendingNotes: Notes still to be saved, from the coordinator this one replaces. See
+    ///     `takePendingNotes()`.
     ///   - preferredDeviceIDs: Devices to select when they're available, e.g. the user's last choice.
     ///   - playbackMonitor: Tells silent system audio with nothing playing from a missing permission.
     ///     Without one, system audio is flagged like a microphone.
@@ -315,6 +341,7 @@ public final class RecordingCoordinator {
         captureFactory: any AudioCaptureFactory,
         engine: any TranscriptionEngine,
         noteWriter: (any NoteWriting)?,
+        pendingNotes: [Note] = [],
         summarizer: (any Summarizer)? = nil,
         summaryTemplate: SummaryTemplate = .general,
         callSummaryTemplate: SummaryTemplate = .general,
@@ -338,6 +365,10 @@ public final class RecordingCoordinator {
         self.preferredDeviceIDs = preferredDeviceIDs
         self.playbackMonitor = playbackMonitor
         self.now = now
+        self.pendingNotes = pendingNotes
+        if !pendingNotes.isEmpty {
+            Task { await savePendingNotes() }
+        }
     }
 
     // MARK: - Devices
@@ -753,15 +784,20 @@ public final class RecordingCoordinator {
                 summary: summary,
                 trigger: session.trigger
             )
-            // The folder can go away mid-recording, e.g. when its drive is disconnected.
-            guard let noteWriter else { throw NoteWritingError.noFolder }
-            let url = try await noteWriter.write(note)
-            lastNoteURL = url
-            logger.info("Wrote note to \(url.path(percentEncoded: false), privacy: .private)")
-            if let interruption {
-                phase = .failed(message: Self.interruptedMessage(for: interruption))
-            } else {
+            // Kept until it's saved: the folder can go away while recording or transcribing, e.g.
+            // when its drive is disconnected or goes to sleep.
+            pendingNotes.append(note)
+            let saveError = await savePendingNotes()
+            let messages = [
+                interruption.map(Self.interruptedMessage(for:)),
+                pendingNotes.isEmpty ? nil : Self.unsavedMessage(for: saveError ?? NoteWritingError.noFolder),
+            ].compactMap { $0 }
+            if messages.isEmpty {
                 phase = .idle
+            } else {
+                let message = messages.joined(separator: " ")
+                unsavedNoteMessage = pendingNotes.isEmpty ? nil : message
+                phase = .failed(message: message)
             }
         } catch {
             logger.error("Finishing recording failed: \(error.localizedDescription, privacy: .public)")
@@ -771,6 +807,64 @@ public final class RecordingCoordinator {
                 phase = .failed(message: error.localizedDescription)
             }
         }
+    }
+
+    /// Writes `pendingNotes`, oldest first, updating `lastNoteURL` for each. Stops at the first that
+    /// fails, returning its error, and tries again after `pendingNoteRetryInterval` if there's a
+    /// `noteWriter`; without one, it waits for the next. Returns `nil` right away if a save is
+    /// already under way; that one saves notes added meanwhile too.
+    @discardableResult
+    private func savePendingNotes() async -> (any Error)? {
+        guard !isSavingPendingNotes else { return nil }
+        isSavingPendingNotes = true
+        defer { isSavingPendingNotes = false }
+        pendingNoteRetry?.cancel()
+        pendingNoteRetry = nil
+
+        while let note = pendingNotes.first {
+            let generation = noteWriterGeneration
+            do {
+                guard let noteWriter else { throw NoteWritingError.noFolder }
+                let url = try await noteWriter.write(note)
+                pendingNotes.removeFirst()
+                lastNoteURL = url
+                logger.info("Wrote note to \(url.path(percentEncoded: false), privacy: .private)")
+            } catch {
+                // The folder changed while writing; try the new one.
+                if generation != noteWriterGeneration { continue }
+                let count = pendingNotes.count
+                logger.error(
+                    "Saving \(count) note(s) failed, keeping them: \(error.localizedDescription, privacy: .public)"
+                )
+                if noteWriter != nil { schedulePendingNoteRetry() }
+                return error
+            }
+        }
+        if let unsavedNoteMessage, phase == .failed(message: unsavedNoteMessage) {
+            phase = .idle
+        }
+        unsavedNoteMessage = nil
+        return nil
+    }
+
+    private func schedulePendingNoteRetry() {
+        pendingNoteRetry = Task { [weak self, interval = pendingNoteRetryInterval] in
+            try? await Task.sleep(for: interval)
+            guard !Task.isCancelled, let self else { return }
+            // So saving doesn't cancel the task doing it.
+            pendingNoteRetry = nil
+            await savePendingNotes()
+        }
+    }
+
+    /// Removes and returns `pendingNotes`, for the coordinator replacing this one. Returns nothing
+    /// while they're being saved, as they may already be written.
+    public func takePendingNotes() -> [Note] {
+        guard !isSavingPendingNotes else { return [] }
+        pendingNoteRetry?.cancel()
+        pendingNoteRetry = nil
+        defer { pendingNotes = [] }
+        return pendingNotes
     }
 
     /// Downloads the model again if it went away while recording, as macOS may remove its own
@@ -1112,6 +1206,18 @@ public final class RecordingCoordinator {
     /// Shown only once the note is written; the audio itself is never kept.
     nonisolated static func interruptedMessage(for error: any Error) -> String {
         "Recording stopped early. \(error.localizedDescription) The note has what was recorded until then."
+    }
+
+    /// Says the note wasn't saved because of `error`, and will be.
+    nonisolated static func unsavedMessage(for error: any Error) -> String {
+        let reason =
+            if case NoteWritingError.noFolder = error {
+                "The notes folder isn't available, so the note hasn't been saved yet."
+            } else {
+                "The note couldn't be saved yet. \(error.localizedDescription)"
+            }
+        return "\(reason) Mixdown saves it as soon as it can, or once you choose another folder. "
+            + "Keep Mixdown open until then."
     }
 
     nonisolated static let tooShortMessage =

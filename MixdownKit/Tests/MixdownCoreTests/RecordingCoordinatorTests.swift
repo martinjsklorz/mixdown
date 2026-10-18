@@ -1311,7 +1311,7 @@ struct RecordingCoordinatorTests {
         #expect(coordinator.canStartRecording)
     }
 
-    @Test func notesFolderGoingAwayMidRecordingFails() async {
+    @Test func noteIsKeptUntilNotesFolderComesBack() async throws {
         let coordinator = makeCoordinator(capture: MockCapture(chunks: [Fixtures.chunk(seconds: 1)]))
         await coordinator.monitorDevices()
 
@@ -1319,8 +1319,85 @@ struct RecordingCoordinatorTests {
         coordinator.noteWriter = nil
         await coordinator.stopRecording()
 
-        #expect(coordinator.phase == .failed(message: NoteWritingError.noFolder.localizedDescription))
+        let message = RecordingCoordinator.unsavedMessage(for: NoteWritingError.noFolder)
+        #expect(coordinator.phase == .failed(message: message))
+        #expect(coordinator.pendingNotes.count == 1)
         #expect(coordinator.lastNoteURL == nil)
+        #expect(!coordinator.canStartRecording)
+
+        let writer = InMemoryNoteWriter()
+        coordinator.noteWriter = writer
+        try await waitUntil { coordinator.pendingNotes.isEmpty }
+        #expect(await writer.notes.count == 1)
+        #expect(coordinator.lastNoteURL != nil)
+        #expect(coordinator.phase == .idle)
+    }
+
+    @Test func failedWriteIsRetried() async throws {
+        let coordinator = makeCoordinator(capture: MockCapture(chunks: [Fixtures.chunk(seconds: 1)]))
+        let writer = FlakyNoteWriter(failures: 2)
+        coordinator.noteWriter = writer
+        coordinator.pendingNoteRetryInterval = .milliseconds(10)
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        await coordinator.stopRecording()
+
+        let message = RecordingCoordinator.unsavedMessage(for: FlakyNoteWriter.WriteError())
+        #expect(coordinator.phase == .failed(message: message))
+        #expect(coordinator.pendingNotes.count == 1)
+
+        try await waitUntil { coordinator.pendingNotes.isEmpty }
+        #expect(await writer.notes.count == 1)
+        #expect(coordinator.lastNoteURL != nil)
+        #expect(coordinator.phase == .idle)
+    }
+
+    @Test func savingLaterLeavesNewRecordingAlone() async throws {
+        let coordinator = makeCoordinator(queuedCaptures: [Fixtures.builtInMic.id: [
+            MockCapture(chunks: [Fixtures.chunk(seconds: 1)]),
+            MockCapture(chunks: [Fixtures.chunk(seconds: 1)]),
+        ]])
+        let writer = FlakyNoteWriter(failures: 1)
+        coordinator.noteWriter = writer
+        coordinator.pendingNoteRetryInterval = .milliseconds(200)
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        await coordinator.stopRecording()
+        #expect(coordinator.pendingNotes.count == 1)
+
+        // The folder still has a writer, so recording again is allowed.
+        await coordinator.startRecording()
+        try await waitUntil { coordinator.pendingNotes.isEmpty }
+        #expect(coordinator.isRecording)
+        await coordinator.stopRecording()
+        #expect(await writer.notes.count == 2)
+        #expect(coordinator.phase == .idle)
+    }
+
+    @Test func pendingNotesMoveToTheNextCoordinator() async throws {
+        let old = makeCoordinator(capture: MockCapture(chunks: [Fixtures.chunk(seconds: 1)]))
+        await old.monitorDevices()
+        await old.startRecording()
+        old.noteWriter = nil
+        await old.stopRecording()
+
+        let pending = old.takePendingNotes()
+        #expect(pending.count == 1)
+        #expect(old.pendingNotes.isEmpty)
+
+        let writer = InMemoryNoteWriter()
+        let new = RecordingCoordinator(
+            deviceProvider: MockDeviceProvider(devices: Fixtures.devices),
+            captureFactory: MockCaptureFactory(capture: MockCapture()),
+            engine: MockEngine(),
+            noteWriter: writer,
+            pendingNotes: pending
+        )
+        try await waitUntil { new.pendingNotes.isEmpty }
+        #expect(await writer.notes == pending)
+        #expect(new.lastNoteURL != nil)
     }
 
     @Test func failedOrCancelledDownloadKeepsRecordingDisabled() async throws {
