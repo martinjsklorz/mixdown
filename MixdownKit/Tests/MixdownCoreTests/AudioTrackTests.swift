@@ -41,12 +41,42 @@ struct AudioTrackTests {
         #expect(empty == second)
     }
 
+    @Test func joinsTracksThatDontKeepSamples() {
+        var first = AudioTrack(keepsSamples: false)
+        first.append(Fixtures.chunk(seconds: 1, hostTime: 50))
+        var second = AudioTrack(keepsSamples: false)
+        second.append(Fixtures.chunk(seconds: 1, hostTime: 51.5))
+
+        var lane = AudioTrack(keepsSamples: false)
+        lane.append(first)
+        lane.append(second)
+
+        #expect(lane.startHostTime == 50)
+        #expect(lane.duration == 2.5)
+        #expect(lane.samples.isEmpty)
+    }
+
     @Test func ignoresJitter() {
         var track = AudioTrack()
         track.append(Fixtures.chunk(seconds: 1, hostTime: 50))
         track.append(Fixtures.chunk(seconds: 1, hostTime: 51.1))
         track.append(Fixtures.chunk(seconds: 1, hostTime: 51.9))
         #expect(track.duration == 3)
+    }
+
+    @Test func followsTimingWithoutKeepingSamples() {
+        var track = AudioTrack(keepsSamples: false)
+        let first = track.append(Fixtures.chunk(seconds: 1, hostTime: 50))
+        let second = track.append(Fixtures.chunk(seconds: 1, hostTime: 53))
+
+        #expect(track.samples.isEmpty)
+        #expect(track.duration == 4)
+        #expect(track.startHostTime == 50)
+        #expect(first.count == 16_000)
+        // The gap's silence comes first.
+        #expect(second.count == 48_000)
+        #expect(second[..<32_000].allSatisfy { $0 == 0 })
+        #expect(second.last == 0.1)
     }
 
     @Test func offsetsAreRelativeToEarliestTrack() {

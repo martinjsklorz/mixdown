@@ -43,6 +43,23 @@ enum TranscriptionModel: Hashable, Identifiable {
         }
     }
 
+    /// Whether the model transcribes while recording rather than once the recording ends.
+    var isLive: Bool {
+        switch self {
+        case .speechSwift(let model): model.isLive
+        case .apple: false
+        }
+    }
+
+    /// What the model is chosen for within its category, e.g. "Low"; `nil` for Apple's model, which
+    /// its name describes.
+    var purpose: String? {
+        switch self {
+        case .speechSwift(let model): model.purpose
+        case .apple: nil
+        }
+    }
+
     /// Whether `TranscriptionOptions.language` is honored. Otherwise the language is auto-detected.
     /// Apple's model doesn't detect it; it falls back to the Mac's language.
     var supportsLanguageSelection: Bool {

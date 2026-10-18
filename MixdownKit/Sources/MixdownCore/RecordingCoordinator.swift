@@ -13,6 +13,10 @@ import os
 /// out, is replaced by the default microphone, and the user can switch microphones or turn
 /// system audio on and off. Each kind of input keeps one track, whichever device it came from.
 ///
+/// Engines that transcribe live instead turn each input into text while it's recorded, shown as
+/// `liveTranscript`, and the note is written from that text. Their audio isn't kept, so a long
+/// recording takes no more memory than a short one.
+///
 /// All dependencies are protocols, so the coordinator is fully testable with doubles and
 /// knows nothing about CoreAudio or the speech model.
 @MainActor
@@ -22,6 +26,8 @@ public final class RecordingCoordinator {
         case idle
         /// Downloading or loading the model. `progress` is 0...1.
         case preparingModel(progress: Double)
+        /// Starting the captures, which waits on the user while macOS asks for permission to record.
+        case startingCapture
         case recording(startedAt: Date)
         /// `progress` is 0...1 across all of the recording's sources.
         case transcribing(progress: Double)
@@ -32,6 +38,10 @@ public final class RecordingCoordinator {
 
     /// Recordings shorter than this are discarded without transcribing, with `tooShortMessage`.
     nonisolated static let minimumRecordingDuration: TimeInterval = 0.5
+
+    /// Audio is handed to live sessions in pieces of at least this many samples (320 ms, the step
+    /// Nemotron works in) rather than per capture buffer, which can be a hundred times a second.
+    nonisolated static let liveFeedSampleCount = 5_120
 
     public private(set) var phase: Phase = .idle {
         didSet { modelError = nil }
@@ -44,6 +54,10 @@ public final class RecordingCoordinator {
     public private(set) var selectedDevices: [AudioInputDevice] = []
     /// Location of the most recently written note.
     public private(set) var lastNoteURL: URL?
+    /// Whether the current recording is transcribed live. Stays true until its note is written.
+    public private(set) var showsLiveTranscript = false
+    /// What the inputs said so far while `showsLiveTranscript`, else empty.
+    public private(set) var liveTranscript = LiveTranscript(speakers: [])
     /// Saves finished notes. `nil` while there's no folder to save to; recording waits for one.
     /// Setting it saves `pendingNotes`.
     public var noteWriter: (any NoteWriting)? {
@@ -129,6 +143,12 @@ public final class RecordingCoordinator {
         }
     }
 
+    /// Recording, or starting to. Stopping while the captures start ends the recording as soon as
+    /// they have.
+    public var canStopRecording: Bool {
+        isRecording || isStartingCapture
+    }
+
     /// Preparing the model, transcribing or summarizing.
     public var isBusy: Bool {
         switch phase {
@@ -187,7 +207,10 @@ public final class RecordingCoordinator {
     /// The in-flight `engine.prepare` call, kept so `cancelPreparation()` can stop it.
     @ObservationIgnored private var preparation: Task<Void, any Error>?
     /// True while the captures are starting; blocks a second start.
-    private var isStartingCapture = false
+    private var isStartingCapture: Bool { phase == .startingCapture }
+    /// Whether `stopRecording()` was called while the captures were starting, to be done once
+    /// they have.
+    @ObservationIgnored private var isStopPending = false
     /// Sources of the current recording that delivered sound at least once.
     @ObservationIgnored private var heardDeviceIDs: Set<String> = []
     /// Add each recording device to `silentDevices` once `silenceWarningDelay` has passed, by ID.
@@ -233,7 +256,7 @@ public final class RecordingCoordinator {
         }
 
         func addLane(kind: AudioSourceKind) -> Lane {
-            let lane = Lane(kind: kind)
+            let lane = Lane(kind: kind, index: lanes.count)
             lanes.append(lane)
             return lane
         }
@@ -244,14 +267,17 @@ public final class RecordingCoordinator {
     @MainActor
     private final class Lane {
         let kind: AudioSourceKind
+        /// Position in the session's lanes, which is also the lane's source in `liveTranscript`.
+        let index: Int
         /// Every capture of the lane, the current one last.
         private(set) var captures: [Capture] = []
         /// The capture recording right now. `nil` while switching devices, after the device went
         /// away, or once the input is turned off.
         var current: Capture?
 
-        init(kind: AudioSourceKind) {
+        init(kind: AudioSourceKind, index: Int) {
             self.kind = kind
+            self.index = index
         }
 
         /// The device the lane started with. The transcript names each part by the device that
@@ -271,6 +297,16 @@ public final class RecordingCoordinator {
         let capture: any AudioCapturing
         /// Drains the capture stream off the main actor and returns the track.
         let consumer: Task<CaptureResult, Never>
+        /// Feeds the audio to a live session, if the engine transcribes live. Returns the error
+        /// that stopped it early, if any.
+        let live: Task<(any Error)?, Never>?
+    }
+
+    /// Audio a consumer is handing to the live session.
+    private struct LiveFeed: Sendable {
+        let samples: [Float]
+        /// The capture's `startHostTime`, which the session's times count from.
+        let startHostTime: TimeInterval?
     }
 
     /// Everything a capture stream produced, plus the error that ended it early, if any.
@@ -293,15 +329,19 @@ public final class RecordingCoordinator {
 
     /// A finished lane's audio, positioned on the recording's timeline.
     private struct RecordedTrack: Sendable {
+        /// The lane's `index`.
+        let lane: Int
         /// The device the lane started with.
         let device: AudioInputDevice
         /// Which device recorded which part; more than one if the lane switched devices.
         let parts: [DevicePart]
+        /// Empty when the engine transcribes live.
         let samples: [Float]
+        let duration: TimeInterval
         /// Seconds from the start of the recording to the track's first sample.
         let offset: TimeInterval
 
-        var end: TimeInterval { offset + Double(samples.count) / AudioChunk.sampleRate }
+        var end: TimeInterval { offset + duration }
 
         /// The device recording at `time`, in seconds on the recording's timeline.
         func device(at time: TimeInterval) -> AudioInputDevice {
@@ -572,7 +612,8 @@ public final class RecordingCoordinator {
     public func startRecording() async {
         guard canStartRecording else { return }
         let devices = selectedDevices
-        isStartingCapture = true
+        phase = .startingCapture
+        isStopPending = false
         // Held until `end(_:interruption:)` has transcribed the recording.
         engine.recordingWillStart()
 
@@ -582,7 +623,7 @@ public final class RecordingCoordinator {
         } catch {
             logger.error("Starting capture failed: \(error.localizedDescription, privacy: .public)")
             engine.recordingDidFinish()
-            isStartingCapture = false
+            isStopPending = false
             phase = .failed(message: error.localizedDescription)
             reconcileSelection()
             return
@@ -590,31 +631,65 @@ public final class RecordingCoordinator {
 
         let session = Session(startedAt: now())
         self.session = session
-        isStartingCapture = false
         recordingSummaryTemplate = summaryTemplate
         isRecordingSummaryTemplateChosen = false
+        if engine.transcribesLive {
+            liveTranscript = LiveTranscript(speakers: [])
+            showsLiveTranscript = true
+        }
         for started in startedCaptures {
-            attach(started, to: session.addLane(kind: started.device.kind), in: session)
+            attach(started, to: addLane(kind: started.device.kind, to: session), in: session)
         }
         phase = .recording(startedAt: session.startedAt)
         let names = devices.map(\.name).joined(separator: " + ")
         logger.info("Recording started on \(names, privacy: .public)")
+        if isStopPending {
+            isStopPending = false
+            logger.info("Stopping the recording, as it was stopped while starting")
+            await end(session, interruption: nil)
+            return
+        }
         // Catches devices that changed while the captures were starting.
         reconcileSelection()
     }
 
+    /// Adds a lane to `session`, and a source for it to `liveTranscript`.
+    private func addLane(kind: AudioSourceKind, to session: Session) -> Lane {
+        let lane = session.addLane(kind: kind)
+        if showsLiveTranscript { liveTranscript.addSource() }
+        return lane
+    }
+
     /// Makes `started` the lane's current capture: drains its stream into a track, watches for it
-    /// ending on its own, and checks that it isn't silent.
+    /// ending on its own, and checks that it isn't silent. With a live engine, also transcribes it.
     private func attach(_ started: StartedCapture, to lane: Lane, in session: Session) {
         let stream = started.stream
         let deviceID = started.device.id
         let sessionID = session.id
+        let transcribesLive = engine.transcribesLive
+        let feed = transcribesLive ? AsyncStream<LiveFeed>.makeStream() : nil
         let consumer = Task.detached(priority: .userInitiated) { [weak self] () async -> CaptureResult in
-            var track = AudioTrack()
+            var track = AudioTrack(keepsSamples: !transcribesLive)
             var meter = LevelMeter()
+            var unfed: [Float] = []
+            defer {
+                if !unfed.isEmpty {
+                    feed?.continuation.yield(LiveFeed(samples: unfed, startHostTime: track.startHostTime))
+                }
+                feed?.continuation.finish()
+            }
             do {
                 for try await chunk in stream {
-                    track.append(chunk)
+                    // Including silence filled into a gap, so the live session's clock stays in step
+                    // with the track's.
+                    let added = track.append(chunk)
+                    if feed != nil {
+                        unfed.append(contentsOf: added)
+                        if unfed.count >= RecordingCoordinator.liveFeedSampleCount {
+                            feed?.continuation.yield(LiveFeed(samples: unfed, startHostTime: track.startHostTime))
+                            unfed.removeAll(keepingCapacity: true)
+                        }
+                    }
                     // Fire and forget, so a busy main actor never holds up capture.
                     if let level = meter.add(chunk) {
                         Task { @MainActor [weak self] in
@@ -627,13 +702,67 @@ public final class RecordingCoordinator {
             }
             return CaptureResult(track: track, error: nil)
         }
-        let capture = Capture(device: started.device, capture: started.capture, consumer: consumer)
+        let live = feed.map { feed in
+            // A lane's captures are transcribed one after another, so its words stay in order.
+            let previous = lane.captures.last?.live
+            let source = lane.index
+            let options = options
+            return Task { [weak self] () -> (any Error)? in
+                _ = await previous?.value
+                guard let self else { return nil }
+                return await self.transcribeLive(feed.stream, source: source, options: options)
+            }
+        }
+        let capture = Capture(device: started.device, capture: started.capture, consumer: consumer, live: live)
         lane.add(capture)
         Task { [weak self] in
             let result = await consumer.value
             await self?.captureDidEnd(capture, of: lane, in: session, result: result)
         }
+        // The note would miss everything after live transcription stops, so the recording ends.
+        if let live {
+            Task { [weak self] in
+                if let error = await live.value { await self?.end(session, interruption: error) }
+            }
+        }
         scheduleSilenceCheck(of: started.device, in: session)
+        if showsLiveTranscript { labelLiveSources(of: session) }
+    }
+
+    /// Labels the live transcript's sources like the note's: only when there are several.
+    private func labelLiveSources(of session: Session) {
+        let devices = session.lanes.compactMap(\.firstDevice)
+        for lane in session.lanes {
+            let label = devices.count > 1 ? lane.firstDevice.map { sourceLabels.label(for: $0, among: devices) } : nil
+            liveTranscript.setSpeaker(label, ofSource: lane.index)
+        }
+    }
+
+    /// Feeds one capture's audio to a live session and adds what it recognizes to
+    /// `liveTranscript`, until the capture ends. Returns the error that stopped it early, if any.
+    private func transcribeLive(
+        _ feed: AsyncStream<LiveFeed>,
+        source index: Int,
+        options: TranscriptionOptions
+    ) async -> (any Error)? {
+        do {
+            // Loads the model if it isn't yet; the feed buffers the audio meanwhile.
+            let live = try await engine.makeLiveSession(options: options)
+            // Its words come from another device than the lane's previous session's.
+            liveTranscript.breakSegment(ofSource: index)
+            var startHostTime: TimeInterval?
+            for await item in feed {
+                startHostTime = item.startHostTime
+                let update = try await live.push(item.samples)
+                liveTranscript.apply(update, fromSource: index, startHostTime: startHostTime)
+            }
+            let update = try await live.finish()
+            liveTranscript.apply(update, fromSource: index, startHostTime: startHostTime)
+            return nil
+        } catch {
+            logger.error("Live transcription failed: \(error.localizedDescription, privacy: .public)")
+            return error
+        }
     }
 
     private typealias CaptureStream = AsyncThrowingStream<AudioChunk, any Error>
@@ -686,8 +815,13 @@ public final class RecordingCoordinator {
         return started
     }
 
-    /// Stops capture, transcribes, writes the note and updates `lastNoteURL`.
+    /// Stops capture, transcribes, writes the note and updates `lastNoteURL`. While the captures
+    /// are starting, e.g. waiting on a permission prompt, it stops them as soon as they've started.
     public func stopRecording() async {
+        guard !isStartingCapture else {
+            isStopPending = true
+            return
+        }
         // An error racing a user-initiated stop doesn't matter; keep whatever was captured.
         guard let session else { return }
         await end(session, interruption: nil)
@@ -702,9 +836,23 @@ public final class RecordingCoordinator {
         self.session = nil
         resetLevels()
         let lanes = await endCaptures(of: session)
-        await finish(session, lanes: lanes, interruption: interruption)
+        let liveError = await finishLiveTranscription(of: session)
+        await finish(session, lanes: lanes, interruption: interruption ?? liveError)
         recordingSummaryTemplate = nil
         engine.recordingDidFinish()
+    }
+
+    /// Waits for `session`'s live sessions to transcribe the rest of their input. Returns the
+    /// first error that stopped one.
+    private func finishLiveTranscription(of session: Session) async -> (any Error)? {
+        let live = session.lanes.flatMap { $0.captures.compactMap(\.live) }
+        guard !live.isEmpty else { return nil }
+        phase = .transcribing(progress: 0)
+        var firstError: (any Error)?
+        for task in live {
+            if let error = await task.value { firstError = firstError ?? error }
+        }
+        return firstError
     }
 
     /// Stops every capture of `session` and joins what each lane recorded into one track per lane.
@@ -720,11 +868,12 @@ public final class RecordingCoordinator {
         }
         var lanes: [LaneAudio] = []
         for lane in session.lanes {
-            var audio = LaneAudio()
+            var audio = LaneAudio(track: AudioTrack(keepsSamples: !engine.transcribesLive))
             for capture in lane.captures {
                 let track = await capture.consumer.value.track
                 audio.track.append(track)
-                guard !track.samples.isEmpty else { continue }
+                // Counted by length, as live tracks keep no samples.
+                guard track.duration > 0 else { continue }
                 audio.parts.append(DevicePart(device: capture.device, start: audio.track.duration - track.duration))
             }
             lanes.append(audio)
@@ -735,11 +884,22 @@ public final class RecordingCoordinator {
     /// Transcribes and saves a finished recording, one track per lane of `session`.
     private func finish(_ session: Session, lanes: [LaneAudio], interruption: (any Error)?) async {
         reconcileSelection()
+        defer {
+            showsLiveTranscript = false
+            liveTranscript = LiveTranscript(speakers: [])
+        }
 
         let offsets = AudioTrack.startOffsets(of: lanes.map(\.track))
         let tracks = zip(session.lanes, lanes).enumerated().compactMap { index, pair -> RecordedTrack? in
             guard let device = pair.0.firstDevice else { return nil }
-            return RecordedTrack(device: device, parts: pair.1.parts, samples: pair.1.track.samples, offset: offsets[index])
+            return RecordedTrack(
+                lane: index,
+                device: device,
+                parts: pair.1.parts,
+                samples: pair.1.track.samples,
+                duration: pair.1.track.duration,
+                offset: offsets[index]
+            )
         }
         let duration = tracks.map(\.end).max() ?? 0
         guard duration >= Self.minimumRecordingDuration else {
@@ -755,7 +915,10 @@ public final class RecordingCoordinator {
         do {
             try await prepareModelIfMissing()
             let transcript: Transcript
-            if let track = tracks.first, tracks.count == 1 {
+            var trackFailure: TrackFailure?
+            if engine.transcribesLive {
+                transcript = transcriptFromLiveText(tracks)
+            } else if let track = tracks.first, tracks.count == 1 {
                 transcriptionProgress = TranscriptionProgress(sessionID: session.id, tracks: tracks)
                 transcript = try await engine.transcribe(
                     track.samples,
@@ -763,7 +926,7 @@ public final class RecordingCoordinator {
                     progress: progressHandler(track: 0, sessionID: session.id)
                 )
             } else {
-                transcript = try await transcribeSeparately(tracks, session: session)
+                (transcript, trackFailure) = try await transcribeSeparately(tracks, session: session)
             }
             let template = recordingSummaryTemplate ?? (session.isCall ? callSummaryTemplate : summaryTemplate)
             // The template can't change once the summary is under way.
@@ -790,6 +953,7 @@ public final class RecordingCoordinator {
             let saveError = await savePendingNotes()
             let messages = [
                 interruption.map(Self.interruptedMessage(for:)),
+                trackFailure.map { Self.untranscribedMessage(for: $0.devices, error: $0.error) },
                 pendingNotes.isEmpty ? nil : Self.unsavedMessage(for: saveError ?? NoteWritingError.noFolder),
             ].compactMap { $0 }
             if messages.isEmpty {
@@ -798,6 +962,10 @@ public final class RecordingCoordinator {
                 let message = messages.joined(separator: " ")
                 unsavedNoteMessage = pendingNotes.isEmpty ? nil : message
                 phase = .failed(message: message)
+            }
+            // A live model that failed to load needs the same retry as an offline one.
+            if let interruption, case TranscriptionError.modelUnavailable = interruption {
+                modelError = interruption.localizedDescription
             }
         } catch {
             logger.error("Finishing recording failed: \(error.localizedDescription, privacy: .public)")
@@ -917,10 +1085,45 @@ public final class RecordingCoordinator {
         }
     }
 
+    /// The note's transcript from what the live sessions recognized: per track like
+    /// `transcribeSeparately`, merged by time when there are several.
+    private func transcriptFromLiveText(_ tracks: [RecordedTrack]) -> Transcript {
+        let transcripts = tracks.map { track in
+            let segments = liveTranscript.segments(fromSource: track.lane).map { segment in
+                var segment = segment
+                segment.start += track.offset
+                segment.end += track.offset
+                return segment
+            }
+            return Transcript(segments: segments, language: options.language)
+        }
+        guard tracks.count > 1 else { return transcripts.first ?? Transcript(segments: []) }
+        let lanes = tracks.map(\.device)
+        let sources = zip(tracks, transcripts).flatMap { track, transcript in
+            Self.split(transcript, byDeviceOf: track).map { device, part in
+                SourceTranscript(device: device, label: sourceLabels.label(for: device, among: lanes), transcript: part)
+            }
+        }
+        return TranscriptMerger.merge(sources)
+    }
+
+    /// Tracks of a recording that couldn't be transcribed, and why the first of them failed.
+    private struct TrackFailure {
+        /// Every device that recorded a part of the failed tracks.
+        let devices: [AudioInputDevice]
+        let error: any Error
+    }
+
     /// Transcribes each track on its own, so speech stays attributed to its source, then merges the
     /// labeled transcripts by time. Tracks are submitted together; the engine decides how many it
     /// runs at once (speech-swift runs one at a time, since they share the GPU anyway).
-    private func transcribeSeparately(_ tracks: [RecordedTrack], session: Session) async throws -> Transcript {
+    ///
+    /// A track that fails doesn't take the others with it: the transcript has the tracks that
+    /// worked, and the failure is returned alongside. Throws only if every track failed.
+    private func transcribeSeparately(
+        _ tracks: [RecordedTrack],
+        session: Session
+    ) async throws -> (Transcript, TrackFailure?) {
         let engine = engine
         let options = options
         let sourceLabels = sourceLabels
@@ -935,40 +1138,68 @@ public final class RecordingCoordinator {
         }
 
         transcriptionProgress = TranscriptionProgress(sessionID: session.id, tracks: audible)
-        let transcripts = try await withThrowingTaskGroup(
-            of: (Int, Transcript).self,
-            returning: [Transcript].self
+        let results = await withTaskGroup(
+            of: (Int, Result<Transcript, any Error>).self,
+            returning: [Result<Transcript, any Error>].self
         ) { group in
             for (index, track) in audible.enumerated() {
                 let progress = progressHandler(track: index, sessionID: session.id)
                 group.addTask {
-                    var transcript = try await engine.transcribe(track.samples, options: options, progress: progress)
-                    // Engines needn't report progress (e.g. for a source without speech), but the
-                    // bar mustn't wait on a source that's done.
-                    progress(1)
-                    for i in transcript.segments.indices {
-                        transcript.segments[i].start += track.offset
-                        transcript.segments[i].end += track.offset
+                    do {
+                        var transcript = try await engine.transcribe(track.samples, options: options, progress: progress)
+                        for i in transcript.segments.indices {
+                            transcript.segments[i].start += track.offset
+                            transcript.segments[i].end += track.offset
+                        }
+                        // Engines needn't report progress (e.g. for a source without speech), but the
+                        // bar mustn't wait on a source that's done.
+                        progress(1)
+                        return (index, .success(transcript))
+                    } catch {
+                        // A failed source is done too, as far as the bar is concerned.
+                        progress(1)
+                        return (index, .failure(error))
                     }
-                    return (index, transcript)
                 }
             }
-            var transcripts = [Transcript?](repeating: nil, count: audible.count)
-            for try await (index, transcript) in group {
-                transcripts[index] = transcript
+            var results = [Result<Transcript, any Error>](
+                repeating: .failure(CancellationError()),
+                count: audible.count
+            )
+            for await (index, result) in group {
+                results[index] = result
             }
-            return transcripts.compactMap { $0 }
+            return results
         }
 
         // A lane that switched microphones becomes one source per device, so with several
         // microphones each part is named after the device that recorded it.
         let lanes = tracks.map(\.device)
-        let sources = zip(audible, transcripts).flatMap { track, transcript in
-            Self.split(transcript, byDeviceOf: track).map { device, part in
-                SourceTranscript(device: device, label: sourceLabels.label(for: device, among: lanes), transcript: part)
+        var sources: [SourceTranscript] = []
+        var failedDevices: [AudioInputDevice] = []
+        var firstError: (any Error)?
+        var anyTranscribed = false
+        for (track, result) in zip(audible, results) {
+            switch result {
+            case .success(let transcript):
+                anyTranscribed = true
+                sources += Self.split(transcript, byDeviceOf: track).map { device, part in
+                    SourceTranscript(device: device, label: sourceLabels.label(for: device, among: lanes), transcript: part)
+                }
+            case .failure(let error):
+                logger.error(
+                    "Transcribing \(track.device.name, privacy: .public) failed: \(error.localizedDescription, privacy: .public)"
+                )
+                firstError = firstError ?? error
+                for device in track.parts.map(\.device) where !failedDevices.contains(where: { $0.id == device.id }) {
+                    failedDevices.append(device)
+                }
             }
         }
-        return TranscriptMerger.merge(sources)
+        // With nothing transcribed there's no note to save, so the recording fails as a whole.
+        if let firstError, !anyTranscribed { throw firstError }
+        let failure = firstError.map { TrackFailure(devices: failedDevices, error: $0) }
+        return (TranscriptMerger.merge(sources), failure)
     }
 
     /// `transcript`'s segments grouped by the device that recorded them, in order of first use.
@@ -1029,7 +1260,7 @@ public final class RecordingCoordinator {
     }
 
     public func toggleRecording() async {
-        if isRecording {
+        if canStopRecording {
             await stopRecording()
         } else {
             await startRecording()
@@ -1140,7 +1371,7 @@ public final class RecordingCoordinator {
             }
             // A microphone replacing another continues its track.
             let lane = session.lanes.first { $0.kind == device.kind && $0.current == nil }
-                ?? session.addLane(kind: device.kind)
+                ?? addLane(kind: device.kind, to: session)
             attach(started, to: lane, in: session)
             logger.info("Now recording from \(device.name, privacy: .public)")
         }
@@ -1218,6 +1449,13 @@ public final class RecordingCoordinator {
             }
         return "\(reason) Mixdown saves it as soon as it can, or once you choose another folder. "
             + "Keep Mixdown open until then."
+    }
+
+    /// Shown once a note is written without the speech of `devices`, whose tracks failed to
+    /// transcribe; the audio itself is never kept.
+    nonisolated static func untranscribedMessage(for devices: [AudioInputDevice], error: any Error) -> String {
+        let names = devices.map(\.name).formatted(.list(type: .and))
+        return "Couldn't transcribe \(names). \(error.localizedDescription) The note has the other inputs."
     }
 
     nonisolated static let tooShortMessage =

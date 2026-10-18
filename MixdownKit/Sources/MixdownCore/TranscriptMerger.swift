@@ -50,11 +50,14 @@ public struct SourceTranscript: Sendable, Equatable {
 
 /// Combines per-source transcripts into one conversation.
 public enum TranscriptMerger {
-    /// How far apart (in seconds) a microphone segment and system-audio speech may be and still
-    /// count as the same moment when looking for echo.
-    static let echoTimeTolerance: TimeInterval = 1.5
-    /// Share of a microphone segment's words that must also appear in overlapping system audio
-    /// for it to be dropped as echo.
+    /// Microphone segments shorter than this are never treated as echo: replies like "Yes." or
+    /// "Sounds good." are too common to tell apart from what the others said.
+    static let echoMinimumWords = 4
+    /// Share of each of two segments that must overlap the other in time for them to be compared
+    /// at all.
+    static let echoTimeOverlap = 0.5
+    /// Share of a microphone segment's word pairs that must also appear, in the same order, in
+    /// overlapping system audio for it to be dropped as echo.
     static let echoWordShare = 0.6
 
     /// Labels every segment with its source, drops microphone segments that merely repeat what
@@ -91,30 +94,53 @@ public enum TranscriptMerger {
         )
     }
 
-    /// Whether most of `segment`'s words were said in `reference` around the same time.
+    /// Whether most of `segment`'s word pairs were said, in the same order, in `reference` at the
+    /// same time.
     static func isEcho(_ segment: TranscriptSegment, of reference: [TranscriptSegment]) -> Bool {
         let words = normalizedWords(segment.text)
-        guard !words.isEmpty else { return false }
+        guard words.count >= echoMinimumWords else { return false }
+        let pairs = wordPairs(words)
 
-        let nearby = reference.filter {
-            $0.start < segment.end + echoTimeTolerance && $0.end > segment.start - echoTimeTolerance
+        var available: [WordPair: Int] = [:]
+        for other in reference where overlaps(segment, other) {
+            for pair in wordPairs(normalizedWords(other.text)) {
+                available[pair, default: 0] += 1
+            }
         }
-        guard !nearby.isEmpty else { return false }
+        guard !available.isEmpty else { return false }
 
-        var available: [Substring: Int] = [:]
-        for word in nearby.flatMap({ normalizedWords($0.text) }) {
-            available[word, default: 0] += 1
-        }
         var matched = 0
-        for word in words where available[word, default: 0] > 0 {
-            available[word, default: 0] -= 1
+        for pair in pairs where available[pair, default: 0] > 0 {
+            available[pair, default: 0] -= 1
             matched += 1
         }
-        return Double(matched) / Double(words.count) >= echoWordShare
+        return Double(matched) / Double(pairs.count) >= echoWordShare
     }
 
-    /// Lowercased words without punctuation.
+    /// Whether `a` and `b` overlap for at least `echoTimeOverlap` of each one's length, so a short
+    /// reply isn't compared with a long stretch of the others talking around it.
+    static func overlaps(_ a: TranscriptSegment, _ b: TranscriptSegment) -> Bool {
+        let overlap = min(a.end, b.end) - max(a.start, b.start)
+        guard overlap >= 0 else { return false }
+        let longer = max(a.end - a.start, b.end - b.start)
+        return overlap >= longer * echoTimeOverlap
+    }
+
+    private struct WordPair: Hashable {
+        var first: Substring
+        var second: Substring
+    }
+
+    /// Each word with the one after it, so matches have to keep the word order.
+    private static func wordPairs(_ words: [Substring]) -> [WordPair] {
+        zip(words, words.dropFirst()).map { WordPair(first: $0, second: $1) }
+    }
+
+    /// Lowercased words without punctuation. Apostrophes are dropped rather than split on, so
+    /// "it's" counts as one word.
     static func normalizedWords(_ text: String) -> [Substring] {
-        text.lowercased().split { !$0.isLetter && !$0.isNumber }
+        text.lowercased()
+            .filter { $0 != "'" && $0 != "\u{2019}" }
+            .split { !$0.isLetter && !$0.isNumber }
     }
 }

@@ -94,12 +94,14 @@ final class LiveDeviceProvider: AudioDeviceProvider {
 }
 
 /// Yields `chunks` on start, then finishes on `stop()` (or immediately with `streamError`, or
-/// immediately without error when `finishesOnStart`, like a capture the system ended).
+/// immediately without error when `finishesOnStart`, like a capture the system ended). With a
+/// `startGate`, `start()` waits for it to open, like a capture held up by a permission prompt.
 final class MockCapture: AudioCapturing {
     private let chunks: [AudioChunk]
     private let streamError: (any Error)?
     private let startError: (any Error)?
     private let finishesOnStart: Bool
+    private let startGate: Gate?
     private let stream: AsyncThrowingStream<AudioChunk, any Error>
     private let continuation: AsyncThrowingStream<AudioChunk, any Error>.Continuation
     private let startCalls = LockedValue(0)
@@ -109,12 +111,14 @@ final class MockCapture: AudioCapturing {
         chunks: [AudioChunk] = [],
         streamError: (any Error)? = nil,
         startError: (any Error)? = nil,
-        finishesOnStart: Bool = false
+        finishesOnStart: Bool = false,
+        startGate: Gate? = nil
     ) {
         self.chunks = chunks
         self.streamError = streamError
         self.startError = startError
         self.finishesOnStart = finishesOnStart
+        self.startGate = startGate
         let (stream, continuation) = AsyncThrowingStream<AudioChunk, any Error>.makeStream()
         self.stream = stream
         self.continuation = continuation
@@ -125,6 +129,7 @@ final class MockCapture: AudioCapturing {
 
     func start() async throws -> AsyncThrowingStream<AudioChunk, any Error> {
         startCalls.update { $0 += 1 }
+        await startGate?.wait()
         if let startError { throw startError }
         for chunk in chunks {
             continuation.yield(chunk)
@@ -190,6 +195,8 @@ actor MockEngine: TranscriptionEngine {
     /// Returned instead of `transcript` for a given sample count, to tell sources apart.
     private let transcriptsBySampleCount: [Int: Transcript]
     private let transcribeError: (any Error)?
+    /// Thrown instead of returning a transcript for a given sample count, to fail one source.
+    private let transcribeErrorsBySampleCount: [Int: any Error]
     private let progressBySampleCount: [Int: Double]
     private let transcriptionGate: Gate?
     private let ungatedSampleCounts: Set<Int>
@@ -197,6 +204,8 @@ actor MockEngine: TranscriptionEngine {
     private let preparesUntilCancelled: Bool
     private let preparationGate: Gate?
     private let deleteError: (any Error)?
+    private let liveSession: MockLiveSession?
+    private let liveError: (any Error)?
     private nonisolated let downloaded: LockedValue<Bool>
     private(set) var receivedSampleCounts: [Int] = []
     private(set) var prepareCount = 0
@@ -213,6 +222,9 @@ actor MockEngine: TranscriptionEngine {
     ///     is cancelled.
     ///   - preparationGate: `prepare` stalls halfway until it opens.
     ///   - deleteError: Thrown by `deleteModel`, which then leaves the model on disk.
+    ///   - liveSession: Handed out by `makeLiveSession` for every input; `nil` if the engine
+    ///     doesn't transcribe live.
+    ///   - liveError: Thrown by `makeLiveSession` instead.
     ///   - progressBySampleCount: Progress `transcribe` reports for a given sample count before
     ///     waiting for `transcriptionGate`.
     ///   - transcriptionGate: `transcribe` returns once it opens.
@@ -221,6 +233,7 @@ actor MockEngine: TranscriptionEngine {
         transcript: Transcript = Transcript(segments: []),
         transcriptsBySampleCount: [Int: Transcript] = [:],
         transcribeError: (any Error)? = nil,
+        transcribeErrorsBySampleCount: [Int: any Error] = [:],
         progressBySampleCount: [Int: Double] = [:],
         transcriptionGate: Gate? = nil,
         ungatedSampleCounts: Set<Int> = [],
@@ -228,11 +241,14 @@ actor MockEngine: TranscriptionEngine {
         prepareError: (any Error)? = nil,
         preparesUntilCancelled: Bool = false,
         preparationGate: Gate? = nil,
-        deleteError: (any Error)? = nil
+        deleteError: (any Error)? = nil,
+        liveSession: MockLiveSession? = nil,
+        liveError: (any Error)? = nil
     ) {
         self.transcript = transcript
         self.transcriptsBySampleCount = transcriptsBySampleCount
         self.transcribeError = transcribeError
+        self.transcribeErrorsBySampleCount = transcribeErrorsBySampleCount
         self.progressBySampleCount = progressBySampleCount
         self.transcriptionGate = transcriptionGate
         self.ungatedSampleCounts = ungatedSampleCounts
@@ -241,6 +257,17 @@ actor MockEngine: TranscriptionEngine {
         self.preparesUntilCancelled = preparesUntilCancelled
         self.preparationGate = preparationGate
         self.deleteError = deleteError
+        self.liveSession = liveSession
+        self.liveError = liveError
+        self.transcribesLive = liveSession != nil || liveError != nil
+    }
+
+    nonisolated let transcribesLive: Bool
+
+    func makeLiveSession(options: TranscriptionOptions) async throws -> any LiveTranscriptionSession {
+        if let liveError { throw liveError }
+        guard let liveSession else { throw TranscriptionError.failed("No live session") }
+        return liveSession
     }
 
     func prepare(progress: (@Sendable (Double) -> Void)?) async throws {
@@ -288,8 +315,44 @@ actor MockEngine: TranscriptionEngine {
         recordingsInProgressWhileTranscribing.append(recordingsInProgress.current)
         if let fraction = progressBySampleCount[samples.count] { progress?(fraction) }
         if !ungatedSampleCounts.contains(samples.count) { await transcriptionGate?.wait() }
-        if let transcribeError { throw transcribeError }
+        if let error = transcribeErrorsBySampleCount[samples.count] ?? transcribeError { throw error }
         return transcriptsBySampleCount[samples.count] ?? transcript
+    }
+}
+
+/// Answers each push with the update registered for its sample count, else an empty one.
+actor MockLiveSession: LiveTranscriptionSession {
+    private let updatesBySampleCount: [Int: LiveTranscriptUpdate]
+    private let finishUpdate: LiveTranscriptUpdate
+    private let failingSampleCount: Int?
+    private let pushError: any Error
+    private(set) var pushedSampleCounts: [Int] = []
+    private(set) var finishCount = 0
+
+    /// - Parameters:
+    ///   - finishUpdate: Returned by `finish`.
+    ///   - failingSampleCount: A push of this many samples throws `pushError`, to fail one input.
+    init(
+        updatesBySampleCount: [Int: LiveTranscriptUpdate] = [:],
+        finishUpdate: LiveTranscriptUpdate = LiveTranscriptUpdate(),
+        failingSampleCount: Int? = nil,
+        pushError: any Error = TranscriptionError.failed("push")
+    ) {
+        self.updatesBySampleCount = updatesBySampleCount
+        self.finishUpdate = finishUpdate
+        self.failingSampleCount = failingSampleCount
+        self.pushError = pushError
+    }
+
+    func push(_ samples: [Float]) async throws -> LiveTranscriptUpdate {
+        pushedSampleCounts.append(samples.count)
+        if samples.count == failingSampleCount { throw pushError }
+        return updatesBySampleCount[samples.count] ?? LiveTranscriptUpdate()
+    }
+
+    func finish() async throws -> LiveTranscriptUpdate {
+        finishCount += 1
+        return finishUpdate
     }
 }
 

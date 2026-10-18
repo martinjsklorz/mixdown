@@ -45,6 +45,7 @@ struct MenuBarLabel: View {
         switch phase {
         case .idle: Image("MenuBarIcon").renderingMode(.template)
         case .preparingModel: Image(systemName: "arrow.down.circle")
+        case .startingCapture: Image(systemName: "record.circle")
         case .recording: Image(systemName: "record.circle.fill")
         case .transcribing, .summarizing: Image(systemName: "ellipsis.circle")
         case .failed: Image(systemName: "exclamationmark.triangle")
@@ -68,6 +69,7 @@ struct MenuBarLabel: View {
         case .idle: "Mixdown"
         case .preparingModel(let progress):
             "Mixdown, downloading model, \(ProgressText.detail(progress: progress, remaining: remaining))"
+        case .startingCapture: "Mixdown, starting to record"
         case .recording:
             if let elapsed {
                 "Mixdown, recording, \(Duration.seconds(elapsed).formatted(.units(width: .wide)))"

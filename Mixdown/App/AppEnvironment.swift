@@ -92,7 +92,7 @@ final class AppEnvironment {
         observeNewNotes()
         listenForRecordingShortcut(navigation: navigation)
         let callPrompt = CallPrompt(
-            isRecording: { [weak self] in self?.coordinator.isRecording ?? false },
+            isRecording: { [weak self] in self?.coordinator.canStopRecording ?? false },
             startRecording: { [weak self] in self?.startRecordingCall() ?? false },
             stopRecording: { [weak self] in self?.stopRecordingCall() },
             markRecordingAsCall: { [weak self] in self?.coordinator.markRecordingAsCall(automatically: $0) },
@@ -155,6 +155,8 @@ final class AppEnvironment {
         } onChange: { [weak self] in
             Task { @MainActor in self?.observeRecording() }
         }
+        // Neither started nor stopped yet; the call prompt is waiting for the recording to start.
+        if phase == .startingCapture { return }
         guard case .recording(let startedAt) = phase else {
             callPrompt?.recordingDidStop()
             recordingClock?.cancel()
@@ -308,7 +310,7 @@ final class AppEnvironment {
     /// microphone if one is selected. Returns `false` if recording can't start, e.g. as the model
     /// isn't downloaded; Record in the main window says why.
     private func startRecordingCall() -> Bool {
-        guard !coordinator.isRecording else { return true }
+        guard !coordinator.canStopRecording else { return true }
         setRecordsSystemAudio(true)
         guard coordinator.canStartRecording else { return false }
         Task { await coordinator.startRecording() }
@@ -317,7 +319,7 @@ final class AppEnvironment {
 
     /// Stops recording, as the call has ended.
     private func stopRecordingCall() {
-        guard coordinator.isRecording else { return }
+        guard coordinator.canStopRecording else { return }
         Task { await coordinator.stopRecording() }
     }
 
@@ -329,7 +331,7 @@ final class AppEnvironment {
         KeyboardShortcuts.onKeyUp(for: .toggleRecording) { [weak self] in
             guard let self else { return }
             let coordinator = self.coordinator
-            if coordinator.isRecording || coordinator.canStartRecording {
+            if coordinator.canStopRecording || coordinator.canStartRecording {
                 Task { await coordinator.toggleRecording() }
             } else if let openWindow = navigation.openWindow {
                 navigation.show(.recorder, using: openWindow)

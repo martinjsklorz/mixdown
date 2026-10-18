@@ -27,9 +27,17 @@ struct TranscriptionSettingsView: View {
                                 set: { environment.setModel($0) }
                             )
                         ) {
-                            ForEach(TranscriptionModel.available) { model in
-                                menuTitle(for: model)
-                                    .tag(model)
+                            Section("Offline: transcribed when you stop") {
+                                ForEach(TranscriptionModel.available.filter { !$0.isLive }) { model in
+                                    menuTitle(for: model)
+                                        .tag(model)
+                                }
+                            }
+                            Section("Live: transcribed while you record") {
+                                ForEach(TranscriptionModel.available.filter(\.isLive)) { model in
+                                    menuTitle(for: model)
+                                        .tag(model)
+                                }
                             }
                         }
                         .labelsHidden()
@@ -168,9 +176,10 @@ struct TranscriptionSettingsView: View {
             model == environment.model
             ? environment.coordinator.isModelDownloaded
             : model.isDownloaded ?? isAppleSpeechInstalled
-        guard isDownloaded else { return Text(model.displayName) }
-        return Text("\(model.displayName)  \(Image(nsImage: Self.downloadedImage))")
-            .accessibilityLabel("\(model.displayName), downloaded")
+        let label = Self.label(for: model)
+        guard isDownloaded else { return Text(label) }
+        return Text("\(label)  \(Image(nsImage: Self.downloadedImage))")
+            .accessibilityLabel("\(label), downloaded")
     }
 
     /// `checkmark.circle.fill` in green. Menus draw SF Symbols as monochrome templates, so the
@@ -276,14 +285,28 @@ struct TranscriptionSettingsView: View {
                 + "shared with other apps, and transcription runs on this Mac. Automatic uses your Mac's "
                 + "language. This model doesn't label speakers."
         }
-        var lines = [
-            "Larger models are more accurate but slower and take more disk space.",
-            "Models are downloaded once from Hugging Face; transcription always runs on this Mac.",
-        ]
+        var lines: [String]
+        if model.isLive {
+            lines = [
+                "The live model shows the text as you speak and saves it as the note, so the note is ready when you stop and no audio is kept, however long you record.",
+                "It's less accurate than the offline models and names speakers only by input, like Me and Others.",
+            ]
+        } else {
+            lines = [
+                "Offline models transcribe the whole recording once you stop, so its audio is kept in memory until then.",
+                "Larger models are more accurate but slower and take more disk space.",
+            ]
+        }
         if model.labelsSpeakers {
             lines.append("This model labels speakers and detects the language automatically.")
         }
+        lines.append("Models are downloaded once from Hugging Face; transcription always runs on this Mac.")
         return lines.joined(separator: " ")
+    }
+
+    /// "Low · Qwen3-ASR 0.6B": what the model is for, then which it is.
+    static func label(for model: TranscriptionModel) -> String {
+        model.purpose.map { "\($0) · \(model.displayName)" } ?? model.displayName
     }
 
     /// What a summary is and who makes it, or why it can't be made right now.
