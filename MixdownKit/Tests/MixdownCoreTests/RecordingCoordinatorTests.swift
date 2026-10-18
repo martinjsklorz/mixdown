@@ -657,6 +657,90 @@ struct RecordingCoordinatorTests {
         #expect(note.transcript.speakers == ["Me"])
     }
 
+    @Test func sourceFailingToTranscribeKeepsTheOthers() async throws {
+        let error = TranscriptionError.failed("boom")
+        let microphone = MockCapture(chunks: [Fixtures.chunk(seconds: 2, hostTime: 100)])
+        let systemAudio = MockCapture(chunks: [Fixtures.chunk(seconds: 1, hostTime: 100)])
+        let engine = MockEngine(
+            transcriptsBySampleCount: [
+                32_000: Transcript(segments: [TranscriptSegment(start: 0, end: 1, text: "Hello there.")])
+            ],
+            transcribeErrorsBySampleCount: [16_000: error]
+        )
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            captures: [Fixtures.builtInMic.id: microphone, AudioInputDevice.systemAudioID: systemAudio],
+            engine: engine,
+            writer: writer,
+            preferredDeviceIDs: [Fixtures.builtInMic.id, AudioInputDevice.systemAudioID]
+        )
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        await coordinator.stopRecording()
+
+        let note = try #require(await writer.notes.first)
+        #expect(note.sources == [Fixtures.builtInMic, .systemAudio])
+        #expect(
+            note.transcript
+                == Transcript(segments: [TranscriptSegment(start: 0, end: 1, text: "Hello there.", speaker: "Me")])
+        )
+        #expect(coordinator.lastNoteURL != nil)
+        #expect(
+            coordinator.phase
+                == .failed(message: RecordingCoordinator.untranscribedMessage(for: [.systemAudio], error: error))
+        )
+        #expect(coordinator.modelError == nil)
+    }
+
+    @Test func sourceFailingToTranscribeAfterAnInterruptionReportsBoth() async throws {
+        let captureError = AudioCaptureError.microphonePermissionDenied
+        let transcriptionError = TranscriptionError.failed("boom")
+        let microphone = MockCapture(chunks: [Fixtures.chunk(seconds: 2, hostTime: 100)], streamError: captureError)
+        let systemAudio = MockCapture(chunks: [Fixtures.chunk(seconds: 1, hostTime: 100)])
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            captures: [Fixtures.builtInMic.id: microphone, AudioInputDevice.systemAudioID: systemAudio],
+            engine: MockEngine(transcribeErrorsBySampleCount: [16_000: transcriptionError]),
+            writer: writer,
+            preferredDeviceIDs: [Fixtures.builtInMic.id, AudioInputDevice.systemAudioID]
+        )
+        await coordinator.monitorDevices()
+        await coordinator.startRecording()
+        try await waitUntil { coordinator.lastNoteURL != nil }
+
+        #expect(await writer.notes.count == 1)
+        #expect(
+            coordinator.phase
+                == .failed(
+                    message: RecordingCoordinator.interruptedMessage(for: captureError) + " "
+                        + RecordingCoordinator.untranscribedMessage(for: [.systemAudio], error: transcriptionError)
+                )
+        )
+    }
+
+    @Test func everySourceFailingToTranscribeFails() async {
+        let error = TranscriptionError.failed("boom")
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            captures: [
+                Fixtures.builtInMic.id: MockCapture(chunks: [Fixtures.chunk(seconds: 2, hostTime: 100)]),
+                AudioInputDevice.systemAudioID: MockCapture(chunks: [Fixtures.chunk(seconds: 1, hostTime: 100)]),
+            ],
+            engine: MockEngine(transcribeError: error),
+            writer: writer,
+            preferredDeviceIDs: [Fixtures.builtInMic.id, AudioInputDevice.systemAudioID]
+        )
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        await coordinator.stopRecording()
+
+        #expect(coordinator.phase == .failed(message: error.localizedDescription))
+        #expect(coordinator.lastNoteURL == nil)
+        #expect(await writer.notes.isEmpty)
+    }
+
     // MARK: - Switching inputs
 
     @Test func switchesToDefaultMicrophoneWhenDeviceGoesAway() async throws {

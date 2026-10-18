@@ -190,6 +190,8 @@ actor MockEngine: TranscriptionEngine {
     /// Returned instead of `transcript` for a given sample count, to tell sources apart.
     private let transcriptsBySampleCount: [Int: Transcript]
     private let transcribeError: (any Error)?
+    /// Thrown instead of returning a transcript for a given sample count, to fail one source.
+    private let transcribeErrorsBySampleCount: [Int: any Error]
     private let progressBySampleCount: [Int: Double]
     private let transcriptionGate: Gate?
     private let ungatedSampleCounts: Set<Int>
@@ -221,6 +223,7 @@ actor MockEngine: TranscriptionEngine {
         transcript: Transcript = Transcript(segments: []),
         transcriptsBySampleCount: [Int: Transcript] = [:],
         transcribeError: (any Error)? = nil,
+        transcribeErrorsBySampleCount: [Int: any Error] = [:],
         progressBySampleCount: [Int: Double] = [:],
         transcriptionGate: Gate? = nil,
         ungatedSampleCounts: Set<Int> = [],
@@ -233,6 +236,7 @@ actor MockEngine: TranscriptionEngine {
         self.transcript = transcript
         self.transcriptsBySampleCount = transcriptsBySampleCount
         self.transcribeError = transcribeError
+        self.transcribeErrorsBySampleCount = transcribeErrorsBySampleCount
         self.progressBySampleCount = progressBySampleCount
         self.transcriptionGate = transcriptionGate
         self.ungatedSampleCounts = ungatedSampleCounts
@@ -288,7 +292,7 @@ actor MockEngine: TranscriptionEngine {
         recordingsInProgressWhileTranscribing.append(recordingsInProgress.current)
         if let fraction = progressBySampleCount[samples.count] { progress?(fraction) }
         if !ungatedSampleCounts.contains(samples.count) { await transcriptionGate?.wait() }
-        if let transcribeError { throw transcribeError }
+        if let error = transcribeErrorsBySampleCount[samples.count] ?? transcribeError { throw error }
         return transcriptsBySampleCount[samples.count] ?? transcript
     }
 }
