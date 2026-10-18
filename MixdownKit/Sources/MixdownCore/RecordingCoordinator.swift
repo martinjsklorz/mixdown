@@ -746,6 +746,7 @@ public final class RecordingCoordinator {
         do {
             try await prepareModelIfMissing()
             let transcript: Transcript
+            var trackFailure: TrackFailure?
             if let track = tracks.first, tracks.count == 1 {
                 transcriptionProgress = TranscriptionProgress(sessionID: session.id, tracks: tracks)
                 transcript = try await engine.transcribe(
@@ -754,7 +755,7 @@ public final class RecordingCoordinator {
                     progress: progressHandler(track: 0, sessionID: session.id)
                 )
             } else {
-                transcript = try await transcribeSeparately(tracks, session: session)
+                (transcript, trackFailure) = try await transcribeSeparately(tracks, session: session)
             }
             let template = recordingSummaryTemplate ?? (session.isCall ? callSummaryTemplate : summaryTemplate)
             // The template can't change once the summary is under way.
@@ -780,11 +781,11 @@ public final class RecordingCoordinator {
             let url = try await noteWriter.write(note)
             lastNoteURL = url
             logger.info("Wrote note to \(url.path(percentEncoded: false), privacy: .private)")
-            if let interruption {
-                phase = .failed(message: Self.interruptedMessage(for: interruption))
-            } else {
-                phase = .idle
-            }
+            let messages = [
+                interruption.map(Self.interruptedMessage(for:)),
+                trackFailure.map { Self.untranscribedMessage(for: $0.devices, error: $0.error) },
+            ].compactMap { $0 }
+            phase = messages.isEmpty ? .idle : .failed(message: messages.joined(separator: " "))
         } catch {
             logger.error("Finishing recording failed: \(error.localizedDescription, privacy: .public)")
             if case TranscriptionError.modelUnavailable = error {
@@ -845,10 +846,23 @@ public final class RecordingCoordinator {
         }
     }
 
+    /// Tracks of a recording that couldn't be transcribed, and why the first of them failed.
+    private struct TrackFailure {
+        /// Every device that recorded a part of the failed tracks.
+        let devices: [AudioInputDevice]
+        let error: any Error
+    }
+
     /// Transcribes each track on its own, so speech stays attributed to its source, then merges the
     /// labeled transcripts by time. Tracks are submitted together; the engine decides how many it
     /// runs at once (speech-swift runs one at a time, since they share the GPU anyway).
-    private func transcribeSeparately(_ tracks: [RecordedTrack], session: Session) async throws -> Transcript {
+    ///
+    /// A track that fails doesn't take the others with it: the transcript has the tracks that
+    /// worked, and the failure is returned alongside. Throws only if every track failed.
+    private func transcribeSeparately(
+        _ tracks: [RecordedTrack],
+        session: Session
+    ) async throws -> (Transcript, TrackFailure?) {
         let engine = engine
         let options = options
         let sourceLabels = sourceLabels
@@ -863,40 +877,68 @@ public final class RecordingCoordinator {
         }
 
         transcriptionProgress = TranscriptionProgress(sessionID: session.id, tracks: audible)
-        let transcripts = try await withThrowingTaskGroup(
-            of: (Int, Transcript).self,
-            returning: [Transcript].self
+        let results = await withTaskGroup(
+            of: (Int, Result<Transcript, any Error>).self,
+            returning: [Result<Transcript, any Error>].self
         ) { group in
             for (index, track) in audible.enumerated() {
                 let progress = progressHandler(track: index, sessionID: session.id)
                 group.addTask {
-                    var transcript = try await engine.transcribe(track.samples, options: options, progress: progress)
-                    // Engines needn't report progress (e.g. for a source without speech), but the
-                    // bar mustn't wait on a source that's done.
-                    progress(1)
-                    for i in transcript.segments.indices {
-                        transcript.segments[i].start += track.offset
-                        transcript.segments[i].end += track.offset
+                    do {
+                        var transcript = try await engine.transcribe(track.samples, options: options, progress: progress)
+                        for i in transcript.segments.indices {
+                            transcript.segments[i].start += track.offset
+                            transcript.segments[i].end += track.offset
+                        }
+                        // Engines needn't report progress (e.g. for a source without speech), but the
+                        // bar mustn't wait on a source that's done.
+                        progress(1)
+                        return (index, .success(transcript))
+                    } catch {
+                        // A failed source is done too, as far as the bar is concerned.
+                        progress(1)
+                        return (index, .failure(error))
                     }
-                    return (index, transcript)
                 }
             }
-            var transcripts = [Transcript?](repeating: nil, count: audible.count)
-            for try await (index, transcript) in group {
-                transcripts[index] = transcript
+            var results = [Result<Transcript, any Error>](
+                repeating: .failure(CancellationError()),
+                count: audible.count
+            )
+            for await (index, result) in group {
+                results[index] = result
             }
-            return transcripts.compactMap { $0 }
+            return results
         }
 
         // A lane that switched microphones becomes one source per device, so with several
         // microphones each part is named after the device that recorded it.
         let lanes = tracks.map(\.device)
-        let sources = zip(audible, transcripts).flatMap { track, transcript in
-            Self.split(transcript, byDeviceOf: track).map { device, part in
-                SourceTranscript(device: device, label: sourceLabels.label(for: device, among: lanes), transcript: part)
+        var sources: [SourceTranscript] = []
+        var failedDevices: [AudioInputDevice] = []
+        var firstError: (any Error)?
+        var anyTranscribed = false
+        for (track, result) in zip(audible, results) {
+            switch result {
+            case .success(let transcript):
+                anyTranscribed = true
+                sources += Self.split(transcript, byDeviceOf: track).map { device, part in
+                    SourceTranscript(device: device, label: sourceLabels.label(for: device, among: lanes), transcript: part)
+                }
+            case .failure(let error):
+                logger.error(
+                    "Transcribing \(track.device.name, privacy: .public) failed: \(error.localizedDescription, privacy: .public)"
+                )
+                firstError = firstError ?? error
+                for device in track.parts.map(\.device) where !failedDevices.contains(where: { $0.id == device.id }) {
+                    failedDevices.append(device)
+                }
             }
         }
-        return TranscriptMerger.merge(sources)
+        // With nothing transcribed there's no note to save, so the recording fails as a whole.
+        if let firstError, !anyTranscribed { throw firstError }
+        let failure = firstError.map { TrackFailure(devices: failedDevices, error: $0) }
+        return (TranscriptMerger.merge(sources), failure)
     }
 
     /// `transcript`'s segments grouped by the device that recorded them, in order of first use.
@@ -1134,6 +1176,13 @@ public final class RecordingCoordinator {
     /// Shown only once the note is written; the audio itself is never kept.
     nonisolated static func interruptedMessage(for error: any Error) -> String {
         "Recording stopped early. \(error.localizedDescription) The note has what was recorded until then."
+    }
+
+    /// Shown once a note is written without the speech of `devices`, whose tracks failed to
+    /// transcribe; the audio itself is never kept.
+    nonisolated static func untranscribedMessage(for devices: [AudioInputDevice], error: any Error) -> String {
+        let names = devices.map(\.name).formatted(.list(type: .and))
+        return "Couldn't transcribe \(names). \(error.localizedDescription) The note has the other inputs."
     }
 
     nonisolated static let tooShortMessage =
