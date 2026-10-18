@@ -328,7 +328,7 @@ private struct ModelPage: View {
                         )
                     ) {
                         ForEach(TranscriptionModel.available) { model in
-                            Text(model.displayName).tag(model)
+                            Text(TranscriptionSettingsView.label(for: model)).tag(model)
                         }
                     }
                     .pickerStyle(.radioGroup)

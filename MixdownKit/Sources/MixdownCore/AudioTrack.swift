@@ -10,32 +10,55 @@ public struct AudioTrack: Sendable, Equatable {
     /// Gaps shorter than this are treated as timestamp jitter, not missing audio.
     static let gapTolerance: TimeInterval = 0.2
 
+    /// Empty unless the track keeps its samples.
     public private(set) var samples: [Float] = []
     /// Host time of the first sample, if the first chunk carried one.
     public private(set) var startHostTime: TimeInterval?
+    public private(set) var sampleCount = 0
+    private let keepsSamples: Bool
 
-    public init() {}
+    /// - Parameter keepsSamples: Whether to keep the audio, or only follow its timing, e.g. when
+    ///   it's transcribed as it comes in.
+    public init(keepsSamples: Bool = true) {
+        self.keepsSamples = keepsSamples
+    }
 
-    public var duration: TimeInterval { Double(samples.count) / AudioChunk.sampleRate }
+    public var duration: TimeInterval { Double(sampleCount) / AudioChunk.sampleRate }
 
-    public mutating func append(_ chunk: AudioChunk) {
-        if let hostTime = chunk.hostTime {
-            if samples.isEmpty {
-                startHostTime = hostTime
-            } else if let startHostTime {
-                let gap = hostTime - (startHostTime + duration)
-                if gap > Self.gapTolerance {
-                    samples.append(contentsOf: repeatElement(0, count: Int((gap * AudioChunk.sampleRate).rounded())))
-                }
-            }
-        }
-        samples.append(contentsOf: chunk.samples)
+    /// Adds `chunk` and returns the samples it added: silence filling a gap before it, if any,
+    /// then its own.
+    @discardableResult
+    public mutating func append(_ chunk: AudioChunk) -> [Float] {
+        var added = [Float](repeating: 0, count: gap(before: chunk.hostTime))
+        added.append(contentsOf: chunk.samples)
+        sampleCount += added.count
+        if keepsSamples { samples.append(contentsOf: added) }
+        return added
     }
 
     /// Appends a later recording of the same source, e.g. from the device it switched to, with
-    /// the time between the two filled with silence.
+    /// the time between the two filled with silence. Both should keep their samples, or neither.
     public mutating func append(_ track: AudioTrack) {
-        append(AudioChunk(samples: track.samples, startTime: 0, hostTime: track.startHostTime))
+        guard track.sampleCount > 0 else { return }
+        let silence = gap(before: track.startHostTime)
+        sampleCount += silence + track.sampleCount
+        if keepsSamples {
+            samples.append(contentsOf: repeatElement(0, count: silence))
+            samples.append(contentsOf: track.samples)
+        }
+    }
+
+    /// Samples of silence that fill the time between the track's end and audio starting at
+    /// `hostTime`. Records `hostTime` as the start of an empty track.
+    private mutating func gap(before hostTime: TimeInterval?) -> Int {
+        guard let hostTime else { return 0 }
+        guard sampleCount > 0 else {
+            startHostTime = hostTime
+            return 0
+        }
+        guard let startHostTime else { return 0 }
+        let gap = hostTime - (startHostTime + duration)
+        return gap > Self.gapTolerance ? Int((gap * AudioChunk.sampleRate).rounded()) : 0
     }
 
     /// Seconds from the earliest track's first sample to each track's first sample. Tracks

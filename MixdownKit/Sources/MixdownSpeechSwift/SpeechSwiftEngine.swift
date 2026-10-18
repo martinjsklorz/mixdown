@@ -11,15 +11,19 @@ import os
 /// loaded on first use or when a recording starts, and unloaded again once no recording or
 /// transcription has needed them for `idleUnloadDelay`.
 ///
+/// The live model, Nemotron streaming ASR, instead transcribes each input while it's recorded
+/// (see `LiveRecognizer`). Its calls run on this actor too, one at a time.
+///
 /// To use a different engine, add a module with a type conforming to `TranscriptionEngine` and construct
 /// it in `AppEnvironment.makeCoordinator` instead of this one. Nothing else refers to speech-swift.
 public actor SpeechSwiftEngine: TranscriptionEngine {
-    private struct LoadedModels: Sendable {
-        let detector: VoiceActivityDetector
-        let recognizer: any SpeechRecognizer
+    private enum LoadedModels: Sendable {
+        case offline(detector: VoiceActivityDetector, recognizer: any SpeechRecognizer)
+        case live(LiveRecognizer)
     }
 
     public nonisolated let info: TranscriptionEngineInfo
+    public nonisolated var transcribesLive: Bool { model.isLive }
 
     private nonisolated let model: SpeechSwiftModel
     private nonisolated let modelDirectory: URL?
@@ -61,14 +65,15 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
         loading?.task.cancel()
         // A finished load task keeps its result, i.e. the models.
         loading = nil
-        models?.recognizer.unload()
+        if case .offline(_, let recognizer) = models { recognizer.unload() }
         // Released before clearing, or MOSS's weights (freed with the instance) would miss the cache clear.
         models = nil
         Memory.clearCache()
     }
 
-    /// Loads the VAD and ASR models, downloading them on first use. Concurrent calls share one load;
-    /// a failed load is retried by the next call. Throws `TranscriptionError.modelUnavailable`.
+    /// Loads the model (and for offline models the VAD), downloading them on first use. Concurrent
+    /// calls share one load; a failed load is retried by the next call. Throws
+    /// `TranscriptionError.modelUnavailable`.
     ///
     /// Cancelling the calling task stops the download (for every caller sharing it) and throws
     /// `CancellationError`. Files already on disk are kept, so the next call resumes from them.
@@ -92,6 +97,7 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
 
     /// Transcribes a whole recording of 16 kHz mono samples. Segments follow the VAD's speech regions
     /// (or the model's own timestamps for MOSS). `translateToEnglish` is not supported and ignored.
+    /// Throws for the live model, which transcribes while recording instead.
     ///
     /// `progress` covers the VAD pass, then the pieces by length. Within a piece it moves on an
     /// estimate of the model's speed on this Mac, since the recognizers don't report progress.
@@ -121,23 +127,60 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
         return transcript
     }
 
+    /// A session for one input of a recording; see `LiveRecognizer`. Loads the model if it isn't
+    /// yet. Throws `TranscriptionError` for offline models or if the session can't start.
+    public func makeLiveSession(options: TranscriptionOptions) async throws -> any LiveTranscriptionSession {
+        guard case .live(let recognizer) = try await loadedModels(progress: nil) else {
+            throw TranscriptionError.failed("\(model.displayName) transcribes once the recording ends")
+        }
+        // The model stays loaded while recording; see `recordingWillStart()`.
+        do {
+            let state = try recognizer.makeSession(languageCode: Self.languageCode(options.language))
+            return SpeechSwiftLiveSession(engine: self, state: state)
+        } catch {
+            throw TranscriptionError.failed(error.localizedDescription)
+        }
+    }
+
+    // A live session's calls. Synchronous, so no other model call on this actor runs meanwhile.
+
+    func push(_ samples: [Float], into state: LiveSessionState) throws -> LiveTranscriptUpdate {
+        do {
+            return try state.push(samples)
+        } catch {
+            throw TranscriptionError.failed(error.localizedDescription)
+        }
+    }
+
+    func finish(_ state: LiveSessionState) throws -> LiveTranscriptUpdate {
+        do {
+            return try state.finish()
+        } catch {
+            throw TranscriptionError.failed(error.localizedDescription)
+        }
+    }
+
     public nonisolated var isDownloaded: Bool {
         Self.isDownloaded(model, modelDirectory: modelDirectory)
     }
 
-    /// Whether `model` (and the VAD) are already on disk, so `prepare` won't download anything.
-    /// Checks files only; it doesn't validate them.
+    /// Whether `model` (and for offline models the VAD) is already on disk, so `prepare` won't
+    /// download anything. Checks files only; it doesn't validate them.
     public static func isDownloaded(_ model: SpeechSwiftModel, modelDirectory: URL? = nil) -> Bool {
         guard let base = try? modelDirectory ?? defaultModelDirectory(),
-            let detectorDirectory = try? ModelCache.directory(for: VoiceActivityDetector.repositoryID, base: base),
             let modelCacheDirectory = try? ModelCache.directory(for: model.repositoryID, base: base)
         else { return false }
+        guard let recognizerType = model.recognizerType else {
+            return LiveRecognizer.cacheLooksComplete(in: modelCacheDirectory)
+        }
+        guard let detectorDirectory = try? ModelCache.directory(for: VoiceActivityDetector.repositoryID, base: base)
+        else { return false }
         return VoiceActivityDetector.cacheLooksComplete(in: detectorDirectory)
-            && model.recognizerType.cacheLooksComplete(in: modelCacheDirectory)
+            && recognizerType.cacheLooksComplete(in: modelCacheDirectory)
     }
 
     /// Removes the ASR model's files and drops the loaded instance. The VAD (~2 MB) is kept, since
-    /// every model shares it.
+    /// every offline model shares it.
     public func deleteModel() async throws {
         loading?.task.cancel()
         loading = nil
@@ -241,7 +284,7 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
     private func unload() {
         pendingUnload?.cancel()
         pendingUnload = nil
-        models?.recognizer.unload()
+        if case .offline(_, let recognizer) = models { recognizer.unload() }
         models = nil
         // Freed weights land in MLX's buffer cache, which would keep holding the memory.
         Memory.clearCache()
@@ -254,14 +297,19 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
     ) async throws -> LoadedModels {
         let base = try modelDirectory ?? defaultModelDirectory()
         try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        guard let recognizerType = model.recognizerType else {
+            let recognizer = try await LiveRecognizer.load(cacheBase: base) { progress.report($0) }
+            progress.report(1)
+            return .live(recognizer)
+        }
         // The VAD is ~2 MB; give it a sliver of the bar.
         let detector = try await VoiceActivityDetector.load(cacheBase: base) { progress.report(0.02 * $0) }
-        let recognizer = try await model.recognizerType.load(
+        let recognizer = try await recognizerType.load(
             repositoryID: model.repositoryID,
             cacheBase: base
         ) { progress.report(0.02 + 0.98 * $0) }
         progress.report(1)
-        return LoadedModels(detector: detector, recognizer: recognizer)
+        return .offline(detector: detector, recognizer: recognizer)
     }
 
     private static func defaultModelDirectory() throws -> URL {
@@ -303,12 +351,14 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
         language requestedLanguage: String?,
         progress: MonotonicProgress?
     ) async throws -> Transcript {
-        let models = try await loadedModels(progress: nil)
+        guard case .offline(let detector, let recognizer) = try await loadedModels(progress: nil) else {
+            throw TranscriptionError.failed("\(model.displayName) transcribes while recording")
+        }
         try Task.checkCancellation()
         let started = ContinuousClock.now
         let audioDuration = Double(samples.count) / AudioChunk.sampleRate
 
-        let hint = requestedLanguage.flatMap { models.recognizer.languageHint(forISOCode: $0) }
+        let hint = requestedLanguage.flatMap { recognizer.languageHint(forISOCode: $0) }
         if let requestedLanguage, hint == nil {
             transcriptionLogger.info(
                 "\(self.model.displayName, privacy: .public) takes no language hint for '\(requestedLanguage, privacy: .public)'; detecting automatically"
@@ -324,13 +374,13 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
         // The VAD and recognizer calls below are synchronous and run on this actor. That's fine: the
         // actor has no other work while transcribing, and `info` is nonisolated. Cancellation is checked
         // inside the VAD, between pieces and (for Qwen3-ASR) between decoded tokens.
-        let detection = try models.detector.detect(samples) { progress?.report(RecognitionProgress.detection($0)) }
+        let detection = try detector.detect(samples) { progress?.report(RecognitionProgress.detection($0)) }
         let pieces = SpeechChunker.pieces(
             regions: detection.regions,
             probabilities: detection.probabilities,
             frameDuration: VoiceActivityDetector.frameDuration,
             audioDuration: audioDuration,
-            configuration: models.recognizer.chunking
+            configuration: recognizer.chunking
         )
         guard !pieces.isEmpty else {
             transcriptionLogger.info("No speech detected in \(audioDuration, format: .fixed(precision: 1)) s of audio")
@@ -353,7 +403,7 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
                 let recognized: [RecognizedSegment]
                 do {
                     defer { ticker?.cancel() }
-                    recognized = try models.recognizer.recognize(audio, languageHint: hint)
+                    recognized = try recognizer.recognize(audio, languageHint: hint)
                 } catch let error as CancellationError {
                     throw error
                 } catch {

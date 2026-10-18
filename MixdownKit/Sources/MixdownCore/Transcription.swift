@@ -106,8 +106,13 @@ public protocol TranscriptionEngine: Sendable {
     /// has, such an engine reports `false`.
     func refreshDownloadStatus() async
 
+    /// Whether recordings are transcribed while they're recorded, by `makeLiveSession`, rather than
+    /// afterwards by `transcribe`. Live engines get no audio kept, however long the recording.
+    var transcribesLive: Bool { get }
+
     /// Transcribes 16 kHz mono Float32 samples (see `AudioChunk.sampleRate`).
     /// Calls `prepare` implicitly if it hasn't completed yet. Honors task cancellation.
+    /// Only called when `transcribesLive` is false.
     /// - Parameter progress: Reports 0...1 as the work gets done, never moving backwards. An engine
     ///   that can't tell may never call it. May be called from any thread.
     func transcribe(
@@ -115,6 +120,51 @@ public protocol TranscriptionEngine: Sendable {
         options: TranscriptionOptions,
         progress: (@Sendable (Double) -> Void)?
     ) async throws -> Transcript
+
+    /// Starts transcribing one input as it's recorded. Calls `prepare` implicitly if it hasn't
+    /// completed yet. Only called when `transcribesLive` is true.
+    func makeLiveSession(options: TranscriptionOptions) async throws -> any LiveTranscriptionSession
+}
+
+/// A recognized word in a live transcript.
+public struct LiveWord: Sendable, Equatable {
+    public var text: String
+    /// Seconds from the session's first sample.
+    public var start: TimeInterval
+    public var end: TimeInterval
+
+    public init(text: String, start: TimeInterval, end: TimeInterval) {
+        self.text = text
+        self.start = start
+        self.end = end
+    }
+}
+
+/// What a live session recognized since its previous update.
+public struct LiveTranscriptUpdate: Sendable, Equatable {
+    /// Whether `words.first` replaces the previous update's last word, which the recognizer was
+    /// still adding to (e.g. "transcri" became "transcription.").
+    public var revisesLastWord: Bool
+    /// New words in spoken order.
+    public var words: [LiveWord]
+
+    public init(revisesLastWord: Bool = false, words: [LiveWord] = []) {
+        self.revisesLastWord = revisesLastWord
+        self.words = words
+    }
+
+    public var isEmpty: Bool { words.isEmpty }
+}
+
+/// Transcribes one input while it's being recorded. Calls are made one at a time, in order.
+public protocol LiveTranscriptionSession: Sendable {
+    /// Feeds the samples that follow the previous call's (16 kHz mono), starting with the input's
+    /// first sample, and returns what was recognized.
+    func push(_ samples: [Float]) async throws -> LiveTranscriptUpdate
+
+    /// Transcribes whatever audio the session still holds once the input has ended. Called once,
+    /// after the last `push`.
+    func finish() async throws -> LiveTranscriptUpdate
 }
 
 extension TranscriptionEngine {
@@ -122,6 +172,12 @@ extension TranscriptionEngine {
     public func recordingDidFinish() {}
     public func languageDidChange(to language: String?) {}
     public func refreshDownloadStatus() async {}
+
+    public var transcribesLive: Bool { false }
+
+    public func makeLiveSession(options: TranscriptionOptions) async throws -> any LiveTranscriptionSession {
+        throw TranscriptionError.failed("\(info.displayName) transcribes once the recording ends")
+    }
 }
 
 public enum TranscriptionError: LocalizedError, Sendable {

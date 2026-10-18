@@ -1232,6 +1232,297 @@ struct RecordingCoordinatorTests {
         #expect(note.transcript.speakers == ["Martin", SourceLabels.defaultSystemAudio])
     }
 
+    // MARK: - Live transcription
+
+    @Test func liveTextBecomesTheNote() async throws {
+        let live = MockLiveSession(
+            updatesBySampleCount: [
+                16_000: LiveTranscriptUpdate(words: [
+                    LiveWord(text: "Hello", start: 0.1, end: 0.4),
+                    LiveWord(text: "world.", start: 0.5, end: 0.9),
+                ])
+            ],
+            // The end of the input, which the session held back until it finished.
+            finishUpdate: LiveTranscriptUpdate(words: [LiveWord(text: "Bye.", start: 1, end: 1.2)])
+        )
+        let engine = MockEngine(liveSession: live)
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            capture: MockCapture(chunks: [Fixtures.chunk(seconds: 1)]),
+            engine: engine,
+            writer: writer
+        )
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        #expect(coordinator.showsLiveTranscript)
+        try await waitUntil { !coordinator.liveTranscript.isEmpty }
+        #expect(coordinator.liveTranscript.lines.map(\.text) == ["Hello world."])
+        // A single input isn't labeled.
+        #expect(coordinator.liveTranscript.lines.map(\.speaker) == [nil])
+
+        await coordinator.stopRecording()
+
+        #expect(coordinator.phase == .idle)
+        #expect(!coordinator.showsLiveTranscript)
+        #expect(coordinator.liveTranscript.isEmpty)
+        #expect(
+            await writer.notes.first?.transcript.segments == [
+                TranscriptSegment(start: 0.1, end: 1.2, text: "Hello world. Bye.")
+            ]
+        )
+        #expect(await writer.notes.first?.duration == 1)
+        #expect(await live.pushedSampleCounts == [16_000])
+        #expect(await live.finishCount == 1)
+        // Nothing is transcribed afterwards.
+        #expect(await engine.receivedSampleCounts.isEmpty)
+    }
+
+    @Test func liveTextLabelsAndOrdersSources() async throws {
+        // The system audio starts a second after the microphone, according to the host clock.
+        // Times are exact in binary, whichever input's text arrives first.
+        let live = MockLiveSession(updatesBySampleCount: [
+            32_000: LiveTranscriptUpdate(words: [LiveWord(text: "Morning.", start: 0.25, end: 0.75)]),
+            16_000: LiveTranscriptUpdate(words: [LiveWord(text: "Hi!", start: 0, end: 0.25)]),
+        ])
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            captures: [
+                Fixtures.builtInMic.id: MockCapture(chunks: [Fixtures.chunk(seconds: 2, hostTime: 100)]),
+                AudioInputDevice.systemAudioID: MockCapture(chunks: [Fixtures.chunk(seconds: 1, hostTime: 101)]),
+            ],
+            engine: MockEngine(liveSession: live),
+            writer: writer,
+            preferredDeviceIDs: [Fixtures.builtInMic.id, AudioInputDevice.systemAudioID]
+        )
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        try await waitUntil { coordinator.liveTranscript.lines.count == 2 }
+
+        #expect(coordinator.liveTranscript.lines.map(\.speaker) == ["Me", "Others"])
+        #expect(coordinator.liveTranscript.lines.map(\.text) == ["Morning.", "Hi!"])
+        await coordinator.stopRecording()
+
+        #expect(
+            await writer.notes.first?.transcript.segments == [
+                TranscriptSegment(start: 0.25, end: 0.75, text: "Morning.", speaker: "Me"),
+                TranscriptSegment(start: 1, end: 1.25, text: "Hi!", speaker: "Others"),
+            ]
+        )
+    }
+
+    @Test func liveTextDropsEchoFromTheNote() async throws {
+        // Without headphones the microphone also hears the call, a moment later.
+        let live = MockLiveSession(updatesBySampleCount: [
+            32_000: LiveTranscriptUpdate(words: [
+                LiveWord(text: "See", start: 0.1, end: 0.3),
+                LiveWord(text: "you.", start: 0.4, end: 0.6),
+            ]),
+            16_000: LiveTranscriptUpdate(words: [
+                LiveWord(text: "See", start: 0, end: 0.2),
+                LiveWord(text: "you.", start: 0.3, end: 0.5),
+            ]),
+        ])
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            captures: [
+                Fixtures.builtInMic.id: MockCapture(chunks: [Fixtures.chunk(seconds: 2, hostTime: 100)]),
+                AudioInputDevice.systemAudioID: MockCapture(chunks: [Fixtures.chunk(seconds: 1, hostTime: 100)]),
+            ],
+            engine: MockEngine(liveSession: live),
+            writer: writer,
+            preferredDeviceIDs: [Fixtures.builtInMic.id, AudioInputDevice.systemAudioID]
+        )
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        try await waitUntil { coordinator.liveTranscript.lines.count >= 2 }
+        await coordinator.stopRecording()
+
+        // However the two inputs' lines interleaved on screen.
+        #expect(
+            await writer.notes.first?.transcript.segments == [
+                TranscriptSegment(start: 0, end: 0.5, text: "See you.", speaker: "Others")
+            ]
+        )
+    }
+
+    @Test func liveTextFollowsADeviceSwitch() async throws {
+        // The USB microphone goes away after a second; the built-in one takes over 3 s later.
+        let error = AudioCaptureError.deviceNotFound("USB Microphone")
+        let usb = MockCapture(chunks: [Fixtures.chunk(seconds: 1, hostTime: 100)], streamError: error)
+        let builtIn = MockCapture(chunks: [Fixtures.chunk(seconds: 0.5, hostTime: 104)])
+        let live = MockLiveSession(updatesBySampleCount: [
+            16_000: LiveTranscriptUpdate(words: [LiveWord(text: "Before.", start: 0.25, end: 0.75)]),
+            8_000: LiveTranscriptUpdate(words: [LiveWord(text: "After.", start: 0.25, end: 0.5)]),
+        ])
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            captures: [Fixtures.usbMic.id: usb, Fixtures.builtInMic.id: builtIn],
+            engine: MockEngine(liveSession: live),
+            writer: writer,
+            preferredDeviceIDs: [Fixtures.usbMic.id]
+        )
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        try await waitUntil { coordinator.liveTranscript.lines.count == 2 }
+        await coordinator.stopRecording()
+
+        // Each device's session counts from its own start, and both stay one unlabeled input.
+        #expect(await live.finishCount == 2)
+        let note = try #require(await writer.notes.first)
+        #expect(
+            note.transcript.segments == [
+                TranscriptSegment(start: 0.25, end: 0.75, text: "Before."),
+                TranscriptSegment(start: 4.25, end: 4.5, text: "After."),
+            ]
+        )
+        #expect(note.duration == 4.5)
+    }
+
+    @Test func liveTextLabelsSystemAudioTurnedOnMidRecording() async throws {
+        let microphone = MockCapture(chunks: [Fixtures.chunk(seconds: 3, hostTime: 100)])
+        let systemAudio = MockCapture(chunks: [Fixtures.chunk(seconds: 1, hostTime: 101)])
+        let live = MockLiveSession(updatesBySampleCount: [
+            48_000: LiveTranscriptUpdate(words: [LiveWord(text: "Hello.", start: 0.25, end: 0.75)]),
+            16_000: LiveTranscriptUpdate(words: [LiveWord(text: "Hi!", start: 0, end: 0.25)]),
+        ])
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            captures: [Fixtures.builtInMic.id: microphone, AudioInputDevice.systemAudioID: systemAudio],
+            engine: MockEngine(liveSession: live),
+            writer: writer
+        )
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        try await waitUntil { !coordinator.liveTranscript.isEmpty }
+        // A single input isn't labeled, until there's a second.
+        #expect(coordinator.liveTranscript.lines.map(\.speaker) == [nil])
+        coordinator.selectDevices([Fixtures.builtInMic, .systemAudio])
+        try await waitUntil { coordinator.liveTranscript.lines.count == 2 }
+        #expect(coordinator.liveTranscript.lines.map(\.speaker) == ["Me", "Others"])
+
+        await coordinator.stopRecording()
+        #expect(
+            await writer.notes.first?.transcript.segments == [
+                TranscriptSegment(start: 0.25, end: 0.75, text: "Hello.", speaker: "Me"),
+                TranscriptSegment(start: 1, end: 1.25, text: "Hi!", speaker: "Others"),
+            ]
+        )
+    }
+
+    @Test func liveTextNamesEachPartOfAReusedMicrophoneLaneByItsDevice() async throws {
+        let other = AudioInputDevice(id: "other", name: "Other Microphone", kind: .microphone)
+        // The built-in microphone's second, a second switching, and the other microphone's half.
+        let live = MockLiveSession(updatesBySampleCount: [
+            16_000: LiveTranscriptUpdate(words: [LiveWord(text: "Built-in.", start: 0.2, end: 0.8)]),
+            8_000: LiveTranscriptUpdate(words: [LiveWord(text: "Other.", start: 0.2, end: 0.4)]),
+        ])
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            devices: [Fixtures.usbMic, Fixtures.builtInMic, other, .systemAudio],
+            captures: [
+                Fixtures.usbMic.id: MockCapture(chunks: [Fixtures.chunk(seconds: 4, hostTime: 100)]),
+                Fixtures.builtInMic.id: MockCapture(chunks: [Fixtures.chunk(seconds: 1, hostTime: 100)]),
+                other.id: MockCapture(chunks: [Fixtures.chunk(seconds: 0.5, hostTime: 102)]),
+                AudioInputDevice.systemAudioID: MockCapture(chunks: [Fixtures.chunk(seconds: 2, hostTime: 100)]),
+            ],
+            engine: MockEngine(liveSession: live),
+            writer: writer,
+            preferredDeviceIDs: [Fixtures.usbMic.id, Fixtures.builtInMic.id, AudioInputDevice.systemAudioID]
+        )
+        await coordinator.monitorDevices()
+        await coordinator.startRecording()
+
+        // The other microphone takes over the built-in one's lane.
+        coordinator.selectDevices([Fixtures.usbMic, other, .systemAudio])
+        try await waitUntil { coordinator.inputLevels[other.id] != nil }
+        await coordinator.stopRecording()
+
+        // Live tracks keep no samples, so the parts are found by length.
+        let note = try #require(await writer.notes.first)
+        #expect(
+            note.transcript.segments == [
+                TranscriptSegment(start: 0.2, end: 0.8, text: "Built-in.", speaker: "Me (MacBook Pro Microphone)"),
+                TranscriptSegment(start: 2.2, end: 2.4, text: "Other.", speaker: "Me (Other Microphone)"),
+            ]
+        )
+    }
+
+    @Test func engineWithoutLiveTranscriptionShowsNone() async {
+        let coordinator = makeCoordinator(capture: MockCapture(chunks: [Fixtures.chunk(seconds: 1)]))
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        #expect(!coordinator.showsLiveTranscript)
+        await coordinator.stopRecording()
+        #expect(coordinator.phase == .idle)
+    }
+
+    @Test func liveSessionFailingToStartEndsTheRecording() async throws {
+        let error = TranscriptionError.modelUnavailable("broken")
+        let writer = InMemoryNoteWriter()
+        let capture = MockCapture(chunks: [Fixtures.chunk(seconds: 1)])
+        let coordinator = makeCoordinator(capture: capture, engine: MockEngine(liveError: error), writer: writer)
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        try await waitUntil { coordinator.lastNoteURL != nil }
+
+        #expect(coordinator.phase == .failed(message: RecordingCoordinator.interruptedMessage(for: error)))
+        // Settings offers to download the model again.
+        #expect(coordinator.modelError == error.localizedDescription)
+        #expect(capture.stopCount == 1)
+        #expect(await writer.notes.first?.transcript.isEmpty == true)
+    }
+
+    @Test func liveSessionsGetAudioInBatches() async throws {
+        let live = MockLiveSession()
+        // A tenth of a second at a time, like a capture's buffers.
+        let chunks = (0..<10).map { Fixtures.chunk(seconds: 0.1, hostTime: 100 + Double($0) / 10) }
+        let coordinator = makeCoordinator(capture: MockCapture(chunks: chunks), engine: MockEngine(liveSession: live))
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        await coordinator.stopRecording()
+
+        // The rest is fed when the input ends.
+        #expect(await live.pushedSampleCounts == [6_400, 6_400, 3_200])
+        #expect(await live.finishCount == 1)
+    }
+
+    @Test func liveTranscriptionErrorKeepsTheTextSoFar() async throws {
+        let error = TranscriptionError.failed("GPU lost")
+        let writer = InMemoryNoteWriter()
+        // The microphone's session works; the system audio's fails.
+        let live = MockLiveSession(
+            updatesBySampleCount: [
+                16_000: LiveTranscriptUpdate(words: [LiveWord(text: "Hello.", start: 0, end: 0.5)])
+            ],
+            failingSampleCount: 8_000,
+            pushError: error
+        )
+        let coordinator = makeCoordinator(
+            captures: [
+                Fixtures.builtInMic.id: MockCapture(chunks: [Fixtures.chunk(seconds: 1, hostTime: 100)]),
+                AudioInputDevice.systemAudioID: MockCapture(chunks: [Fixtures.chunk(seconds: 0.5, hostTime: 100)]),
+            ],
+            engine: MockEngine(liveSession: live),
+            writer: writer,
+            preferredDeviceIDs: [Fixtures.builtInMic.id, AudioInputDevice.systemAudioID]
+        )
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        try await waitUntil { coordinator.lastNoteURL != nil }
+
+        #expect(coordinator.phase == .failed(message: RecordingCoordinator.interruptedMessage(for: error)))
+        #expect(await writer.notes.first?.transcript.text == "Hello.")
+    }
+
     // MARK: - Engine preparation
 
     @Test func prepareEngineReturnsToIdle() async {

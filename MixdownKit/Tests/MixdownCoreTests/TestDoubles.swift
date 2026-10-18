@@ -204,6 +204,8 @@ actor MockEngine: TranscriptionEngine {
     private let preparesUntilCancelled: Bool
     private let preparationGate: Gate?
     private let deleteError: (any Error)?
+    private let liveSession: MockLiveSession?
+    private let liveError: (any Error)?
     private nonisolated let downloaded: LockedValue<Bool>
     private(set) var receivedSampleCounts: [Int] = []
     private(set) var prepareCount = 0
@@ -220,6 +222,9 @@ actor MockEngine: TranscriptionEngine {
     ///     is cancelled.
     ///   - preparationGate: `prepare` stalls halfway until it opens.
     ///   - deleteError: Thrown by `deleteModel`, which then leaves the model on disk.
+    ///   - liveSession: Handed out by `makeLiveSession` for every input; `nil` if the engine
+    ///     doesn't transcribe live.
+    ///   - liveError: Thrown by `makeLiveSession` instead.
     ///   - progressBySampleCount: Progress `transcribe` reports for a given sample count before
     ///     waiting for `transcriptionGate`.
     ///   - transcriptionGate: `transcribe` returns once it opens.
@@ -236,7 +241,9 @@ actor MockEngine: TranscriptionEngine {
         prepareError: (any Error)? = nil,
         preparesUntilCancelled: Bool = false,
         preparationGate: Gate? = nil,
-        deleteError: (any Error)? = nil
+        deleteError: (any Error)? = nil,
+        liveSession: MockLiveSession? = nil,
+        liveError: (any Error)? = nil
     ) {
         self.transcript = transcript
         self.transcriptsBySampleCount = transcriptsBySampleCount
@@ -250,6 +257,17 @@ actor MockEngine: TranscriptionEngine {
         self.preparesUntilCancelled = preparesUntilCancelled
         self.preparationGate = preparationGate
         self.deleteError = deleteError
+        self.liveSession = liveSession
+        self.liveError = liveError
+        self.transcribesLive = liveSession != nil || liveError != nil
+    }
+
+    nonisolated let transcribesLive: Bool
+
+    func makeLiveSession(options: TranscriptionOptions) async throws -> any LiveTranscriptionSession {
+        if let liveError { throw liveError }
+        guard let liveSession else { throw TranscriptionError.failed("No live session") }
+        return liveSession
     }
 
     func prepare(progress: (@Sendable (Double) -> Void)?) async throws {
@@ -299,6 +317,42 @@ actor MockEngine: TranscriptionEngine {
         if !ungatedSampleCounts.contains(samples.count) { await transcriptionGate?.wait() }
         if let error = transcribeErrorsBySampleCount[samples.count] ?? transcribeError { throw error }
         return transcriptsBySampleCount[samples.count] ?? transcript
+    }
+}
+
+/// Answers each push with the update registered for its sample count, else an empty one.
+actor MockLiveSession: LiveTranscriptionSession {
+    private let updatesBySampleCount: [Int: LiveTranscriptUpdate]
+    private let finishUpdate: LiveTranscriptUpdate
+    private let failingSampleCount: Int?
+    private let pushError: any Error
+    private(set) var pushedSampleCounts: [Int] = []
+    private(set) var finishCount = 0
+
+    /// - Parameters:
+    ///   - finishUpdate: Returned by `finish`.
+    ///   - failingSampleCount: A push of this many samples throws `pushError`, to fail one input.
+    init(
+        updatesBySampleCount: [Int: LiveTranscriptUpdate] = [:],
+        finishUpdate: LiveTranscriptUpdate = LiveTranscriptUpdate(),
+        failingSampleCount: Int? = nil,
+        pushError: any Error = TranscriptionError.failed("push")
+    ) {
+        self.updatesBySampleCount = updatesBySampleCount
+        self.finishUpdate = finishUpdate
+        self.failingSampleCount = failingSampleCount
+        self.pushError = pushError
+    }
+
+    func push(_ samples: [Float]) async throws -> LiveTranscriptUpdate {
+        pushedSampleCounts.append(samples.count)
+        if samples.count == failingSampleCount { throw pushError }
+        return updatesBySampleCount[samples.count] ?? LiveTranscriptUpdate()
+    }
+
+    func finish() async throws -> LiveTranscriptUpdate {
+        finishCount += 1
+        return finishUpdate
     }
 }
 

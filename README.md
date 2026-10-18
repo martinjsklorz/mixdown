@@ -24,7 +24,10 @@ your recordings below it under **Today**, **Previous 7 Days** and then each mont
 4. Click the red button (or press ⌘R) to record, and again to stop. From any other app, press
    ⌃⌥⌘R. Change that shortcut or turn it off under **Settings → General**.
 
-A few seconds later the note appears under **Today** in the sidebar and opens, rendered much like
+With the live model (the default), **Record** shows the words as you speak, about half a second
+behind and labeled **Me** and **Others** when you record a call. That text is the note.
+
+Soon after you stop, the note appears under **Today** in the sidebar and opens, rendered much like
 Apple Notes. A **Note Ready** notification says so too, with **Open** to show the note in Mixdown
 and **Show in Finder** for its file, so you can stop from the menu bar and carry on elsewhere.
 Search the sidebar (⌘F) to find older recordings. Notes you file into
@@ -110,7 +113,14 @@ turns off the call notifications too, but not automatic recording.
 
 ## Speech models
 
-Choose a model under **Settings → Transcription**. It's downloaded once, from **Download
+Choose a model under **Settings → Transcription**, in one of two categories:
+
+- **Live** transcribes while you record, so the note is ready when you stop. The audio isn't kept,
+  so an hours-long meeting takes no more memory than a short one.
+- **Offline** transcribes the whole recording once you stop. The audio is kept in memory until
+  then. Qwen3 and MOSS are more accurate than the live model, and MOSS can tell speakers apart.
+
+A model is downloaded once, from **Download
 Model** in the window, the Recording menu or Settings, and the time left shows next to the menu bar icon. After
 switching models, download the new one before recording. **Cancel Download** in the menu (or **Cancel** in Settings) stops
 it; files already fetched are kept, so the next download picks up where it left off.
@@ -118,12 +128,13 @@ The model menu there marks downloaded models with a green check. To free up disk
 a model and click the trash button next to the menu; you'll need to download it again before
 recording with it.
 
-| Model | Size | Good for |
-| ----- | ---- | -------- |
-| Qwen3-ASR 0.6B (default) | ~0.9 GB | Fast, everyday notes |
-| Qwen3-ASR 1.7B | ~2.3 GB | Better accuracy, on Macs with 24 GB+ memory |
-| MOSS Transcribe Diarize 0.9B | ~1 GB | Meetings: labels who is speaking |
-| Apple Speech | Managed by macOS | Light on memory; kept up to date by macOS |
+| Category | Model | Size | Good for |
+| -------- | ----- | ---- | -------- |
+| Live (default) | Nemotron 3.5 ASR Streaming 0.6B | ~540 MB | Long meetings, text as you speak |
+| Offline · Low | Qwen3-ASR 0.6B | ~0.9 GB | Fast, everyday notes |
+| Offline · High | Qwen3-ASR 1.7B | ~2.3 GB | Better accuracy, on Macs with 24 GB+ memory |
+| Offline · Speakers | MOSS Transcribe Diarize 0.9B | ~1 GB | Meetings: labels who is speaking |
+| Offline | Apple Speech | Managed by macOS | Light on memory; kept up to date by macOS |
 
 Apple Speech is Apple's on-device model, the one Notes and Voice Memos use. macOS downloads it
 once per language, keeps it up to date and shares it with other apps, so it has no trash
@@ -134,6 +145,9 @@ later in a long recording. When recording a call, MOSS numbers the speakers with
 e.g. "Me (Speaker 1)" and "Me (Speaker 2)" for two people at your Mac, and "Others (Speaker 1)"
 and "Others (Speaker 2)" for two people on the call. The other models don't tell speakers apart,
 so their lines are just labeled "Me" and "Others".
+
+The live model also drops the echo of the call from your microphone's lines in the note, but the
+text on screen still shows it while you record.
 
 ## Summaries
 
@@ -189,7 +203,7 @@ created: 2026-10-13T14:02:11+02:00
 duration: 754
 source: "MacBook Pro Microphone"
 source_kind: microphone
-engine: "MOSS Transcribe Diarize 0.9B (speakers)"
+engine: "MOSS Transcribe Diarize 0.9B"
 speakers: ["Speaker 1", "Speaker 2"]
 tags: [mixdown]
 ---
