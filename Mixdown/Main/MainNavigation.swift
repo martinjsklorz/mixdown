@@ -46,9 +46,9 @@ final class MainNavigation {
     /// What the Help window's sidebar is filtered by.
     var helpSearchText = ""
 
-    /// SwiftUI only hands `openWindow` to views, so `capturesOpenWindow(for:navigation:)` stores
-    /// it here for the Dock icon and notifications. The main window opens at launch, so it's set
-    /// early on.
+    /// SwiftUI only hands `openWindow` to views, so `capturesOpenWindow(for:navigation:environment:)`
+    /// stores it here for the Dock icon and notifications. The main window opens at launch, so it's
+    /// set early on.
     @ObservationIgnored var openWindow: OpenWindowAction?
 
     /// Switches to `destination` and brings the main window forward, opening it if it's closed.
