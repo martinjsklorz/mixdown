@@ -221,6 +221,70 @@ struct RecordingCoordinatorTests {
         #expect(await writer.notes.count == 1)
     }
 
+    @Test func stopWhileStartingStopsOnceStarted() async throws {
+        let gate = Gate()
+        let capture = MockCapture(chunks: [Fixtures.chunk(seconds: 1)], startGate: gate)
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(capture: capture, writer: writer)
+        await coordinator.monitorDevices()
+
+        let starting = Task { await coordinator.startRecording() }
+        try await waitUntil { capture.startCount == 1 }
+        #expect(coordinator.phase == .startingCapture)
+        #expect(!coordinator.isRecording)
+        #expect(coordinator.canStopRecording)
+        #expect(!coordinator.canStartRecording)
+
+        await coordinator.stopRecording()
+        #expect(coordinator.phase == .startingCapture)
+
+        await gate.open()
+        await starting.value
+        #expect(coordinator.phase == .idle)
+        #expect(capture.stopCount == 1)
+        #expect(await writer.notes.count == 1)
+        #expect(coordinator.canStartRecording)
+    }
+
+    @Test func toggleWhileStartingStopsOnceStarted() async throws {
+        let gate = Gate()
+        let capture = MockCapture(chunks: [Fixtures.chunk(seconds: 1)], startGate: gate)
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(capture: capture, writer: writer)
+        await coordinator.monitorDevices()
+
+        let starting = Task { await coordinator.toggleRecording() }
+        try await waitUntil { capture.startCount == 1 }
+        await coordinator.toggleRecording()
+
+        await gate.open()
+        await starting.value
+        #expect(coordinator.phase == .idle)
+        #expect(capture.startCount == 1)
+        #expect(await writer.notes.count == 1)
+    }
+
+    @Test func stopWhileStartingIsForgottenWhenStartFails() async throws {
+        let gate = Gate()
+        let error = AudioCaptureError.microphonePermissionDenied
+        let failing = MockCapture(startError: error, startGate: gate)
+        let next = MockCapture(chunks: [Fixtures.chunk(seconds: 1)])
+        let coordinator = makeCoordinator(queuedCaptures: [Fixtures.builtInMic.id: [failing, next]])
+        await coordinator.monitorDevices()
+
+        let starting = Task { await coordinator.startRecording() }
+        try await waitUntil { failing.startCount == 1 }
+        await coordinator.stopRecording()
+        await gate.open()
+        await starting.value
+        #expect(coordinator.phase == .failed(message: error.localizedDescription))
+
+        // The stop doesn't carry over to the next recording.
+        await coordinator.startRecording()
+        #expect(coordinator.isRecording)
+        await coordinator.stopRecording()
+    }
+
     @Test func tooShortRecordingIsDiscarded() async {
         let engine = MockEngine()
         let writer = InMemoryNoteWriter()
@@ -657,6 +721,90 @@ struct RecordingCoordinatorTests {
         #expect(note.transcript.speakers == ["Me"])
     }
 
+    @Test func sourceFailingToTranscribeKeepsTheOthers() async throws {
+        let error = TranscriptionError.failed("boom")
+        let microphone = MockCapture(chunks: [Fixtures.chunk(seconds: 2, hostTime: 100)])
+        let systemAudio = MockCapture(chunks: [Fixtures.chunk(seconds: 1, hostTime: 100)])
+        let engine = MockEngine(
+            transcriptsBySampleCount: [
+                32_000: Transcript(segments: [TranscriptSegment(start: 0, end: 1, text: "Hello there.")])
+            ],
+            transcribeErrorsBySampleCount: [16_000: error]
+        )
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            captures: [Fixtures.builtInMic.id: microphone, AudioInputDevice.systemAudioID: systemAudio],
+            engine: engine,
+            writer: writer,
+            preferredDeviceIDs: [Fixtures.builtInMic.id, AudioInputDevice.systemAudioID]
+        )
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        await coordinator.stopRecording()
+
+        let note = try #require(await writer.notes.first)
+        #expect(note.sources == [Fixtures.builtInMic, .systemAudio])
+        #expect(
+            note.transcript
+                == Transcript(segments: [TranscriptSegment(start: 0, end: 1, text: "Hello there.", speaker: "Me")])
+        )
+        #expect(coordinator.lastNoteURL != nil)
+        #expect(
+            coordinator.phase
+                == .failed(message: RecordingCoordinator.untranscribedMessage(for: [.systemAudio], error: error))
+        )
+        #expect(coordinator.modelError == nil)
+    }
+
+    @Test func sourceFailingToTranscribeAfterAnInterruptionReportsBoth() async throws {
+        let captureError = AudioCaptureError.microphonePermissionDenied
+        let transcriptionError = TranscriptionError.failed("boom")
+        let microphone = MockCapture(chunks: [Fixtures.chunk(seconds: 2, hostTime: 100)], streamError: captureError)
+        let systemAudio = MockCapture(chunks: [Fixtures.chunk(seconds: 1, hostTime: 100)])
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            captures: [Fixtures.builtInMic.id: microphone, AudioInputDevice.systemAudioID: systemAudio],
+            engine: MockEngine(transcribeErrorsBySampleCount: [16_000: transcriptionError]),
+            writer: writer,
+            preferredDeviceIDs: [Fixtures.builtInMic.id, AudioInputDevice.systemAudioID]
+        )
+        await coordinator.monitorDevices()
+        await coordinator.startRecording()
+        try await waitUntil { coordinator.lastNoteURL != nil }
+
+        #expect(await writer.notes.count == 1)
+        #expect(
+            coordinator.phase
+                == .failed(
+                    message: RecordingCoordinator.interruptedMessage(for: captureError) + " "
+                        + RecordingCoordinator.untranscribedMessage(for: [.systemAudio], error: transcriptionError)
+                )
+        )
+    }
+
+    @Test func everySourceFailingToTranscribeFails() async {
+        let error = TranscriptionError.failed("boom")
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            captures: [
+                Fixtures.builtInMic.id: MockCapture(chunks: [Fixtures.chunk(seconds: 2, hostTime: 100)]),
+                AudioInputDevice.systemAudioID: MockCapture(chunks: [Fixtures.chunk(seconds: 1, hostTime: 100)]),
+            ],
+            engine: MockEngine(transcribeError: error),
+            writer: writer,
+            preferredDeviceIDs: [Fixtures.builtInMic.id, AudioInputDevice.systemAudioID]
+        )
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        await coordinator.stopRecording()
+
+        #expect(coordinator.phase == .failed(message: error.localizedDescription))
+        #expect(coordinator.lastNoteURL == nil)
+        #expect(await writer.notes.isEmpty)
+    }
+
     // MARK: - Switching inputs
 
     @Test func switchesToDefaultMicrophoneWhenDeviceGoesAway() async throws {
@@ -864,6 +1012,95 @@ struct RecordingCoordinatorTests {
         #expect(second.stopCount == 1)
         // The mocks record nothing.
         #expect(coordinator.phase == .failed(message: RecordingCoordinator.tooShortMessage))
+    }
+
+    @Test func choosingSystemDefaultRetriesTheDefaultMicrophone() async throws {
+        let error = AudioCaptureError.deviceNotFound("MacBook Pro Microphone")
+        let failedBuiltIn = MockCapture(streamError: error)
+        let builtIn = MockCapture(chunks: [Fixtures.chunk(seconds: 1)])
+        let usb = MockCapture()
+        let coordinator = makeCoordinator(
+            captures: [Fixtures.usbMic.id: usb],
+            queuedCaptures: [Fixtures.builtInMic.id: [failedBuiltIn, builtIn]],
+            preferredDeviceIDs: [AudioInputDevice.defaultMicrophoneID]
+        )
+        await coordinator.monitorDevices()
+        await coordinator.startRecording()
+        try await waitUntil { usb.startCount == 1 }
+        #expect(coordinator.selectedDevices == [Fixtures.usbMic])
+
+        #expect(coordinator.selectDevices([.defaultMicrophone]))
+        #expect(coordinator.selectedDevices == [Fixtures.builtInMic])
+        try await waitUntil { coordinator.inputLevels[Fixtures.builtInMic.id] != nil }
+        #expect(usb.stopCount == 1)
+        #expect(coordinator.isRecording)
+
+        await coordinator.stopRecording()
+        #expect(builtIn.stopCount == 1)
+    }
+
+    @Test func restartsCapturesWhenTheAudioServiceRestarts() async throws {
+        let interrupted = MockCapture(
+            chunks: [Fixtures.chunk(seconds: 1, hostTime: 100)],
+            streamError: AudioCaptureError.audioServiceRestarted
+        )
+        let restarted = MockCapture(chunks: [Fixtures.chunk(seconds: 1, hostTime: 102)])
+        let engine = MockEngine()
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            queuedCaptures: [Fixtures.builtInMic.id: [interrupted, restarted]],
+            engine: engine,
+            writer: writer
+        )
+        await coordinator.monitorDevices()
+        await coordinator.startRecording()
+        try await waitUntil { restarted.startCount == 1 }
+        // Its level shows once it's recording into the session.
+        try await waitUntil { coordinator.inputLevels[Fixtures.builtInMic.id] != nil }
+        #expect(coordinator.isRecording)
+        #expect(coordinator.selectedDevices == [Fixtures.builtInMic])
+
+        await coordinator.stopRecording()
+        #expect(coordinator.phase == .idle)
+        #expect(restarted.stopCount == 1)
+        // One track, with the second it took to restart left silent.
+        #expect(await engine.receivedSampleCounts == [48_000])
+        #expect(await writer.notes.first?.sources == [Fixtures.builtInMic])
+    }
+
+    @Test func reusedMicrophoneLaneNamesEachPartByItsDevice() async throws {
+        let other = AudioInputDevice(id: "other", name: "Other Microphone", kind: .microphone)
+        // Both microphone lanes come out 3 s long: the built-in microphone's second, a second
+        // switching, and the other microphone's second.
+        let transcript = Transcript(segments: [
+            TranscriptSegment(start: 0.2, end: 0.8, text: "Built-in."),
+            TranscriptSegment(start: 2.2, end: 2.8, text: "Other."),
+        ])
+        let engine = MockEngine(transcriptsBySampleCount: [48_000: transcript])
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            devices: [Fixtures.usbMic, Fixtures.builtInMic, other, .systemAudio],
+            captures: [
+                Fixtures.usbMic.id: MockCapture(chunks: [Fixtures.chunk(seconds: 4, hostTime: 100)]),
+                Fixtures.builtInMic.id: MockCapture(chunks: [Fixtures.chunk(seconds: 1, hostTime: 100)]),
+                other.id: MockCapture(chunks: [Fixtures.chunk(seconds: 1, hostTime: 102)]),
+                AudioInputDevice.systemAudioID: MockCapture(chunks: [Fixtures.chunk(seconds: 2, hostTime: 100)]),
+            ],
+            engine: engine,
+            writer: writer,
+            preferredDeviceIDs: [Fixtures.usbMic.id, Fixtures.builtInMic.id, AudioInputDevice.systemAudioID]
+        )
+        await coordinator.monitorDevices()
+        await coordinator.startRecording()
+
+        // The other microphone takes over the built-in one's lane.
+        coordinator.selectDevices([Fixtures.usbMic, other, .systemAudio])
+        try await waitUntil { coordinator.inputLevels[other.id] != nil }
+        await coordinator.stopRecording()
+
+        #expect(await engine.receivedSampleCounts.sorted() == [32_000, 48_000, 64_000])
+        let note = try #require(await writer.notes.first)
+        #expect(note.transcript.speakers == ["Me (MacBook Pro Microphone)", "Me (Other Microphone)"])
     }
 
     // MARK: - Levels
@@ -1173,6 +1410,44 @@ struct RecordingCoordinatorTests {
             await writer.notes.first?.transcript.segments == [
                 TranscriptSegment(start: 0.25, end: 0.75, text: "Hello.", speaker: "Me"),
                 TranscriptSegment(start: 1, end: 1.25, text: "Hi!", speaker: "Others"),
+            ]
+        )
+    }
+
+    @Test func liveTextNamesEachPartOfAReusedMicrophoneLaneByItsDevice() async throws {
+        let other = AudioInputDevice(id: "other", name: "Other Microphone", kind: .microphone)
+        // The built-in microphone's second, a second switching, and the other microphone's half.
+        let live = MockLiveSession(updatesBySampleCount: [
+            16_000: LiveTranscriptUpdate(words: [LiveWord(text: "Built-in.", start: 0.2, end: 0.8)]),
+            8_000: LiveTranscriptUpdate(words: [LiveWord(text: "Other.", start: 0.2, end: 0.4)]),
+        ])
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            devices: [Fixtures.usbMic, Fixtures.builtInMic, other, .systemAudio],
+            captures: [
+                Fixtures.usbMic.id: MockCapture(chunks: [Fixtures.chunk(seconds: 4, hostTime: 100)]),
+                Fixtures.builtInMic.id: MockCapture(chunks: [Fixtures.chunk(seconds: 1, hostTime: 100)]),
+                other.id: MockCapture(chunks: [Fixtures.chunk(seconds: 0.5, hostTime: 102)]),
+                AudioInputDevice.systemAudioID: MockCapture(chunks: [Fixtures.chunk(seconds: 2, hostTime: 100)]),
+            ],
+            engine: MockEngine(liveSession: live),
+            writer: writer,
+            preferredDeviceIDs: [Fixtures.usbMic.id, Fixtures.builtInMic.id, AudioInputDevice.systemAudioID]
+        )
+        await coordinator.monitorDevices()
+        await coordinator.startRecording()
+
+        // The other microphone takes over the built-in one's lane.
+        coordinator.selectDevices([Fixtures.usbMic, other, .systemAudio])
+        try await waitUntil { coordinator.inputLevels[other.id] != nil }
+        await coordinator.stopRecording()
+
+        // Live tracks keep no samples, so the parts are found by length.
+        let note = try #require(await writer.notes.first)
+        #expect(
+            note.transcript.segments == [
+                TranscriptSegment(start: 0.2, end: 0.8, text: "Built-in.", speaker: "Me (MacBook Pro Microphone)"),
+                TranscriptSegment(start: 2.2, end: 2.4, text: "Other.", speaker: "Me (Other Microphone)"),
             ]
         )
     }

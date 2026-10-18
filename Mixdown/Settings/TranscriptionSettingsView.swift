@@ -178,23 +178,39 @@ struct TranscriptionSettingsView: View {
             : model.isDownloaded ?? isAppleSpeechInstalled
         let label = Self.label(for: model)
         guard isDownloaded else { return Text(label) }
-        // Menus drop a plain image's bottom on the baseline, unlike a symbol's, which they lower by
-        // its alignment rect; lowering it the same way centers it on the text.
-        let check = Text(Image(nsImage: Self.downloadedImage))
-            .baselineOffset(-Self.downloadedImage.alignmentRect.minY)
-        return Text("\(label)  \(check)")
+        return Text("\(label)  \(Image(nsImage: Self.downloadedImage))")
             .accessibilityLabel("\(label), downloaded")
     }
 
     /// `checkmark.circle.fill` in green. Menus draw SF Symbols as monochrome templates, so the
-    /// colors are baked into a non-template image.
+    /// colors are baked into a non-template image. Menus also put a plain image's bottom on the
+    /// baseline and ignore a baseline offset, so the symbol's padding is cropped off and the circle
+    /// sized to the menu font's cap height: it then spans baseline to cap height, like the digits.
     private static let downloadedImage: NSImage = {
-        let configuration = NSImage.SymbolConfiguration(paletteColors: [.white, .systemGreen])
+        let font = NSFont.menuFont(ofSize: 0)
+        let configuration = NSImage.SymbolConfiguration(pointSize: font.pointSize, weight: .regular)
+            .applying(NSImage.SymbolConfiguration(paletteColors: [.white, .systemGreen]))
         guard
-            let image = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: "Downloaded")?
+            let symbol = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: nil)?
                 .withSymbolConfiguration(configuration)
         else { return NSImage() }
-        image.isTemplate = false
+        symbol.isTemplate = false
+        let glyph = symbol.alignmentRect
+        guard glyph.height > 0 else { return symbol }
+        let scale = font.capHeight / glyph.height
+        let size = NSSize(width: (glyph.width * scale).rounded(.up), height: font.capHeight)
+        let image = NSImage(size: size, flipped: false) { _ in
+            symbol.draw(
+                in: NSRect(
+                    x: -glyph.minX * scale,
+                    y: -glyph.minY * scale,
+                    width: symbol.size.width * scale,
+                    height: symbol.size.height * scale
+                )
+            )
+            return true
+        }
+        image.accessibilityDescription = "Downloaded"
         return image
     }()
 

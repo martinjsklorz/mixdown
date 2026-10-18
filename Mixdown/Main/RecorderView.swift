@@ -71,6 +71,13 @@ struct RecorderView: View {
                         .controlSize(.large)
                 }
 
+            case .startingCapture:
+                headline("Starting to Record…", detail: "Allow Mixdown to record if macOS asks.")
+                RecordButton(isRecording: true) {
+                    Task { await coordinator.stopRecording() }
+                }
+                caption("Click to stop")
+
             case .recording(let startedAt):
                 Text(startedAt, style: .timer)
                     .font(.system(size: 48, weight: .light).monospacedDigit())

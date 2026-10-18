@@ -185,4 +185,15 @@ struct LiveTranscriptTests {
             ]
         )
     }
+
+    @Test func aBrokenSegmentKeepsTheLine() {
+        var transcript = LiveTranscript(speakers: [nil])
+        transcript.apply(update(["Before"]), fromSource: 0, startHostTime: 100)
+        // A new device takes over a second later, within the pause threshold.
+        transcript.breakSegment(ofSource: 0)
+        transcript.apply(update(["after."]), fromSource: 0, startHostTime: 101)
+
+        #expect(transcript.lines.map(\.text) == ["Before after."])
+        #expect(transcript.segments(fromSource: 0).map(\.text) == ["Before", "after."])
+    }
 }

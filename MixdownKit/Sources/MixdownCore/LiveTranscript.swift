@@ -45,6 +45,8 @@ public struct LiveTranscript: Sendable, Equatable {
         /// also split where another input speaks in between, which would cut crosstalk into
         /// fragments.
         var segments: [Segment] = []
+        /// Whether the next word starts a segment, as after a device switch.
+        var breaksSegment = false
     }
 
     private struct Segment: Sendable, Equatable {
@@ -69,6 +71,13 @@ public struct LiveTranscript: Sendable, Equatable {
     /// Adds an input, such as system audio turned on mid-recording. Its index follows the others'.
     public mutating func addSource(speaker: String? = nil) {
         sources.append(Source(speaker: speaker))
+    }
+
+    /// Starts input `index`'s next word on a segment of its own, e.g. when it switches devices, so
+    /// the note can name each device's words after it. Lines aren't affected.
+    public mutating func breakSegment(ofSource index: Int) {
+        guard sources.indices.contains(index) else { return }
+        sources[index].breaksSegment = true
     }
 
     /// Relabels input `index`, including the lines it already has, e.g. once a second input
@@ -132,7 +141,7 @@ public struct LiveTranscript: Sendable, Equatable {
     private mutating func place(_ word: LiveWord, fromSource index: Int, offset: TimeInterval) {
         let start = offset + word.start
         let end = max(offset + word.end, start)
-        if let last = sources[index].segments.indices.last,
+        if !sources[index].breaksSegment, let last = sources[index].segments.indices.last,
             start - sources[index].segments[last].end < Self.pauseThreshold,
             !Self.isComplete(sources[index].segments[last].words)
         {
@@ -140,6 +149,7 @@ public struct LiveTranscript: Sendable, Equatable {
             sources[index].segments[last].end = max(sources[index].segments[last].end, end)
         } else {
             sources[index].segments.append(Segment(start: start, end: end, words: [word.text]))
+            sources[index].breaksSegment = false
         }
 
         if let open = sources[index].openLine, continues(open, at: start) {

@@ -83,7 +83,7 @@ final class CallPrompt {
     )
 
     /// - Parameters:
-    ///   - isRecording: Whether Mixdown is recording.
+    ///   - isRecording: Whether Mixdown is recording, or starting to.
     ///   - startRecording: Starts recording, returning `false` if it can't.
     ///   - stopRecording: Stops recording.
     ///   - markRecordingAsCall: Marks the recording in progress as a call, and whether it was
@@ -242,9 +242,12 @@ final class CallPrompt {
         }
         // A recording started by hand isn't the call's to stop, e.g. a call app used the
         // microphone briefly during an in-person recording.
-        if recordsAutomatically, isRecordingCall {
+        if recordsAutomatically, isRecordingCall || isStartingCall {
             Self.logger.info("\(app.name, privacy: .public) ended its call; stopping the recording")
             stopRecording()
+            // A recording still starting, e.g. waiting on a permission prompt, stops as soon as it
+            // has started, so it isn't announced.
+            startingFor = nil
             if notifies { post(title: "Call Recording Stopped", body: "The \(app.name) call has ended.") }
             return
         }

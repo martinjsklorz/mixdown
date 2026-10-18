@@ -94,34 +94,42 @@ final class LiveDeviceProvider: AudioDeviceProvider {
 }
 
 /// Yields `chunks` on start, then finishes on `stop()` (or immediately with `streamError`, or
-/// immediately without error when `finishesOnStart`, like a capture the system ended).
+/// immediately without error when `finishesOnStart`, like a capture the system ended). With a
+/// `startGate`, `start()` waits for it to open, like a capture held up by a permission prompt.
 final class MockCapture: AudioCapturing {
     private let chunks: [AudioChunk]
     private let streamError: (any Error)?
     private let startError: (any Error)?
     private let finishesOnStart: Bool
+    private let startGate: Gate?
     private let stream: AsyncThrowingStream<AudioChunk, any Error>
     private let continuation: AsyncThrowingStream<AudioChunk, any Error>.Continuation
+    private let startCalls = LockedValue(0)
     private let stopCalls = LockedValue(0)
 
     init(
         chunks: [AudioChunk] = [],
         streamError: (any Error)? = nil,
         startError: (any Error)? = nil,
-        finishesOnStart: Bool = false
+        finishesOnStart: Bool = false,
+        startGate: Gate? = nil
     ) {
         self.chunks = chunks
         self.streamError = streamError
         self.startError = startError
         self.finishesOnStart = finishesOnStart
+        self.startGate = startGate
         let (stream, continuation) = AsyncThrowingStream<AudioChunk, any Error>.makeStream()
         self.stream = stream
         self.continuation = continuation
     }
 
+    var startCount: Int { startCalls.current }
     var stopCount: Int { stopCalls.current }
 
     func start() async throws -> AsyncThrowingStream<AudioChunk, any Error> {
+        startCalls.update { $0 += 1 }
+        await startGate?.wait()
         if let startError { throw startError }
         for chunk in chunks {
             continuation.yield(chunk)
@@ -187,6 +195,8 @@ actor MockEngine: TranscriptionEngine {
     /// Returned instead of `transcript` for a given sample count, to tell sources apart.
     private let transcriptsBySampleCount: [Int: Transcript]
     private let transcribeError: (any Error)?
+    /// Thrown instead of returning a transcript for a given sample count, to fail one source.
+    private let transcribeErrorsBySampleCount: [Int: any Error]
     private let progressBySampleCount: [Int: Double]
     private let transcriptionGate: Gate?
     private let ungatedSampleCounts: Set<Int>
@@ -223,6 +233,7 @@ actor MockEngine: TranscriptionEngine {
         transcript: Transcript = Transcript(segments: []),
         transcriptsBySampleCount: [Int: Transcript] = [:],
         transcribeError: (any Error)? = nil,
+        transcribeErrorsBySampleCount: [Int: any Error] = [:],
         progressBySampleCount: [Int: Double] = [:],
         transcriptionGate: Gate? = nil,
         ungatedSampleCounts: Set<Int> = [],
@@ -237,6 +248,7 @@ actor MockEngine: TranscriptionEngine {
         self.transcript = transcript
         self.transcriptsBySampleCount = transcriptsBySampleCount
         self.transcribeError = transcribeError
+        self.transcribeErrorsBySampleCount = transcribeErrorsBySampleCount
         self.progressBySampleCount = progressBySampleCount
         self.transcriptionGate = transcriptionGate
         self.ungatedSampleCounts = ungatedSampleCounts
@@ -303,7 +315,7 @@ actor MockEngine: TranscriptionEngine {
         recordingsInProgressWhileTranscribing.append(recordingsInProgress.current)
         if let fraction = progressBySampleCount[samples.count] { progress?(fraction) }
         if !ungatedSampleCounts.contains(samples.count) { await transcriptionGate?.wait() }
-        if let transcribeError { throw transcribeError }
+        if let error = transcribeErrorsBySampleCount[samples.count] ?? transcribeError { throw error }
         return transcriptsBySampleCount[samples.count] ?? transcript
     }
 }

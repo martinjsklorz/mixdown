@@ -24,6 +24,8 @@ struct RecordingStatusView: View {
             Text("Ready · \(engineName)")
         case .preparingModel(let progress):
             Text("Downloading model… \(ProgressText.detail(progress: progress, remaining: timeRemaining))")
+        case .startingCapture:
+            Text("Starting to record…")
         case .recording(let startedAt):
             Text("Recording since \(startedAt.formatted(date: .omitted, time: .shortened))")
         case .transcribing(let progress):
