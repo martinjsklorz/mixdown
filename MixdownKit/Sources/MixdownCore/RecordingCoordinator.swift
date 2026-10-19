@@ -70,6 +70,9 @@ public final class RecordingCoordinator {
     public private(set) var showsLiveTranscript = false
     /// What the inputs said so far while `showsLiveTranscript`, else empty.
     public private(set) var liveTranscript = LiveTranscript(speakers: [])
+    /// `liveTranscript` translated into `translationLanguage` as it's recognized, while
+    /// `showsLiveTranscript` and `translatesLiveText`; else `nil`.
+    public private(set) var liveCaptions: LiveCaptions?
     /// Saves finished notes. `nil` while there's no folder to save to; recording waits for one.
     /// Setting it saves `pendingNotes`.
     public var noteWriter: (any NoteWriting)? {
@@ -104,6 +107,9 @@ public final class RecordingCoordinator {
     /// The BCP 47 identifier of the language to translate notes into, e.g. `"de"`; `nil` while
     /// translation is off. Read once the recording is transcribed.
     public var translationLanguage: String?
+    /// Whether a recording transcribed live is also translated into `translationLanguage` while
+    /// it's recorded, as `liveCaptions`. Changes apply to the next recording.
+    public var translatesLiveText = true
     /// Changes apply to the next recording; the one in progress is transcribed with the options it
     /// started with.
     public var options: TranscriptionOptions {
@@ -144,6 +150,10 @@ public final class RecordingCoordinator {
     /// How long to wait after a device goes away mid-recording before picking its replacement,
     /// so the system has made another device the default by then.
     var deviceSwitchDelay: Duration = .milliseconds(500)
+
+    /// How often the live text is checked for lines to translate into `liveCaptions`. A line that
+    /// keeps growing is translated again this often, not with every word.
+    var liveCaptionInterval: Duration = .milliseconds(500)
 
     public var engineInfo: TranscriptionEngineInfo { engine.info }
 
@@ -228,6 +238,8 @@ public final class RecordingCoordinator {
     /// Changes with every `noteWriter`, so a save that failed can tell it has a new one to try.
     @ObservationIgnored private var noteWriterGeneration = 0
     @ObservationIgnored private var pendingNoteRetry: Task<Void, Never>?
+    /// Translates the live text into `liveCaptions` while recording.
+    @ObservationIgnored private var liveCaptioning: Task<Void, Never>?
     /// The message of the `.failed` phase that says a note is waiting to be saved, cleared once
     /// it's saved.
     @ObservationIgnored private var unsavedNoteMessage: String?
@@ -765,6 +777,7 @@ public final class RecordingCoordinator {
         if engine.transcribesLive {
             liveTranscript = LiveTranscript(speakers: [])
             showsLiveTranscript = true
+            startLiveCaptions(for: session)
         }
         talkTime = nil
         for started in startedCaptures {
@@ -1021,6 +1034,8 @@ public final class RecordingCoordinator {
         // Clearing the session first makes repeated stops and the end-of-stream handlers no-ops.
         self.session = nil
         recordingStartedAt = nil
+        liveCaptioning?.cancel()
+        liveCaptioning = nil
         resetLevels()
         let lanes = await endCaptures(of: session)
         let liveError = await finishLiveTranscription(of: session)
@@ -1069,6 +1084,7 @@ public final class RecordingCoordinator {
         defer {
             showsLiveTranscript = false
             liveTranscript = LiveTranscript(speakers: [])
+            liveCaptions = nil
         }
 
         let offsets = AudioTrack.startOffsets(of: lanes.map(\.track))
@@ -1556,6 +1572,70 @@ public final class RecordingCoordinator {
     public func dismissError() {
         if case .failed = phase {
             phase = .idle
+        }
+    }
+
+    // MARK: - Live captions
+
+    /// Starts translating `liveTranscript` as `session` records, if there's a language to
+    /// translate into and live text is to be translated.
+    private func startLiveCaptions(for session: Session) {
+        guard translatesLiveText, let translator, let language = translationLanguage else { return }
+        liveCaptions = LiveCaptions(language: language)
+        liveCaptioning = Task { [weak self] in
+            await self?.captionLiveText(of: session, with: translator)
+        }
+    }
+
+    /// Translates the live text's lines that changed, one at a time, until `session` ends. Waits
+    /// `liveCaptionInterval` between rounds, so lines are translated again as they grow.
+    private func captionLiveText(of session: Session, with translator: any Translator) async {
+        while self.session === session, !Task.isCancelled {
+            for line in liveCaptions?.linesToTranslate(in: liveTranscript) ?? [] {
+                await caption(line, in: session, with: translator)
+                guard self.session === session, !Task.isCancelled else { return }
+            }
+            try? await Task.sleep(for: liveCaptionInterval)
+        }
+    }
+
+    /// Translates `line` on its own into `liveCaptions`, from the recording's language or, for
+    /// automatic, whichever the line is in, so either side of a call can be in another.
+    private func caption(_ line: LiveTranscript.Line, in session: Session, with translator: any Translator) async {
+        guard let language = liveCaptions?.language else { return }
+        let text = line.text
+        let transcript = Transcript(
+            segments: [TranscriptSegment(start: line.start, end: line.end, text: text)],
+            language: session.options.language
+        )
+        let result: Result<Transcript?, any Error>
+        do {
+            result = .success(try await translator.translate(transcript, to: language))
+        } catch {
+            result = .failure(error)
+        }
+        // A new recording may have started meanwhile, with captions of its own.
+        guard self.session === session else { return }
+        switch result {
+        case .success(let translation):
+            liveCaptions?.setTranslation(translation?.text, of: text, forLine: line.id)
+        case .failure(let error) where error is CancellationError:
+            break
+        case .failure(let error):
+            logger.debug("Translating live text failed: \(error.localizedDescription, privacy: .public)")
+            // Only missing languages are worth mentioning; a line too short to tell its language
+            // from, say, isn't.
+            let isNotInstalled: Bool
+            if case .notInstalled = error as? TranscriptTranslationError {
+                isNotInstalled = true
+            } else {
+                isNotInstalled = false
+            }
+            liveCaptions?.setFailure(
+                of: text,
+                forLine: line.id,
+                problem: isNotInstalled ? error.localizedDescription : nil
+            )
         }
     }
 

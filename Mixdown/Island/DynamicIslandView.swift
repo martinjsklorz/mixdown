@@ -4,7 +4,7 @@ import SwiftUI
 /// The Dynamic Island's content: the recording time on one side of the notch and, unless turned off,
 /// one waveform for all inputs on the other, on black that runs into the notch. Next to the time, a
 /// ring shows how the talking is shared while a call's both sides are recorded. If turned on, the
-/// latest words scroll by in a line under all three.
+/// latest words scroll by in a line under all three, translated while the live text is.
 struct DynamicIslandView: View {
     /// A wing's margin at the island's outer edge.
     fileprivate static let outerPadding: CGFloat = 10
@@ -273,8 +273,8 @@ private struct LevelsWing: View {
     }
 }
 
-/// The latest words in one line, the newest at the right edge. Earlier words slide off to the left
-/// as new ones come in, fading out before the edge.
+/// The latest words in one line, the newest at the right edge, translated while the live text is.
+/// Earlier words slide off to the left as new ones come in, fading out before the edge.
 private struct LiveTextLine: View {
     let coordinator: RecordingCoordinator
 
@@ -285,7 +285,8 @@ private struct LiveTextLine: View {
 
     var body: some View {
         let transcript = coordinator.liveTranscript
-        let words = transcript.recentWords(Self.wordCount)
+        let captions = coordinator.liveCaptions
+        let words = captions?.recentWords(Self.wordCount, of: transcript) ?? transcript.recentWords(Self.wordCount)
 
         HStack(spacing: 4) {
             ForEach(words) { word in
@@ -303,6 +304,7 @@ private struct LiveTextLine: View {
         // frame would grow to the words' width and be centered, cutting off the newest words.
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .trailing)
         .animation(.easeOut(duration: 0.3), value: transcript.revision)
+        .animation(.easeOut(duration: 0.3), value: captions?.revision)
         .clipped()
         .mask {
             HStack(spacing: 0) {
@@ -321,7 +323,7 @@ private struct LiveTextLine: View {
         .padding(.horizontal, DynamicIslandView.outerPadding)
         .padding(.bottom, 4)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Live text")
+        .accessibilityLabel(captions == nil ? "Live text" : "Live translation")
         .accessibilityValue(words.filter { !$0.isSpeaker }.map(\.text).joined(separator: " "))
     }
 }

@@ -329,6 +329,16 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             Settings, or download others under System Settings → General → Language & Region → \
             Translation Languages. If they're missing, the note is saved without a translation and \
             Mixdown says which to download.
+
+            ### Live translation
+
+            With the live model, the live text is translated as it's spoken too: each line's \
+            translation appears under it on Record, and the line under the notch shows the \
+            translation instead. It's a line or so behind, catching up as the line grows. Lines \
+            already in that language are left as they are, so in a call where only the others speak \
+            another language, only their lines are translated. Turn it off under **Settings → \
+            Transcription → Translate live text while recording**. The note's translation is made \
+            afresh from the whole transcript once you stop.
             """
         case .notifications:
             """

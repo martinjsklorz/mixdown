@@ -2297,6 +2297,105 @@ struct RecordingCoordinatorTests {
         #expect(note.title == "Begrüßung")
     }
 
+    /// Records the microphone saying `microphone` and system audio saying `systemAudio`, live,
+    /// translating the live text with `translator` into German.
+    private func makeCaptioningCoordinator(
+        translator: DictionaryTranslator,
+        microphone: [String] = ["Guten", "Morgen", "zusammen."],
+        systemAudio: [String] = ["Good", "morning", "everyone."]
+    ) -> RecordingCoordinator {
+        func words(_ texts: [String], from start: TimeInterval) -> LiveTranscriptUpdate {
+            LiveTranscriptUpdate(
+                words: texts.enumerated().map { index, text in
+                    LiveWord(text: text, start: start + Double(index) * 0.25, end: start + Double(index + 1) * 0.25)
+                }
+            )
+        }
+        let live = MockLiveSession(updatesBySampleCount: [
+            32_000: words(microphone, from: 0),
+            16_000: words(systemAudio, from: 0.5),
+        ])
+        let coordinator = makeCoordinator(
+            captures: [
+                Fixtures.builtInMic.id: MockCapture(chunks: [Fixtures.chunk(seconds: 2, hostTime: 100)]),
+                AudioInputDevice.systemAudioID: MockCapture(chunks: [Fixtures.chunk(seconds: 1, hostTime: 101)]),
+            ],
+            engine: MockEngine(liveSession: live),
+            preferredDeviceIDs: [Fixtures.builtInMic.id, AudioInputDevice.systemAudioID]
+        )
+        coordinator.translator = translator
+        coordinator.translationLanguage = "de"
+        coordinator.liveCaptionInterval = .milliseconds(5)
+        return coordinator
+    }
+
+    @Test func liveTextIsTranslatedWhileRecording() async throws {
+        let translator = DictionaryTranslator(translations: ["Good morning everyone.": "Guten Morgen allerseits."])
+        let coordinator = makeCaptioningCoordinator(translator: translator)
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        try await waitUntil { coordinator.liveTranscript.lines.count == 2 }
+        try await waitUntil { Set(translator.receivedTexts).count == 2 }
+        try await waitUntil { coordinator.liveCaptions?.revision == 2 }
+
+        let captions = try #require(coordinator.liveCaptions)
+        let lines = coordinator.liveTranscript.lines
+        #expect(captions.language == "de")
+        // The microphone's line is in German already.
+        #expect(lines.map { captions.translation(of: $0) } == [nil, "Guten Morgen allerseits."])
+        #expect(
+            captions.recentWords(20, of: coordinator.liveTranscript).map(\.text) == [
+                "Me", "Guten", "Morgen", "zusammen.", "Others", "Guten", "Morgen", "allerseits.",
+            ]
+        )
+        // Each line on its own, its language told from it, as the recording's is automatic.
+        #expect(translator.receivedTranscripts.allSatisfy { $0.segments.count == 1 && $0.language == nil })
+
+        await coordinator.stopRecording()
+        #expect(coordinator.liveCaptions == nil)
+    }
+
+    @Test func liveTextIsntTranslatedWhenTurnedOff() async throws {
+        let translator = DictionaryTranslator(translations: ["Good morning everyone.": "Guten Morgen allerseits."])
+        let coordinator = makeCaptioningCoordinator(translator: translator)
+        coordinator.translatesLiveText = false
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        try await waitUntil { coordinator.liveTranscript.lines.count == 2 }
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(coordinator.liveCaptions == nil)
+        #expect(translator.receivedTexts.isEmpty)
+        await coordinator.stopRecording()
+
+        // The note is still translated.
+        #expect(translator.receivedTexts == ["Guten Morgen zusammen. Good morning everyone."])
+    }
+
+    @Test func liveTextSaysWhichLanguagesAreMissing() async throws {
+        let error = TranscriptTranslationError.notInstalled(source: "en", target: "de")
+        let translator = DictionaryTranslator(failures: [
+            "Good morning everyone.": error,
+            // Too short to tell its language from, which isn't worth mentioning.
+            "Guten Morgen zusammen.": TranscriptTranslationError.unknownSourceLanguage,
+        ])
+        let coordinator = makeCaptioningCoordinator(translator: translator)
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        try await waitUntil { coordinator.liveCaptions?.problem != nil }
+        #expect(coordinator.liveCaptions?.problem == error.localizedDescription)
+        // Shown as they are.
+        try await waitUntil { coordinator.liveCaptions?.revision == 2 }
+        let captions = try #require(coordinator.liveCaptions)
+        #expect(captions.recentWords(20, of: coordinator.liveTranscript).count == 8)
+        // Not tried again, as the lines haven't changed.
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(translator.receivedTexts.count == 2)
+        await coordinator.stopRecording()
+    }
+
     @Test func translatedCallIsWordedInTheTranslationsLanguage() async throws {
         // The summary doesn't say what language it's in, so the translation's is used.
         let summarizer = MockSummarizer(summary: NoteSummary(title: "Budgetplanung"))
