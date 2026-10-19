@@ -8,10 +8,10 @@ Each input is recorded and transcribed on its own, then the lines are merged by 
 
 ## Echo
 
-Wear headphones if you can. Without them your microphone also hears the other people. Mixdown
-drops lines from your microphone that it recognizes as that echo, but it can't catch all of it.
-The live model's text on screen still shows the echo while you record; only the note leaves it
-out.
+Without headphones, your microphone also hears the other people through your speakers. Mixdown
+takes that echo out of the microphone while both inputs record, and drops lines it still
+recognizes as echo. Turn this off under **Settings → Recording → Echo**; it applies from the next
+recording. Headphones still give the cleanest result.
 
 ## Call detection
 

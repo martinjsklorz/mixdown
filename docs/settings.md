@@ -17,6 +17,8 @@ Press ⌘, or click the cog above the sidebar to open Settings. **Settings…** 
 
 - **Inputs**: the microphone (or none) and **Record system audio**. Changes apply right away, even
   while recording. See [Recording](recording.md#inputs).
+- **Echo**: **Remove echo from the microphone**: on by default. See
+  [Recording calls](calls.md#echo).
 - **Calls**: **Notify when calls start and end** (on) and **Record calls automatically** (off).
   See [Recording calls](calls.md#call-detection).
 

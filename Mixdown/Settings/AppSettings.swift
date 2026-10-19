@@ -40,6 +40,8 @@ struct AppSettings {
         static let notifiesAboutCalls = "notifiesAboutCalls"
         /// Whether to start and stop recording with calls. Absent means no.
         static let recordsCallsAutomatically = "recordsCallsAutomatically"
+        /// Whether to take the system audio's echo out of the microphone. Absent means yes.
+        static let cancelsEcho = "cancelsEcho"
         /// An `Appearance` raw value. Absent means `.auto`. Read with `@AppStorage`.
         static let appearance = "appearance"
         /// Whether a recording's time and input levels show in the Dynamic Island instead of in the
@@ -129,6 +131,11 @@ struct AppSettings {
     var callSummaryTemplate: SummaryTemplate {
         get { defaults.string(forKey: Key.callSummaryTemplate).flatMap(SummaryTemplate.init(rawValue:)) ?? .general }
         nonmutating set { defaults.set(newValue.rawValue, forKey: Key.callSummaryTemplate) }
+    }
+
+    var cancelsEcho: Bool {
+        get { defaults.object(forKey: Key.cancelsEcho) as? Bool ?? true }
+        nonmutating set { defaults.set(newValue, forKey: Key.cancelsEcho) }
     }
 
     var playsSounds: Bool {

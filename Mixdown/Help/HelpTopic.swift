@@ -181,8 +181,10 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             **Me** and **Others**. Change the names under **Settings → Transcription → Speaker \
             Names**.
 
-            Wear headphones if you can. Without them your microphone also hears the other people, \
-            and while Mixdown drops lines it recognizes as that echo, it can't catch all of it.
+            Without headphones, your microphone also hears the other people through your speakers. \
+            Mixdown takes that echo out of the microphone while both inputs record, and drops lines \
+            it still recognizes as echo. Turn this off under **Settings → Recording → Echo**. \
+            Headphones still give the cleanest result.
 
             ## When a call starts
 

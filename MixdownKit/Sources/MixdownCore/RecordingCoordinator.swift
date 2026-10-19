@@ -111,6 +111,9 @@ public final class RecordingCoordinator {
     }
     /// Speaker names for multi-source recordings.
     public var sourceLabels: SourceLabels
+    /// Whether to take the echo of the system audio out of the microphones while both record, if
+    /// there's an `echoCancellation`. Changes apply to the next recording.
+    public var cancelsEcho = true
 
     /// Each source's level while recording, by device ID. Changes about ten times a second, so
     /// only read it from views that draw meters.
@@ -213,6 +216,7 @@ public final class RecordingCoordinator {
     private let captureFactory: any AudioCaptureFactory
     private let engine: any TranscriptionEngine
     private let playbackMonitor: (any AudioPlaybackMonitoring)?
+    private let echoCancellation: (any EchoCancellation)?
     private let now: @Sendable () -> Date
     private let hostClock: @Sendable () -> TimeInterval
     private let logger = Logger(subsystem: "app.mixdown", category: "coordinator")
@@ -260,6 +264,9 @@ public final class RecordingCoordinator {
         let startedAt: Date
         /// `options` as the recording started, used to transcribe all of it.
         let options: TranscriptionOptions
+        /// The system audio, for the microphones to take its echo out; `nil` without echo
+        /// cancellation.
+        let echoReference: EchoReference?
         /// Whether the recording was started for a call, from a notification or automatically.
         var isCall = false
         var trigger = RecordingTrigger.manual
@@ -286,9 +293,10 @@ public final class RecordingCoordinator {
         /// captured afterwards, which leaves the pauses out of the tracks.
         var pausedDuration: TimeInterval = 0
 
-        init(startedAt: Date, options: TranscriptionOptions) {
+        init(startedAt: Date, options: TranscriptionOptions, echoReference: EchoReference?) {
             self.startedAt = startedAt
             self.options = options
+            self.echoReference = echoReference
         }
 
         /// The devices recording right now.
@@ -430,6 +438,8 @@ public final class RecordingCoordinator {
     ///   - preferredDeviceIDs: Devices to select when they're available, e.g. the user's last choice.
     ///   - playbackMonitor: Tells silent system audio with nothing playing from a missing permission.
     ///     Without one, system audio is flagged like a microphone.
+    ///   - echoCancellation: Takes the echo of the system audio out of the microphones. See
+    ///     `cancelsEcho`.
     ///   - now: Clock used for recording start times. Injectable for tests.
     ///   - hostClock: Seconds on the clock of `AudioChunk.hostTime`, to measure pauses with.
     ///     `systemUptime` counts `mach_absolute_time` on macOS. Injectable for tests.
@@ -448,6 +458,7 @@ public final class RecordingCoordinator {
         sourceLabels: SourceLabels = .init(),
         preferredDeviceIDs: [String] = [],
         playbackMonitor: (any AudioPlaybackMonitoring)? = nil,
+        echoCancellation: (any EchoCancellation)? = nil,
         now: @escaping @Sendable () -> Date = { Date() },
         hostClock: @escaping @Sendable () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     ) {
@@ -467,6 +478,7 @@ public final class RecordingCoordinator {
         self.sourceLabels = sourceLabels
         self.preferredDeviceIDs = preferredDeviceIDs
         self.playbackMonitor = playbackMonitor
+        self.echoCancellation = echoCancellation
         self.now = now
         self.hostClock = hostClock
         self.pendingNotes = pendingNotes
@@ -701,6 +713,10 @@ public final class RecordingCoordinator {
         let devices = selectedDevices
         // Taken now, as the language can change while macOS asks for permission.
         let options = options
+        let echoCancellation = cancelsEcho ? echoCancellation : nil
+        // Loads a canceller while the recording gets under way; until one is ready, the
+        // microphones are recorded as they are.
+        echoCancellation?.prepare()
         phase = .startingCapture
         isStopPending = false
         // Held until `end(_:interruption:)` has transcribed the recording.
@@ -726,7 +742,11 @@ public final class RecordingCoordinator {
             return
         }
 
-        let session = Session(startedAt: now(), options: options)
+        let session = Session(
+            startedAt: now(),
+            options: options,
+            echoReference: echoCancellation == nil ? nil : EchoReference()
+        )
         self.session = session
         recordingStartedAt = session.startedAt
         recordingSummaryTemplate = summaryTemplate
@@ -774,16 +794,36 @@ public final class RecordingCoordinator {
         let sessionID = session.id
         let transcribesLive = engine.transcribesLive
         let feed = transcribesLive ? AsyncStream<LiveFeed>.makeStream() : nil
+        let kind = lane.kind
+        let echoReference = session.echoReference
+        let echoCancellation = echoReference == nil ? nil : echoCancellation
+        if kind == .systemAudio { echoReference?.beginWriting() }
         let consumer = Task.detached(priority: .userInitiated) { [weak self] () async -> CaptureResult in
+            // Where the captured samples go, gaps filled; `track` gets them once their echo is
+            // removed, in step with it.
+            var timeline = AudioTrack(keepsSamples: false)
             var track = AudioTrack(keepsSamples: !transcribesLive)
+            var echoRemover: EchoRemover?
             var meter = LevelMeter()
             var unfed: [Float] = []
             defer {
+                if kind == .systemAudio { echoReference?.endWriting() }
                 if !unfed.isEmpty {
                     feed?.continuation.yield(LiveFeed(samples: unfed, startHostTime: track.startHostTime))
                 }
                 feed?.continuation.finish()
             }
+            func keep(_ samples: [Float]) {
+                guard !samples.isEmpty else { return }
+                track.append(AudioChunk(samples: samples, hostTime: timeline.startHostTime.map { $0 + track.duration }))
+                guard feed != nil else { return }
+                unfed.append(contentsOf: samples)
+                if unfed.count >= RecordingCoordinator.liveFeedSampleCount {
+                    feed?.continuation.yield(LiveFeed(samples: unfed, startHostTime: track.startHostTime))
+                    unfed.removeAll(keepingCapacity: true)
+                }
+            }
+            var captureError: (any Error)?
             do {
                 for try await captured in stream {
                     // Moved back by the time spent paused, so the pause leaves no gap to fill.
@@ -793,14 +833,18 @@ public final class RecordingCoordinator {
                         : captured
                     // Including silence filled into a gap, so the live session's clock stays in step
                     // with the track's.
-                    let added = track.append(chunk)
-                    if feed != nil {
-                        unfed.append(contentsOf: added)
-                        if unfed.count >= RecordingCoordinator.liveFeedSampleCount {
-                            feed?.continuation.yield(LiveFeed(samples: unfed, startHostTime: track.startHostTime))
-                            unfed.removeAll(keepingCapacity: true)
+                    let added = timeline.append(chunk)
+                    if kind == .systemAudio { echoReference?.write(chunk) }
+                    // Starts once system audio records too and a canceller is ready.
+                    if kind == .microphone, echoRemover == nil, let echoReference, echoReference.state.isActive,
+                       let canceller = echoCancellation?.takeCanceller()
+                    {
+                        let start = timeline.startHostTime.map {
+                            $0 + timeline.duration - Double(added.count) / AudioChunk.sampleRate
                         }
+                        echoRemover = EchoRemover(canceller: canceller, reference: echoReference, startHostTime: start)
                     }
+                    keep(echoRemover?.process(added) ?? added)
                     // Fire and forget, so a busy main actor never holds up capture.
                     if let level = meter.add(chunk) {
                         Task { @MainActor [weak self] in
@@ -809,9 +853,10 @@ public final class RecordingCoordinator {
                     }
                 }
             } catch {
-                return CaptureResult(track: track, error: error)
+                captureError = error
             }
-            return CaptureResult(track: track, error: nil)
+            if let echoRemover { keep(echoRemover.finish()) }
+            return CaptureResult(track: track, error: captureError)
         }
         let live = feed.map { feed in
             // A lane's captures are transcribed one after another, so its words stay in order.

@@ -17,6 +17,7 @@ struct RecordingCoordinatorTests {
         options: TranscriptionOptions = .init(),
         preferredDeviceIDs: [String] = [],
         playbackMonitor: MockPlaybackMonitor? = nil,
+        echoCancellation: (any EchoCancellation)? = nil,
         now: @escaping @Sendable () -> Date = { Fixtures.startDate },
         hostClock: @escaping @Sendable () -> TimeInterval = { 0 }
     ) -> RecordingCoordinator {
@@ -29,6 +30,7 @@ struct RecordingCoordinatorTests {
             options: options,
             preferredDeviceIDs: preferredDeviceIDs,
             playbackMonitor: playbackMonitor,
+            echoCancellation: echoCancellation,
             now: now,
             hostClock: hostClock
         )
@@ -613,6 +615,56 @@ struct RecordingCoordinatorTests {
                     language: "en"
                 )
         )
+    }
+
+    // MARK: - Echo cancellation
+
+    /// Records `EchoFixtures.systemAudio` and a microphone that hears it, with echo cancellation
+    /// on or off, and returns the samples each track was transcribed from.
+    private func recordEcho(cancelsEcho: Bool, echoCancellation: SubtractingEchoCancellation) async throws -> [[Float]] {
+        let microphone = MockCapture()
+        let systemAudio = MockCapture()
+        let engine = MockEngine()
+        let coordinator = makeCoordinator(
+            captures: [Fixtures.builtInMic.id: microphone, AudioInputDevice.systemAudioID: systemAudio],
+            engine: engine,
+            preferredDeviceIDs: [Fixtures.builtInMic.id, AudioInputDevice.systemAudioID],
+            echoCancellation: echoCancellation
+        )
+        coordinator.cancelsEcho = cancelsEcho
+        await coordinator.monitorDevices()
+        await coordinator.startRecording()
+
+        systemAudio.yield(AudioChunk(samples: EchoFixtures.systemAudio, hostTime: 100))
+        // Its level comes from the consumer once the audio is in the reference.
+        try await waitUntil { coordinator.inputLevels[AudioInputDevice.systemAudioID] != nil }
+        let pieces = EchoFixtures.pieces(of: EchoFixtures.microphone(voice: 0.25), size: 160)
+        for (index, piece) in pieces.enumerated() {
+            microphone.yield(AudioChunk(samples: piece, hostTime: 100 + Double(index * 160) / AudioChunk.sampleRate))
+        }
+        await coordinator.stopRecording()
+        return await engine.receivedSamples
+    }
+
+    @Test func removesTheSystemAudioEchoFromTheMicrophone() async throws {
+        let echoCancellation = SubtractingEchoCancellation()
+
+        let tracks = try await recordEcho(cancelsEcho: true, echoCancellation: echoCancellation)
+
+        #expect(echoCancellation.prepareCount == 1)
+        #expect(tracks.map(\.count) == [16_000, 16_000])
+        #expect(tracks.contains { $0 == EchoFixtures.systemAudio })
+        #expect(tracks.contains { track in track.allSatisfy { abs($0 - 0.25) < 0.0001 } })
+    }
+
+    @Test func leavesTheMicrophoneAsItIsWithoutEchoCancellation() async throws {
+        let echoCancellation = SubtractingEchoCancellation()
+
+        let tracks = try await recordEcho(cancelsEcho: false, echoCancellation: echoCancellation)
+
+        #expect(echoCancellation.prepareCount == 0)
+        #expect(tracks.contains { $0 == EchoFixtures.systemAudio })
+        #expect(tracks.contains { $0 == EchoFixtures.microphone(voice: 0.25) })
     }
 
     @Test func reportsTranscriptionProgress() async throws {
