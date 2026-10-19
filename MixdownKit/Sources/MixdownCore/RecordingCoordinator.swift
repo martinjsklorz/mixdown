@@ -119,6 +119,11 @@ public final class RecordingCoordinator {
     /// only read it from views that draw meters.
     public private(set) var inputLevels: [String: InputLevel] = [:]
 
+    /// How long the user and the others have talked so far, while recording both a microphone and
+    /// system audio; `nil` otherwise. Changes about ten times a second, so only read it from views
+    /// that show it.
+    public private(set) var talkTime: TalkTime?
+
     /// Sources of the current recording that haven't made a sound since it started, once
     /// `silenceWarningDelay` has passed. A source leaves the list as soon as it's heard.
     ///
@@ -375,6 +380,8 @@ public final class RecordingCoordinator {
     /// Everything a capture stream produced, plus the error that ended it early, if any.
     private struct CaptureResult: Sendable {
         var track: AudioTrack
+        /// When there was speech, in seconds from the track's first sample.
+        var speech: [Range<TimeInterval>] = []
         var error: (any Error)?
     }
 
@@ -382,6 +389,8 @@ public final class RecordingCoordinator {
     private struct LaneAudio: Sendable {
         var track: AudioTrack
         var parts: [DevicePart] = []
+        /// When there was speech, in seconds from the track's first sample.
+        var speech: [Range<TimeInterval>] = []
     }
 
     /// Where a device's audio begins in a lane's track, in seconds from its first sample.
@@ -400,6 +409,8 @@ public final class RecordingCoordinator {
         let parts: [DevicePart]
         /// Empty when the engine transcribes live.
         let samples: [Float]
+        /// When there was speech, in seconds from the track's first sample.
+        let speech: [Range<TimeInterval>]
         let duration: TimeInterval
         /// Seconds from the start of the recording to the track's first sample.
         let offset: TimeInterval
@@ -755,6 +766,7 @@ public final class RecordingCoordinator {
             liveTranscript = LiveTranscript(speakers: [])
             showsLiveTranscript = true
         }
+        talkTime = nil
         for started in startedCaptures {
             attach(started, to: addLane(kind: started.device.kind, to: session), in: session)
         }
@@ -773,10 +785,12 @@ public final class RecordingCoordinator {
         reconcileSelection()
     }
 
-    /// Adds a lane to `session`, and a source for it to `liveTranscript`.
+    /// Adds a lane to `session`, and a source for it to `liveTranscript`. Starts counting
+    /// `talkTime` once the session records both kinds of input.
     private func addLane(kind: AudioSourceKind, to session: Session) -> Lane {
         let lane = session.addLane(kind: kind)
         if showsLiveTranscript { liveTranscript.addSource() }
+        if talkTime == nil, Set(session.lanes.map(\.kind)).count > 1 { talkTime = TalkTime() }
         return lane
     }
 
@@ -805,6 +819,10 @@ public final class RecordingCoordinator {
             var track = AudioTrack(keepsSamples: !transcribesLive)
             var echoRemover: EchoRemover?
             var meter = LevelMeter()
+            // Judges the audio as it's kept, so the microphones' echo doesn't count as the user
+            // talking.
+            var speechDetector = SpeechActivityDetector()
+            var unsentSpeech: TimeInterval = 0
             var unfed: [Float] = []
             defer {
                 if kind == .systemAudio { echoReference?.endWriting() }
@@ -815,6 +833,7 @@ public final class RecordingCoordinator {
             }
             func keep(_ samples: [Float]) {
                 guard !samples.isEmpty else { return }
+                unsentSpeech += speechDetector.add(samples)
                 track.append(AudioChunk(samples: samples, hostTime: timeline.startHostTime.map { $0 + track.duration }))
                 guard feed != nil else { return }
                 unfed.append(contentsOf: samples)
@@ -847,8 +866,10 @@ public final class RecordingCoordinator {
                     keep(echoRemover?.process(added) ?? added)
                     // Fire and forget, so a busy main actor never holds up capture.
                     if let level = meter.add(chunk) {
+                        let speech = unsentSpeech
+                        unsentSpeech = 0
                         Task { @MainActor [weak self] in
-                            self?.updateLevel(level, of: deviceID, sessionID: sessionID)
+                            self?.updateLevel(level, speech: speech, of: deviceID, kind: kind, sessionID: sessionID)
                         }
                     }
                 }
@@ -856,7 +877,7 @@ public final class RecordingCoordinator {
                 captureError = error
             }
             if let echoRemover { keep(echoRemover.finish()) }
-            return CaptureResult(track: track, error: captureError)
+            return CaptureResult(track: track, speech: speechDetector.spans, error: captureError)
         }
         let live = feed.map { feed in
             // A lane's captures are transcribed one after another, so its words stay in order.
@@ -1028,11 +1049,14 @@ public final class RecordingCoordinator {
         for lane in session.lanes {
             var audio = LaneAudio(track: AudioTrack(keepsSamples: !engine.transcribesLive))
             for capture in lane.captures {
-                let track = await capture.consumer.value.track
+                let result = await capture.consumer.value
+                let track = result.track
                 audio.track.append(track)
                 // Counted by length, as live tracks keep no samples.
                 guard track.duration > 0 else { continue }
-                audio.parts.append(DevicePart(device: capture.device, start: audio.track.duration - track.duration))
+                let start = audio.track.duration - track.duration
+                audio.parts.append(DevicePart(device: capture.device, start: start))
+                audio.speech += result.speech.map { (start + $0.lowerBound)..<(start + $0.upperBound) }
             }
             lanes.append(audio)
         }
@@ -1055,6 +1079,7 @@ public final class RecordingCoordinator {
                 device: device,
                 parts: pair.1.parts,
                 samples: pair.1.track.samples,
+                speech: pair.1.speech,
                 duration: pair.1.track.duration,
                 offset: offsets[index]
             )
@@ -1104,7 +1129,8 @@ public final class RecordingCoordinator {
                 transcript: transcript,
                 translation: translation,
                 summary: summary,
-                trigger: session.trigger
+                trigger: session.trigger,
+                talkTimeline: talkTimeline(of: tracks, duration: duration)
             )
             // Kept until it's saved: the folder can go away while recording or transcribing, e.g.
             // when its drive is disconnected or goes to sleep.
@@ -1282,6 +1308,26 @@ public final class RecordingCoordinator {
             Self.sources(of: transcript, track: track, among: lanes, labels: sourceLabels)
         }
         return TranscriptMerger.merge(sources)
+    }
+
+    /// When the user and the others talked, from the microphone and system audio tracks. `nil`
+    /// without both, or if nobody talked.
+    private func talkTimeline(of tracks: [RecordedTrack], duration: TimeInterval) -> TalkTimeline? {
+        let speech = { (kind: AudioSourceKind) -> [Range<TimeInterval>]? in
+            let ofKind = tracks.filter { $0.device.kind == kind }
+            guard !ofKind.isEmpty else { return nil }
+            return ofKind.flatMap { track in
+                track.speech.map { (track.offset + $0.lowerBound)..<(track.offset + $0.upperBound) }
+            }
+        }
+        guard let microphone = speech(.microphone), let systemAudio = speech(.systemAudio) else { return nil }
+        let timeline = TalkTimeline(
+            labels: sourceLabels,
+            microphone: microphone,
+            systemAudio: systemAudio,
+            duration: duration
+        )
+        return timeline.total.total > 0 ? timeline : nil
     }
 
     /// Tracks of a recording that couldn't be transcribed, and why the first of them failed.
@@ -1623,11 +1669,20 @@ public final class RecordingCoordinator {
 
     // MARK: - Levels
 
-    private func updateLevel(_ level: InputLevel, of deviceID: String, sessionID: UUID) {
+    /// Shows `level` for the device, and adds `speech` seconds heard since its last level to
+    /// `talkTime`.
+    private func updateLevel(
+        _ level: InputLevel,
+        speech: TimeInterval,
+        of deviceID: String,
+        kind: AudioSourceKind,
+        sessionID: UUID
+    ) {
         // Levels still in flight when the recording ends or the device is switched off are dropped.
         guard let session, session.id == sessionID, session.activeDevices.contains(where: { $0.id == deviceID })
         else { return }
         inputLevels[deviceID] = level
+        if speech > 0 { talkTime?.add(speech, from: kind) }
         if !level.isSilent, heardDeviceIDs.insert(deviceID).inserted {
             silenceChecks.removeValue(forKey: deviceID)?.cancel()
             silentDevices.removeAll { $0.id == deviceID }
@@ -1676,6 +1731,7 @@ public final class RecordingCoordinator {
         heardDeviceIDs = []
         inputLevels = [:]
         silentDevices = []
+        talkTime = nil
     }
 
     /// Shown only once the note is written; the audio itself is never kept.

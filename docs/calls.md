@@ -6,6 +6,22 @@ through the microphone, everyone else through your Mac's speakers.
 Each input is recorded and transcribed on its own, then the lines are merged by time and labeled
 **Me** and **Others**. Change the names under **Settings → Transcription → Speaker Names**.
 
+## Talk time
+
+Your microphone and the call are separate tracks, so Mixdown knows exactly whose turn it was and
+only has to tell talking from silence on each. While recording, a ring next to the time in the
+Dynamic Island shows your share of the talking in white and the others' in grey; hover over it for
+the numbers. Turn it off under **Settings → Design → Show talk share**.
+
+The note ends with a `## Talk Time` section: each side's share, and a table of how long each
+talked in every minute. Mixdown shows it as a chart under the note's date and duration. Talking at
+the same time counts for both sides.
+
+Talk time is measured by loudness, after the echo is taken out of the microphone. Steady noise,
+like a fan, doesn't count, but other sounds can: music the call plays counts as the others
+talking, and with echo removal off and no headphones, the others' voices from your speakers count
+for you too.
+
 ## Echo
 
 Without headphones, your microphone also hears the other people through your speakers. Mixdown

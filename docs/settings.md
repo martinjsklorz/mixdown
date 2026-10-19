@@ -46,5 +46,6 @@ Press ⌘, or click the cog above the sidebar to open Settings. **Settings…** 
 ## Design
 
 - **Appearance**: Auto, Light or Dark. Auto follows System Settings.
-- **Show recording in the Dynamic Island**: on by default, with which side the time goes on and
-  **Show input levels**. See [Recording](recording.md#the-dynamic-island).
+- **Show recording in the Dynamic Island**: on by default, with which side the time goes on,
+  **Show input levels**, **Show live text** and **Show talk share**. See
+  [Recording](recording.md#the-dynamic-island) and [Recording calls](calls.md#talk-time).
