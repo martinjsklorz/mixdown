@@ -197,4 +197,37 @@ struct LiveTranscriptTests {
         #expect(transcript.lines.map(\.text) == ["Before after."])
         #expect(transcript.segments(fromSource: 0).map(\.text) == ["Before", "after."])
     }
+
+    @Test func recentWordsAreTheLastOnesAcrossLines() {
+        var transcript = LiveTranscript(speakers: [nil])
+        transcript.apply(update(["One", "two."]), fromSource: 0, startHostTime: nil)
+        transcript.apply(update(["Three", "four", "five"], from: 6), fromSource: 0, startHostTime: nil)
+
+        #expect(transcript.recentWords(4).map(\.text) == ["two.", "Three", "four", "five"])
+        #expect(transcript.recentWords(10).map(\.text) == ["One", "two.", "Three", "four", "five"])
+        #expect(transcript.recentWords(0).isEmpty)
+    }
+
+    @Test func recentWordsKeepTheirIDsAsTheLineGrows() {
+        var transcript = LiveTranscript(speakers: [nil])
+        transcript.apply(update(["Hello", "there"]), fromSource: 0, startHostTime: nil)
+        let before = transcript.recentWords(2)
+        transcript.apply(update(["again"], from: 2), fromSource: 0, startHostTime: nil)
+        let after = transcript.recentWords(2)
+
+        #expect(after.first?.id == before.last?.id)
+        #expect(after.first?.text == "there")
+    }
+
+    @Test func recentWordsNameTheSpeakerWhereItChanges() {
+        var transcript = LiveTranscript(speakers: ["Me", "Others"])
+        transcript.apply(update(["Hello", "you"]), fromSource: 0, startHostTime: nil)
+        transcript.apply(update(["Hi"], from: 2), fromSource: 1, startHostTime: nil)
+
+        let all = transcript.recentWords(10)
+        #expect(all.map(\.text) == ["Me", "Hello", "you", "Others", "Hi"])
+        #expect(all.map(\.isSpeaker) == [true, false, false, true, false])
+        // Without its first word, the line's speaker is left out too.
+        #expect(transcript.recentWords(2).map(\.text) == ["you", "Others", "Hi"])
+    }
 }

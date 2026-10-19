@@ -223,7 +223,10 @@ final class AppEnvironment {
     /// settings change.
     private func observeDynamicIsland() {
         let (shows, layout) = withObservationTracking {
-            (coordinator.isRecording && showsRecordingInDynamicIsland, islandLayout)
+            var layout = islandLayout
+            // Only a live model has words to show while recording.
+            layout.showsLiveText = layout.showsLiveText && coordinator.showsLiveTranscript
+            return (coordinator.isRecording && showsRecordingInDynamicIsland, layout)
         } onChange: { [weak self] in
             Task { @MainActor in self?.observeDynamicIsland() }
         }
