@@ -15,7 +15,8 @@ struct RecordingCoordinatorTests {
         writer: InMemoryNoteWriter = InMemoryNoteWriter(),
         summarizer: MockSummarizer? = nil,
         preferredDeviceIDs: [String] = [],
-        playbackMonitor: MockPlaybackMonitor? = nil
+        playbackMonitor: MockPlaybackMonitor? = nil,
+        now: @escaping @Sendable () -> Date = { Fixtures.startDate }
     ) -> RecordingCoordinator {
         let coordinator = RecordingCoordinator(
             deviceProvider: deviceProvider ?? MockDeviceProvider(devices: devices, updates: updates),
@@ -25,7 +26,7 @@ struct RecordingCoordinatorTests {
             summarizer: summarizer,
             preferredDeviceIDs: preferredDeviceIDs,
             playbackMonitor: playbackMonitor,
-            now: { Fixtures.startDate }
+            now: now
         )
         coordinator.deviceSwitchDelay = .zero
         return coordinator
@@ -221,11 +222,12 @@ struct RecordingCoordinatorTests {
         #expect(await writer.notes.count == 1)
     }
 
-    @Test func stopWhileStartingStopsOnceStarted() async throws {
+    @Test func stopWhileStartingDiscardsTheRecordingQuietly() async throws {
         let gate = Gate()
         let capture = MockCapture(chunks: [Fixtures.chunk(seconds: 1)], startGate: gate)
+        let engine = MockEngine()
         let writer = InMemoryNoteWriter()
-        let coordinator = makeCoordinator(capture: capture, writer: writer)
+        let coordinator = makeCoordinator(capture: capture, engine: engine, writer: writer)
         await coordinator.monitorDevices()
 
         let starting = Task { await coordinator.startRecording() }
@@ -235,14 +237,21 @@ struct RecordingCoordinatorTests {
         #expect(coordinator.canStopRecording)
         #expect(!coordinator.canStartRecording)
 
+        #expect(!coordinator.isStopPending)
+
         await coordinator.stopRecording()
         #expect(coordinator.phase == .startingCapture)
+        #expect(coordinator.isStopPending)
 
         await gate.open()
         await starting.value
+        // Not "too short": nothing was recorded, so there's nothing to report.
         #expect(coordinator.phase == .idle)
+        #expect(!coordinator.isStopPending)
         #expect(capture.stopCount == 1)
-        #expect(await writer.notes.count == 1)
+        #expect(await writer.notes.isEmpty)
+        #expect(await engine.receivedSampleCounts.isEmpty)
+        #expect(engine.recordingsInProgress.current == 0)
         #expect(coordinator.canStartRecording)
     }
 
@@ -261,7 +270,7 @@ struct RecordingCoordinatorTests {
         await starting.value
         #expect(coordinator.phase == .idle)
         #expect(capture.startCount == 1)
-        #expect(await writer.notes.count == 1)
+        #expect(await writer.notes.isEmpty)
     }
 
     @Test func stopWhileStartingIsForgottenWhenStartFails() async throws {
@@ -698,6 +707,43 @@ struct RecordingCoordinatorTests {
         #expect(coordinator.phase == .idle)
     }
 
+    @Test func timeLeftFollowsTheSourcesStillTranscribing() async throws {
+        let gate = Gate()
+        let clock = LockedValue(Fixtures.startDate)
+        let microphone = MockCapture(chunks: [Fixtures.chunk(seconds: 3, hostTime: 100)])
+        let systemAudio = MockCapture(chunks: [Fixtures.chunk(seconds: 1, hostTime: 100)])
+        // System audio without speech is done at once; the microphone takes its time.
+        let engine = MockEngine(transcriptionGate: gate, ungatedSampleCounts: [16_000])
+        let coordinator = makeCoordinator(
+            captures: [Fixtures.builtInMic.id: microphone, AudioInputDevice.systemAudioID: systemAudio],
+            engine: engine,
+            preferredDeviceIDs: [Fixtures.builtInMic.id, AudioInputDevice.systemAudioID],
+            now: { clock.current }
+        )
+        await coordinator.monitorDevices()
+        await coordinator.startRecording()
+
+        let stopping = Task { await coordinator.stopRecording() }
+        try await waitUntil { coordinator.phase == .transcribing(progress: 0.25) }
+        var reportMicrophone = await engine.progressCallbacks[48_000]
+        while reportMicrophone == nil {
+            try await Task.sleep(for: .milliseconds(5))
+            reportMicrophone = await engine.progressCallbacks[48_000]
+        }
+        clock.update { $0 += 10 }
+        reportMicrophone?(0.5)
+        try await waitUntil { coordinator.phase == .transcribing(progress: 0.625) }
+
+        // Half the microphone took 10 s, so the rest takes another 10 s. Counting the system
+        // audio's share as done in those 10 s as well would make it 6 s.
+        let remaining = try #require(coordinator.timeRemaining)
+        #expect(abs(remaining - 10) < 0.001)
+
+        await gate.open()
+        await stopping.value
+        #expect(coordinator.phase == .idle)
+    }
+
     @Test func silentSourceIsNotTranscribed() async throws {
         let engine = MockEngine(
             transcript: Transcript(segments: [TranscriptSegment(start: 0, end: 1, text: "Just me.")])
@@ -765,7 +811,12 @@ struct RecordingCoordinatorTests {
         let writer = InMemoryNoteWriter()
         let coordinator = makeCoordinator(
             captures: [Fixtures.builtInMic.id: microphone, AudioInputDevice.systemAudioID: systemAudio],
-            engine: MockEngine(transcribeErrorsBySampleCount: [16_000: transcriptionError]),
+            engine: MockEngine(
+                transcriptsBySampleCount: [
+                    32_000: Transcript(segments: [TranscriptSegment(start: 0, end: 1, text: "Hello there.")])
+                ],
+                transcribeErrorsBySampleCount: [16_000: transcriptionError]
+            ),
             writer: writer,
             preferredDeviceIDs: [Fixtures.builtInMic.id, AudioInputDevice.systemAudioID]
         )
@@ -802,6 +853,61 @@ struct RecordingCoordinatorTests {
 
         #expect(coordinator.phase == .failed(message: error.localizedDescription))
         #expect(coordinator.lastNoteURL == nil)
+        #expect(await writer.notes.isEmpty)
+    }
+
+    @Test func failedSourceWithNoSpeechFromTheOthersSavesNoNote() async {
+        let error = TranscriptionError.failed("boom")
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            captures: [
+                Fixtures.builtInMic.id: MockCapture(chunks: [Fixtures.chunk(seconds: 2, hostTime: 100)]),
+                AudioInputDevice.systemAudioID: MockCapture(chunks: [Fixtures.chunk(seconds: 1, hostTime: 100)]),
+            ],
+            // The microphone is transcribed, but without speech.
+            engine: MockEngine(transcribeErrorsBySampleCount: [16_000: error]),
+            writer: writer,
+            preferredDeviceIDs: [Fixtures.builtInMic.id, AudioInputDevice.systemAudioID]
+        )
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        await coordinator.stopRecording()
+
+        #expect(coordinator.phase == .failed(message: error.localizedDescription))
+        #expect(await writer.notes.isEmpty)
+    }
+
+    @Test func cancelledTranscriptionIsNoFailedSource() async throws {
+        let gate = Gate()
+        let engine = MockEngine(
+            transcript: Transcript(segments: [TranscriptSegment(start: 0, end: 1, text: "Hello there.")]),
+            transcriptionGate: gate,
+            ungatedSampleCounts: [32_000]
+        )
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            captures: [
+                Fixtures.builtInMic.id: MockCapture(chunks: [Fixtures.chunk(seconds: 2, hostTime: 100)]),
+                AudioInputDevice.systemAudioID: MockCapture(chunks: [Fixtures.chunk(seconds: 1, hostTime: 100)]),
+            ],
+            engine: engine,
+            writer: writer,
+            preferredDeviceIDs: [Fixtures.builtInMic.id, AudioInputDevice.systemAudioID]
+        )
+        await coordinator.monitorDevices()
+        await coordinator.startRecording()
+
+        let stopping = Task { await coordinator.stopRecording() }
+        while await engine.receivedSampleCounts.count < 2 {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        stopping.cancel()
+        await gate.open()
+        await stopping.value
+
+        // Not a note of the microphone that says system audio couldn't be transcribed.
+        #expect(coordinator.phase == .idle)
         #expect(await writer.notes.isEmpty)
     }
 
@@ -1579,27 +1685,44 @@ struct RecordingCoordinatorTests {
 
         let preparing = Task { await coordinator.prepareEngine() }
         try await waitUntil { coordinator.phase == .preparingModel(progress: 0.5) }
+        #expect(coordinator.canCancelPreparation)
         coordinator.cancelPreparation()
 
-        #expect(coordinator.phase == .idle)
         #expect(coordinator.timeRemaining == nil)
         await preparing.value
         #expect(coordinator.phase == .idle)
+        #expect(!coordinator.isCancellingPreparation)
         #expect(await engine.cancelledPrepareCount == 1)
     }
 
-    @Test func cancelledPreparationDoesNotOverrideNextOne() async throws {
-        let engine = MockEngine(preparesUntilCancelled: true)
+    @Test func cancelledPreparationStaysBusyUntilTheEngineHasStopped() async throws {
+        let gate = Gate()
+        let engine = MockEngine(isDownloaded: false, preparesUntilCancelled: true, cancellationGate: gate)
         let coordinator = makeCoordinator(engine: engine)
+        await coordinator.monitorDevices()
 
         let first = Task { await coordinator.prepareEngine() }
         try await waitUntil { coordinator.phase == .preparingModel(progress: 0.5) }
         coordinator.cancelPreparation()
-        let second = Task { await coordinator.prepareEngine() }
-        try await waitUntil { coordinator.isBusy }
-        await first.value
 
-        #expect(coordinator.isBusy)
+        // The engine is still winding down, so nothing else may start yet.
+        #expect(coordinator.phase == .preparingModel(progress: 0.5))
+        #expect(coordinator.isCancellingPreparation)
+        #expect(!coordinator.canCancelPreparation)
+        #expect(!coordinator.isIdle)
+        #expect(coordinator.timeRemaining == nil)
+        await coordinator.prepareEngine()
+        #expect(await engine.prepareCount == 1)
+
+        await gate.open()
+        await first.value
+        #expect(coordinator.phase == .idle)
+        #expect(!coordinator.isCancellingPreparation)
+        #expect(!coordinator.isModelDownloaded)
+
+        // Now a new download can start, and be cancelled in turn.
+        let second = Task { await coordinator.prepareEngine() }
+        try await waitUntil { coordinator.canCancelPreparation }
         coordinator.cancelPreparation()
         await second.value
         #expect(coordinator.phase == .idle)
@@ -1670,6 +1793,35 @@ struct RecordingCoordinatorTests {
 
         coordinator.options.language = "de"
         #expect(coordinator.isModelDownloaded)
+    }
+
+    @Test func languageChangedWhileRecordingAppliesToTheNextRecording() async throws {
+        let engine = PerLanguageEngine(installed: ["de"])
+        let writer = InMemoryNoteWriter()
+        let coordinator = RecordingCoordinator(
+            deviceProvider: MockDeviceProvider(devices: Fixtures.devices),
+            captureFactory: MockCaptureFactory(capture: MockCapture(chunks: [Fixtures.chunk(seconds: 1)])),
+            engine: engine,
+            noteWriter: writer,
+            options: TranscriptionOptions(language: "de")
+        )
+        await coordinator.monitorDevices()
+        await coordinator.refreshModelStatus()
+        await coordinator.startRecording()
+        #expect(coordinator.isRecording)
+
+        coordinator.options.language = "fr"
+        // The engine keeps the recording's language, whose model it has.
+        #expect(engine.language.current == "de")
+        #expect(coordinator.isModelDownloaded)
+        await coordinator.stopRecording()
+
+        #expect(coordinator.phase == .idle)
+        #expect(await engine.transcribedLanguages == ["de"])
+        #expect(try #require(await writer.notes.first).transcript.language == "de")
+        // Then it follows; French isn't downloaded yet.
+        #expect(engine.language.current == "fr")
+        #expect(!coordinator.isModelDownloaded)
     }
 
     @Test func modelRemovedWhileRecordingIsDownloadedAgainBeforeTranscribing() async throws {

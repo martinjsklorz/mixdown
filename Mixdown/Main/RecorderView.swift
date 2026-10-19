@@ -54,7 +54,10 @@ struct RecorderView: View {
                 downloadButton(for: coordinator)
 
             case .preparingModel(let progress):
-                headline("Downloading Model…", detail: downloadDetail(for: coordinator))
+                headline(
+                    coordinator.isCancellingPreparation ? "Cancelling Download…" : "Downloading Model…",
+                    detail: downloadDetail(for: coordinator)
+                )
                 ProgressView(value: progress) {
                     EmptyView()
                 } currentValueLabel: {
@@ -69,6 +72,7 @@ struct RecorderView: View {
                 } else {
                     Button("Cancel Download") { coordinator.cancelPreparation() }
                         .controlSize(.large)
+                        .disabled(!coordinator.canCancelPreparation)
                 }
 
             case .startingCapture:
@@ -76,7 +80,8 @@ struct RecorderView: View {
                 RecordButton(isRecording: true) {
                     Task { await coordinator.stopRecording() }
                 }
-                caption("Click to stop")
+                .disabled(coordinator.isStopPending)
+                caption(coordinator.isStopPending ? "Stopping…" : "Click to stop")
 
             case .recording(let startedAt):
                 Text(startedAt, style: .timer)

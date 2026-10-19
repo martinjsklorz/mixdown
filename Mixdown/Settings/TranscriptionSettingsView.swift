@@ -225,6 +225,7 @@ struct TranscriptionSettingsView: View {
             // A download for a finished recording can't be cancelled.
             if !environment.coordinator.isPreparingModelForRecording {
                 Button("Cancel", systemImage: "xmark.circle") { environment.coordinator.cancelPreparation() }
+                    .disabled(!environment.coordinator.canCancelPreparation)
             }
         default:
             if environment.coordinator.isDeletingModel {

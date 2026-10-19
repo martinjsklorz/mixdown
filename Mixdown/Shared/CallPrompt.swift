@@ -245,10 +245,12 @@ final class CallPrompt {
         if recordsAutomatically, isRecordingCall || isStartingCall {
             Self.logger.info("\(app.name, privacy: .public) ended its call; stopping the recording")
             stopRecording()
-            // A recording still starting, e.g. waiting on a permission prompt, stops as soon as it
-            // has started, so it isn't announced.
+            // A recording still starting, e.g. waiting on a permission prompt, is discarded as soon
+            // as it has started, so it's neither announced nor said to have stopped.
             startingFor = nil
-            if notifies { post(title: "Call Recording Stopped", body: "The \(app.name) call has ended.") }
+            if notifies, isRecordingCall {
+                post(title: "Call Recording Stopped", body: "The \(app.name) call has ended.")
+            }
             return
         }
         guard notifies else {
