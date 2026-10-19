@@ -167,8 +167,10 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             bar. See [Troubleshooting](mixdown-help:troubleshooting).
 
             With the live model (the default), Record shows the words as you speak, and the note is \
-            ready moments after you stop. With an offline model, Mixdown transcribes the recording \
-            when you stop and shows its progress on Record and in the menu bar. Then the note opens.
+            ready moments after you stop. Turn on **Settings → Design → Show live text** to see the \
+            latest words scroll by in one line under the notch too. With an offline model, Mixdown \
+            transcribes the recording when you stop and shows its progress on Record and in the \
+            menu bar. Then the note opens.
             """
         case .calls:
             """
@@ -205,6 +207,9 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             each month. Pinned notes stay at the top under **Pinned**; click that heading to fold \
             them away or show them again. Search the sidebar (⌘F) to find older recordings.
 
+            A small icon next to a note says how its recording started: a hand for one you started, \
+            and the autostart icon for a call Mixdown recorded automatically.
+
             ## Working with a note
 
             The buttons above a note, right-clicking it in the sidebar, and the File and Edit menus \
@@ -231,7 +236,9 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
 
             If the folder can't be reached, for example because it's on a drive that isn't \
             connected, Mixdown says so and doesn't record until it's back or you choose another \
-            folder.
+            folder. A note finished while the folder was away is kept until it can be saved: \
+            Mixdown tries again every 30 seconds and as soon as you choose another folder. Keep \
+            Mixdown open until then; it warns you if you quit first.
             """
         case .speechModels:
             """
@@ -301,6 +308,19 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
 
             Turn summaries off under **Settings → Transcription → Summarize recordings**. That \
             section also says why summaries aren't available on this Mac if they aren't.
+
+            ## Translation
+
+            To get notes in another language, pick it under **Settings → Transcription → \
+            Translate to**. Each note then has a translation above the original transcript, and \
+            its summary and title are in that language. Recordings already in that language are \
+            left as they are.
+
+            Apple's translation models translate on your Mac, with Apple Intelligence where it's \
+            on. macOS downloads each language once: click **Download** next to the languages in \
+            Settings, or download others under System Settings → General → Language & Region → \
+            Translation Languages. If they're missing, the note is saved without a translation and \
+            Mixdown says which to download.
             """
         case .notifications:
             """
@@ -314,8 +334,8 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
 
             ## Sounds
 
-            Short sounds mark recording starting and stopping, a note being ready, and something \
-            going wrong, so you can tell from the menu bar without looking. Pick a different sound, \
+            Short sounds mark recording starting, pausing, resuming and stopping, a note being \
+            ready, and something going wrong, so you can tell without looking. Pick a different sound, \
             or **None**, for each under **Settings → Notifications → Sounds**, or untick **Play \
             sounds**.
 
@@ -369,6 +389,19 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
 
             Record says what's missing: choose a notes folder, download the speech model, or \
             reconnect the drive the notes folder is on.
+
+            ## A note hasn't been saved yet
+
+            The notes folder couldn't be reached when the note was finished. Connect the folder's \
+            drive, or choose another folder under **Settings → General**, and Mixdown saves it. \
+            Quitting before then loses the note. See [Notes](mixdown-help:notes).
+
+            ## The speech model is downloading again
+
+            The model was removed while Mixdown was recording, for example Apple Speech, which \
+            macOS removes when it thinks no app needs it. Mixdown downloads it again before \
+            transcribing, and the note follows once that's done. This download can't be \
+            cancelled, because the recording is waiting on it.
 
             ## The other people show up as "Me"
 

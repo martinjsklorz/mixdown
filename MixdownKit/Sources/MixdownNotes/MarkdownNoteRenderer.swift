@@ -4,7 +4,8 @@ import MixdownCore
 /// Renders a `Note` as Markdown with YAML frontmatter.
 ///
 /// Layout: frontmatter, `# Title`, then one `##` section per body part: `## Summary` if the
-/// note has one, then `## Transcript`. Sections are added in `bodySections(for:)`.
+/// note has one, `## Translation` if it has one, then `## Transcript`. Sections are added in
+/// `bodySections(for:)`.
 public enum MarkdownNoteRenderer {
     /// Shown instead of transcript paragraphs when nothing was recognized.
     static let emptyTranscriptPlaceholder = "_No speech detected._"
@@ -38,6 +39,9 @@ public enum MarkdownNoteRenderer {
             // Quoted so codes like `no` (Norwegian) aren't read as YAML booleans.
             lines.append("language: \(yamlQuoted(language))")
         }
+        if let language = note.translation?.language, !language.isEmpty {
+            lines.append("translation_language: \(yamlQuoted(language))")
+        }
         let speakers = note.transcript.speakers.map { singleLine($0) }.filter { !$0.isEmpty }
         if !speakers.isEmpty {
             lines.append("speakers: [\(speakers.map(yamlQuoted).joined(separator: ", "))]")
@@ -52,6 +56,9 @@ public enum MarkdownNoteRenderer {
         var sections: [String] = []
         if let summary = note.summary.flatMap(summaryBody) {
             sections.append(section("Summary", body: summary))
+        }
+        if let translation = note.translation {
+            sections.append(section("Translation", body: transcriptBody(translation)))
         }
         sections.append(section("Transcript", body: transcriptBody(note.transcript)))
         return sections

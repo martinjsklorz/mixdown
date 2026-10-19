@@ -2219,4 +2219,78 @@ struct RecordingCoordinatorTests {
         #expect(coordinator.isModelDownloaded)
         await coordinator.stopRecording()
     }
+
+    // MARK: - Translation
+
+    private static let german = Transcript(
+        segments: [TranscriptSegment(start: 0, end: 1, text: "Hallo.")],
+        language: "de"
+    )
+
+    @Test func translatesTranscriptAndSummarizesTheTranslation() async throws {
+        let translator = MockTranslator(translation: Self.german)
+        let summarizer = MockSummarizer(summary: NoteSummary(title: "Begrüßung", overview: "Jemand grüßt."))
+
+        let (coordinator, note) = try await recordNote(summarizer: summarizer) {
+            $0.translator = translator
+            $0.translationLanguage = "de"
+        }
+
+        #expect(coordinator.phase == .idle)
+        #expect(translator.receivedTranscripts == [note.transcript])
+        #expect(translator.receivedLanguages == ["de"])
+        #expect(note.transcript.text == "Hello.")
+        #expect(note.translation == Self.german)
+        #expect(summarizer.receivedTranscripts == [Self.german])
+        #expect(note.title == "Begrüßung")
+    }
+
+    @Test func translatedCallIsWordedInTheTranslationsLanguage() async throws {
+        // The summary doesn't say what language it's in, so the translation's is used.
+        let summarizer = MockSummarizer(summary: NoteSummary(title: "Budgetplanung"))
+        let (_, note) = try await recordNote(summarizer: summarizer, isCall: true) {
+            $0.translator = MockTranslator(translation: Self.german)
+            $0.translationLanguage = "de"
+        }
+        #expect(note.title == "Anruf zu Budgetplanung")
+    }
+
+    @Test func nothingIsTranslatedWhenOffInTheLanguageAlreadyOrSilent() async throws {
+        let off = MockTranslator(translation: Self.german)
+        let (_, offNote) = try await recordNote(summarizer: nil) { $0.translator = off }
+        #expect(off.receivedTranscripts.isEmpty)
+        #expect(offNote.translation == nil)
+
+        let same = MockTranslator(translation: nil)
+        let (sameCoordinator, sameNote) = try await recordNote(summarizer: nil) {
+            $0.translator = same
+            $0.translationLanguage = "en"
+        }
+        #expect(same.receivedTranscripts.count == 1)
+        #expect(sameNote.translation == nil)
+        #expect(sameCoordinator.phase == .idle)
+
+        let silent = MockTranslator(translation: Self.german)
+        let (_, silentNote) = try await recordNote(transcript: Transcript(segments: []), summarizer: nil) {
+            $0.translator = silent
+            $0.translationLanguage = "de"
+        }
+        #expect(silent.receivedTranscripts.isEmpty)
+        #expect(silentNote.translation == nil)
+    }
+
+    @Test func noteIsSavedUntranslatedWhenTranslatingFailsAndSaysWhy() async throws {
+        let error = TranscriptTranslationError.notInstalled(source: "en", target: "de")
+        let summarizer = MockSummarizer()
+
+        let (coordinator, note) = try await recordNote(summarizer: summarizer) {
+            $0.translator = MockTranslator(error: error)
+            $0.translationLanguage = "de"
+        }
+
+        #expect(coordinator.lastNoteURL != nil)
+        #expect(note.translation == nil)
+        #expect(summarizer.receivedTranscripts == [note.transcript])
+        #expect(coordinator.phase == .failed(message: RecordingCoordinator.untranslatedMessage(for: error)))
+    }
 }

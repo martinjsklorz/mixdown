@@ -17,6 +17,7 @@ enum NoteFixtures {
         sources: [AudioInputDevice] = [
             AudioInputDevice(id: "builtin", name: "MacBook Pro Microphone", kind: .microphone)
         ],
+        translation: Transcript? = nil,
         summary: NoteSummary? = nil,
         trigger: RecordingTrigger = .manual
     ) -> Note {
@@ -27,6 +28,7 @@ enum NoteFixtures {
             sources: sources,
             engine: TranscriptionEngineInfo(id: "speech-swift", displayName: "Qwen3-ASR 0.6B"),
             transcript: Transcript(segments: segments, language: language),
+            translation: translation,
             summary: summary,
             trigger: trigger
         )
@@ -243,5 +245,54 @@ struct MarkdownNoteRendererTests {
         #expect(!document.transcriptText.contains("Overview."))
         #expect(document.transcriptText.contains("Hello everyone."))
         #expect(document.snippet == "Overview.")
+    }
+
+    // MARK: - Translation
+
+    @Test func translationGoesBetweenSummaryAndTranscript() {
+        let translation = Transcript(
+            segments: [
+                TranscriptSegment(start: 0, end: 4, text: "Hallo zusammen.", speaker: "Ich"),
+                TranscriptSegment(start: 65, end: 70, text: " "),
+            ],
+            language: "de"
+        )
+        let markdown = MarkdownNoteRenderer.render(
+            NoteFixtures.note(translation: translation, summary: NoteSummary(overview: "Begrüßung."))
+        )
+
+        #expect(
+            markdown.contains(
+                """
+                ## Summary
+
+                Begrüßung.
+
+                ## Translation
+
+                **[00:00:00] Ich:** Hallo zusammen.
+
+                ## Transcript
+
+                **[00:00:00]** Hello everyone.
+                """
+            )
+        )
+        #expect(frontmatterLines(markdown).contains("language: \"en\""))
+        #expect(frontmatterLines(markdown).contains("translation_language: \"de\""))
+    }
+
+    @Test func noteWithoutTranslationHasNoTranslationSection() {
+        let markdown = MarkdownNoteRenderer.render(NoteFixtures.note())
+        #expect(!markdown.contains("## Translation"))
+        #expect(!markdown.contains("translation_language"))
+    }
+
+    @Test func transcriptTextSkipsTranslation() {
+        let translation = Transcript(segments: [TranscriptSegment(start: 0, end: 4, text: "Hallo.")], language: "de")
+        let markdown = MarkdownNoteRenderer.render(NoteFixtures.note(translation: translation))
+        let document = NoteDocument(url: URL(fileURLWithPath: "/tmp/n.md"), contents: markdown, fileDate: .now)
+        #expect(!document.transcriptText.contains("Hallo."))
+        #expect(document.transcriptText.contains("Hello everyone."))
     }
 }

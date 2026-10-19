@@ -13,6 +13,7 @@ let package = Package(
         .library(name: "MixdownSpeechSwift", targets: ["MixdownSpeechSwift"]),
         .library(name: "MixdownAppleSpeech", targets: ["MixdownAppleSpeech"]),
         .library(name: "MixdownFoundationModels", targets: ["MixdownFoundationModels"]),
+        .library(name: "MixdownAppleTranslation", targets: ["MixdownAppleTranslation"]),
         .library(name: "MixdownNotes", targets: ["MixdownNotes"]),
     ],
     dependencies: [
@@ -55,6 +56,10 @@ let package = Package(
         // Foundation Models (Apple Intelligence) implementation of `Summarizer`. The only module
         // that knows about FoundationModels, so summaries can come from elsewhere too.
         .target(name: "MixdownFoundationModels", dependencies: ["MixdownCore"]),
+
+        // Translation framework implementation of `Translator`: Apple's on-device translation
+        // models, which macOS downloads per language.
+        .target(name: "MixdownAppleTranslation", dependencies: ["MixdownCore"]),
 
         // Markdown rendering and persistence of notes.
         .target(name: "MixdownNotes", dependencies: ["MixdownCore"]),
