@@ -1,6 +1,7 @@
 import Foundation
-@testable import MixdownCore
 import Testing
+
+@testable import MixdownCore
 
 @MainActor
 struct RecordingCoordinatorTests {
@@ -621,7 +622,8 @@ struct RecordingCoordinatorTests {
 
     /// Records `EchoFixtures.systemAudio` and a microphone that hears it, with echo cancellation
     /// on or off, and returns the samples each track was transcribed from.
-    private func recordEcho(cancelsEcho: Bool, echoCancellation: SubtractingEchoCancellation) async throws -> [[Float]] {
+    private func recordEcho(cancelsEcho: Bool, echoCancellation: SubtractingEchoCancellation) async throws -> [[Float]]
+    {
         let microphone = MockCapture()
         let systemAudio = MockCapture()
         let engine = MockEngine()
@@ -2127,10 +2129,12 @@ struct RecordingCoordinatorTests {
     }
 
     @Test func savingLaterLeavesNewRecordingAlone() async throws {
-        let coordinator = makeCoordinator(queuedCaptures: [Fixtures.builtInMic.id: [
-            MockCapture(chunks: [Fixtures.chunk(seconds: 1)]),
-            MockCapture(chunks: [Fixtures.chunk(seconds: 1)]),
-        ]])
+        let coordinator = makeCoordinator(queuedCaptures: [
+            Fixtures.builtInMic.id: [
+                MockCapture(chunks: [Fixtures.chunk(seconds: 1)]),
+                MockCapture(chunks: [Fixtures.chunk(seconds: 1)]),
+            ]
+        ])
         let writer = FlakyNoteWriter(failures: 1)
         coordinator.noteWriter = writer
         coordinator.pendingNoteRetryInterval = .milliseconds(200)

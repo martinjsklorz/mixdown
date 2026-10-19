@@ -1,5 +1,6 @@
-@testable import MixdownCore
 import Testing
+
+@testable import MixdownCore
 
 struct InputLevelTests {
     @Test func meterSpansSixtyDecibels() {

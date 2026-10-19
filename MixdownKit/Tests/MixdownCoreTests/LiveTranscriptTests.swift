@@ -1,6 +1,7 @@
 import Foundation
-@testable import MixdownCore
 import Testing
+
+@testable import MixdownCore
 
 struct LiveTranscriptTests {
     /// Words one second apart, starting at `start`.

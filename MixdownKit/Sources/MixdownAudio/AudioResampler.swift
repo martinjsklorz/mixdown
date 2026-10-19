@@ -13,12 +13,14 @@ final class AudioResampler {
     private var converter: AVAudioConverter?
 
     init() throws {
-        guard let format = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: AudioChunk.sampleRate,
-            channels: 1,
-            interleaved: false
-        ) else {
+        guard
+            let format = AVAudioFormat(
+                commonFormat: .pcmFormatFloat32,
+                sampleRate: AudioChunk.sampleRate,
+                channels: 1,
+                interleaved: false
+            )
+        else {
             throw AudioCaptureError.deviceUnavailable("Couldn't create the 16 kHz output format")
         }
         targetFormat = format
@@ -53,17 +55,19 @@ final class AudioResampler {
         if let sourceFormat, sourceFormat.sampleRate == sampleRate {
             format = sourceFormat
         } else {
-            guard let newFormat = AVAudioFormat(
-                commonFormat: .pcmFormatFloat32,
-                sampleRate: sampleRate,
-                channels: 1,
-                interleaved: false
-            ) else { return nil }
+            guard
+                let newFormat = AVAudioFormat(
+                    commonFormat: .pcmFormatFloat32,
+                    sampleRate: sampleRate,
+                    channels: 1,
+                    interleaved: false
+                )
+            else { return nil }
             format = newFormat
         }
 
         guard let mono = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: buffer.frameLength),
-              let output = mono.floatChannelData?[0]
+            let output = mono.floatChannelData?[0]
         else { return nil }
         mono.frameLength = buffer.frameLength
         output.update(repeating: 0, count: frames)

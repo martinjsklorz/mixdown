@@ -14,7 +14,8 @@ public enum MarkdownNoteRenderer {
 
     public static func render(_ note: Note) -> String {
         let title = singleLine(note.title)
-        let blocks = [frontmatter(for: note), "# \(title.isEmpty ? "Untitled" : headingText(title))"]
+        let blocks =
+            [frontmatter(for: note), "# \(title.isEmpty ? "Untitled" : headingText(title))"]
             + bodySections(for: note)
         return blocks.joined(separator: "\n\n") + "\n"
     }
@@ -170,8 +171,9 @@ public enum MarkdownNoteRenderer {
     /// would otherwise close the heading and be dropped.
     static func headingText(_ text: String) -> String {
         let escaped = escapedMarkdown(text)
-        guard let closing = escaped.range(of: #"(^|\s)#+$"#, options: .regularExpression) else { return escaped }
-        let marks = escaped[closing].firstIndex(of: "#")!
+        guard let closing = escaped.range(of: #"(^|\s)#+$"#, options: .regularExpression),
+            let marks = escaped[closing].firstIndex(of: "#")
+        else { return escaped }
         return String(escaped[..<marks]) + "\\" + escaped[marks...]
     }
 

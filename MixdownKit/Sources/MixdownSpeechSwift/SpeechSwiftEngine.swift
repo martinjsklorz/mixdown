@@ -423,7 +423,9 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
             while true {
                 try? await Task.sleep(for: .milliseconds(500))
                 if Task.isCancelled { return }
-                progress.report(plan.running(index, elapsed: seconds(ContinuousClock.now - started), expected: expected))
+                progress.report(
+                    plan.running(index, elapsed: seconds(ContinuousClock.now - started), expected: expected)
+                )
             }
         }
     }

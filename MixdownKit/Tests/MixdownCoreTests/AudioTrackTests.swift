@@ -1,6 +1,7 @@
 import Foundation
-@testable import MixdownCore
 import Testing
+
+@testable import MixdownCore
 
 struct AudioTrackTests {
     @Test func concatenatesChunksWithoutHostTime() {

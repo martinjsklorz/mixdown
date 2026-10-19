@@ -1,6 +1,7 @@
 import Foundation
-@testable import MixdownCore
 import Testing
+
+@testable import MixdownCore
 
 /// Subtracts the reference from the microphone, `latency` samples late, and throws on frame
 /// `failingFrame` if set.

@@ -1,5 +1,6 @@
-@testable import MixdownSpeechSwift
 import Testing
+
+@testable import MixdownSpeechSwift
 
 struct SpeechChunkerTests {
     private func pieces(
@@ -23,10 +24,12 @@ struct SpeechChunkerTests {
     @Test func mergesCloseRegionsAndPadsIntoSilence() {
         let result = pieces([(0.5, 2), (2.5, 4), (10, 11)], audioDuration: 12, padding: 0.25)
 
-        #expect(result == [
-            SpeechPiece(speech: TimeSpan(start: 0.5, end: 4), window: TimeSpan(start: 0.25, end: 4.25)),
-            SpeechPiece(speech: TimeSpan(start: 10, end: 11), window: TimeSpan(start: 9.75, end: 11.25)),
-        ])
+        #expect(
+            result == [
+                SpeechPiece(speech: TimeSpan(start: 0.5, end: 4), window: TimeSpan(start: 0.25, end: 4.25)),
+                SpeechPiece(speech: TimeSpan(start: 10, end: 11), window: TimeSpan(start: 9.75, end: 11.25)),
+            ]
+        )
     }
 
     @Test func paddingStopsHalfwayToTheNeighbour() {
@@ -39,16 +42,18 @@ struct SpeechChunkerTests {
 
     @Test func splitsLongRegionsAtTheQuietestFrame() {
         var probabilities = [Float](repeating: 0.9, count: 30)
-        probabilities[9] = 0.1   // frame centre 9.5 s
+        probabilities[9] = 0.1  // frame centre 9.5 s
         probabilities[20] = 0.2  // frame centre 20.5 s
 
         let result = pieces([(0, 30)], probabilities: probabilities, audioDuration: 30)
 
-        #expect(result.map(\.speech) == [
-            TimeSpan(start: 0, end: 9.5),
-            TimeSpan(start: 9.5, end: 20.5),
-            TimeSpan(start: 20.5, end: 30),
-        ])
+        #expect(
+            result.map(\.speech) == [
+                TimeSpan(start: 0, end: 9.5),
+                TimeSpan(start: 9.5, end: 20.5),
+                TimeSpan(start: 20.5, end: 30),
+            ]
+        )
         #expect(result.allSatisfy { $0.window.duration <= 14 })
     }
 

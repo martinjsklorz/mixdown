@@ -1,6 +1,7 @@
 import Foundation
-@testable import MixdownCore
 import Testing
+
+@testable import MixdownCore
 
 struct TranscriptMergerTests {
     private func source(

@@ -144,7 +144,7 @@ final class MicrophoneCapture: AudioCapturing, @unchecked Sendable {
     private func consume(_ bufferList: UnsafePointer<AudioBufferList>, at time: AudioTimeStamp, format: AVAudioFormat) {
         // No copy needed: the resampler copies while downmixing, before the IO block returns.
         guard let buffer = AVAudioPCMBuffer(pcmFormat: format, bufferListNoCopy: bufferList, deallocator: nil),
-              let chunk = resampler.process(buffer, hostTime: HostClock.captureTime(of: time, buffer: buffer))
+            let chunk = resampler.process(buffer, hostTime: HostClock.captureTime(of: time, buffer: buffer))
         else { return }
         let continuation = state.withLockUnchecked { $0.continuation }
         continuation?.yield(chunk)

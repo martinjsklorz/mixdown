@@ -5,7 +5,10 @@ import Testing
 enum Fixtures {
     static let startDate = Date(timeIntervalSince1970: 1_760_000_000)
     static let builtInMic = AudioInputDevice(
-        id: "builtin", name: "MacBook Pro Microphone", kind: .microphone, isDefault: true
+        id: "builtin",
+        name: "MacBook Pro Microphone",
+        kind: .microphone,
+        isDefault: true
     )
     static let usbMic = AudioInputDevice(id: "usb", name: "USB Microphone", kind: .microphone)
     static let devices = [usbMic, builtInMic, AudioInputDevice.systemAudio]

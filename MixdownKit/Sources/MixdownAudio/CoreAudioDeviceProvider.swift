@@ -31,10 +31,11 @@ public final class CoreAudioDeviceProvider: AudioDeviceProvider {
         }
         let defaultID = CoreAudioHAL.defaultInputDeviceID()
 
-        let microphones = deviceIDs
+        let microphones =
+            deviceIDs
             .compactMap { deviceID -> AudioInputDevice? in
                 guard CoreAudioHAL.hasInputStreams(deviceID),
-                      let uid = CoreAudioHAL.uid(of: deviceID)
+                    let uid = CoreAudioHAL.uid(of: deviceID)
                 else { return nil }
                 let name = CoreAudioHAL.name(of: deviceID) ?? uid
                 // Private aggregates only exist for the process that created them and aren't
@@ -42,7 +43,7 @@ public final class CoreAudioDeviceProvider: AudioDeviceProvider {
                 // AVAudioEngine/CoreAudio create, which are also caught by name in case they
                 // aren't marked private.
                 guard !CoreAudioHAL.isPrivateAggregate(deviceID),
-                      !name.hasPrefix("CADefaultDeviceAggregate")
+                    !name.hasPrefix("CADefaultDeviceAggregate")
                 else { return nil }
                 return AudioInputDevice(id: uid, name: name, kind: .microphone, isDefault: deviceID == defaultID)
             }
