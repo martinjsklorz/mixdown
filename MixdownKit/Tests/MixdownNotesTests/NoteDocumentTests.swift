@@ -177,4 +177,44 @@ struct NoteDocumentTests {
 
         #expect(document.transcriptText == "Title\n\nSome bold text.\n\n• One\n  • Two\n1. Three\n\ncode  here")
     }
+
+    // MARK: - Talk time
+
+    @Test func readsBackTalkTimelineAndLeavesItsSectionToTheChart() throws {
+        let note = NoteFixtures.note(talkTimeline: NoteFixtures.talkTimeline)
+        let document = NoteDocument(url: url, contents: MarkdownNoteRenderer.render(note), fileDate: fileDate)
+
+        let timeline = try #require(document.talkTimeline)
+        #expect(timeline.microphoneLabel == "Me")
+        #expect(timeline.systemAudioLabel == "Others | Team")
+        #expect(timeline.microphone == [35, 0, 60])
+        #expect(timeline.systemAudio == [12, 50, 0])
+
+        let headings = document.displayBlocks().compactMap { block -> String? in
+            guard case .heading(_, let text) = block else { return nil }
+            return text
+        }
+        #expect(headings == ["Transcript"])
+        #expect(!document.transcriptText.contains("Minute"))
+    }
+
+    @Test func keepsTalkTimeSectionWithoutUsableTimeline() {
+        let body = "\n## Talk Time\n\n| Minute | Me | Others |\n"
+        for frontmatter in [
+            "", "talk_microphone: [10, 20]", "talk_microphone: [10, x]\ntalk_system_audio: [1, 2]",
+            "talk_microphone: [10, 61]\ntalk_system_audio: [1, 2]", "talk_microphone: []\ntalk_system_audio: []",
+        ] {
+            let document = NoteDocument(url: url, contents: "---\n\(frontmatter)\n---\n\(body)", fileDate: fileDate)
+            #expect(document.talkTimeline == nil)
+            #expect(document.displayBlocks().first == .heading(level: 2, text: "Talk Time"))
+        }
+    }
+
+    @Test func fallsBackToDefaultTalkLabels() {
+        let contents = "---\ntalk_microphone: [10]\ntalk_system_audio: [5, 6]\n---\n"
+        let timeline = NoteDocument(url: url, contents: contents, fileDate: fileDate).talkTimeline
+        #expect(timeline?.microphoneLabel == "Me")
+        #expect(timeline?.systemAudioLabel == "Others")
+        #expect(timeline?.microphone == [10, 0])
+    }
 }

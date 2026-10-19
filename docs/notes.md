@@ -102,6 +102,7 @@ The team went through the release timeline for the weekly sync.
 | `language` | The recording's language; left out when the model doesn't report one |
 | `speakers` | The speaker labels used in the transcript |
 | `translation_language` | The language of the `## Translation` section, when the note was translated (see [Translation](translation.md)) |
+| `talk_labels`, `talk_microphone`, `talk_system_audio` | For calls: the two sides' names, then the seconds each talked in every minute (see [Recording calls](calls.md#talk-time)) |
 | `pinned` | `true` when the note is pinned |
 | `tags` | Always includes `mixdown` |
 
@@ -115,4 +116,14 @@ speakers: ["Me", "Others"]
 **[00:00:00] Me:** Morning, everyone.
 
 **[00:00:03] Others:** Let's look at the release plan.
+…
+
+## Talk Time
+
+**Me** 38 % (4 min 46 s) · **Others** 62 % (7 min 50 s)
+
+| Minute | Me | Others |
+| --- | --- | --- |
+| 00:00:00 | ███ 18 s | ██████ 37 s |
+…
 ```

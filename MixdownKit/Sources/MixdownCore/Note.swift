@@ -16,6 +16,9 @@ public struct Note: Sendable, Equatable {
     public var summary: NoteSummary?
     /// Whether the user started the recording or Mixdown started it for a call by itself.
     public var trigger: RecordingTrigger
+    /// How long the user and the others talked, minute by minute. `nil` unless both microphone and
+    /// system audio were recorded and someone talked.
+    public var talkTimeline: TalkTimeline?
 
     public init(
         title: String,
@@ -26,7 +29,8 @@ public struct Note: Sendable, Equatable {
         transcript: Transcript,
         translation: Transcript? = nil,
         summary: NoteSummary? = nil,
-        trigger: RecordingTrigger = .manual
+        trigger: RecordingTrigger = .manual,
+        talkTimeline: TalkTimeline? = nil
     ) {
         self.title = title
         self.createdAt = createdAt
@@ -37,6 +41,7 @@ public struct Note: Sendable, Equatable {
         self.translation = translation
         self.summary = summary
         self.trigger = trigger
+        self.talkTimeline = talkTimeline
     }
 }
 

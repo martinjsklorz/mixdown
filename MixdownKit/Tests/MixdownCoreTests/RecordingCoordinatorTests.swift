@@ -618,6 +618,54 @@ struct RecordingCoordinatorTests {
         )
     }
 
+    // MARK: - Talk time
+
+    @Test func timesEachSideTalkingFromItsOwnTrack() async throws {
+        // The system audio starts a second after the microphone, according to the host clock.
+        let microphone = MockCapture(
+            chunks: [AudioChunk(samples: TalkFixtures.audio([true, false, true]), hostTime: 100)]
+        )
+        let systemAudio = MockCapture(
+            chunks: [AudioChunk(samples: TalkFixtures.audio([false, true, true]), hostTime: 101)]
+        )
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            captures: [Fixtures.builtInMic.id: microphone, AudioInputDevice.systemAudioID: systemAudio],
+            writer: writer,
+            preferredDeviceIDs: [Fixtures.builtInMic.id, AudioInputDevice.systemAudioID]
+        )
+        coordinator.sourceLabels = SourceLabels(microphone: "Martin", systemAudio: "Client")
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        #expect(coordinator.talkTime == TalkTime())
+        // Once the captured audio has been measured.
+        for _ in 0..<10_000 where (coordinator.talkTime?.total ?? 0) < 3.9 { await Task.yield() }
+        #expect(abs((coordinator.talkTime?.total ?? 0) - 4) < 0.001)
+        await coordinator.stopRecording()
+        #expect(coordinator.talkTime == nil)
+
+        let timeline = try #require(await writer.notes.first?.talkTimeline)
+        #expect(timeline.microphoneLabel == "Martin")
+        #expect(timeline.systemAudioLabel == "Client")
+        #expect(timeline.minuteCount == 1)
+        #expect(abs(timeline.microphone[0] - 2) < 0.001)
+        #expect(abs(timeline.systemAudio[0] - 2) < 0.001)
+    }
+
+    @Test func timesNoTalkWithASingleKindOfInput() async throws {
+        let capture = MockCapture(chunks: [AudioChunk(samples: TalkFixtures.audio([true, false]), hostTime: 100)])
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(capture: capture, writer: writer)
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        #expect(coordinator.talkTime == nil)
+        await coordinator.stopRecording()
+
+        #expect(try #require(await writer.notes.first).talkTimeline == nil)
+    }
+
     // MARK: - Echo cancellation
 
     /// Records `EchoFixtures.systemAudio` and a microphone that hears it, with echo cancellation
