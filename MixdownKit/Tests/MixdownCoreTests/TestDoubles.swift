@@ -15,13 +15,11 @@ enum Fixtures {
 
     static func chunk(
         seconds: Double,
-        startTime: TimeInterval = 0,
         hostTime: TimeInterval? = nil,
         amplitude: Float = 0.1
     ) -> AudioChunk {
         AudioChunk(
             samples: Array(repeating: amplitude, count: Int(seconds * AudioChunk.sampleRate)),
-            startTime: startTime,
             hostTime: hostTime
         )
     }
@@ -158,9 +156,8 @@ final class MockCapture: AudioCapturing {
 /// captures are single-use.
 struct MockCaptureFactory: AudioCaptureFactory {
     let capture: MockCapture
-    var captures: [String: MockCapture] = [:]
+    let captures: [String: MockCapture]
     let queuedCaptures: LockedValue<[String: [MockCapture]]>
-    let requestedDevices = LockedValue<[AudioInputDevice]>([])
 
     init(capture: MockCapture, captures: [String: MockCapture] = [:], queuedCaptures: [String: [MockCapture]] = [:]) {
         self.capture = capture
@@ -169,7 +166,6 @@ struct MockCaptureFactory: AudioCaptureFactory {
     }
 
     func makeCapture(for device: AudioInputDevice) throws -> any AudioCapturing {
-        requestedDevices.update { $0.append(device) }
         var queued: MockCapture?
         queuedCaptures.update { queue in
             if queue[device.id]?.isEmpty == false {
@@ -190,6 +186,7 @@ struct MockPlaybackMonitor: AudioPlaybackMonitoring {
 actor MockEngine: TranscriptionEngine {
     nonisolated let info = TranscriptionEngineInfo(id: "mock", displayName: "Mock Engine")
     nonisolated var isDownloaded: Bool { downloaded.current }
+    nonisolated let transcribesLive: Bool
 
     private let transcript: Transcript
     /// Returned instead of `transcript` for a given sample count, to tell sources apart.
@@ -268,8 +265,6 @@ actor MockEngine: TranscriptionEngine {
         self.liveError = liveError
         self.transcribesLive = liveSession != nil || liveError != nil
     }
-
-    nonisolated let transcribesLive: Bool
 
     func makeLiveSession(options: TranscriptionOptions) async throws -> any LiveTranscriptionSession {
         if let liveError { throw liveError }

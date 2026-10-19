@@ -10,8 +10,8 @@ public struct RemainingTimeEstimator: Sendable {
         let progress: Double
     }
 
-    public let window: TimeInterval
-    public let minimumElapsed: TimeInterval
+    private let window: TimeInterval
+    private let minimumElapsed: TimeInterval
     private var samples: [Sample] = []
 
     public init(window: TimeInterval = 30, minimumElapsed: TimeInterval = 3) {

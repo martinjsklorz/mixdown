@@ -18,15 +18,15 @@ struct MenuBarLabel: View {
         let remaining = coordinator.timeRemaining
         HStack(spacing: 4) {
             Self.icon(for: phase)
-            if case .preparingModel(let progress) = phase {
+            switch phase {
+            case .preparingModel(let progress), .transcribing(let progress):
                 Text(ProgressText.compact(progress: progress, remaining: remaining))
                     .monospacedDigit()
-            } else if case .transcribing(let progress) = phase {
-                Text(ProgressText.compact(progress: progress, remaining: remaining))
-                    .monospacedDigit()
-            } else if coordinator.isRecording, let recordingElapsed {
-                Text(Self.elapsedText(recordingElapsed))
-                    .monospacedDigit()
+            default:
+                if coordinator.isRecording, let recordingElapsed {
+                    Text(Self.elapsedText(recordingElapsed))
+                        .monospacedDigit()
+                }
             }
             // Visible with the menu closed, for recordings started and left in the background.
             if hasSilentInput {

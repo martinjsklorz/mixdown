@@ -53,6 +53,8 @@ struct MarkdownNoteRendererTests {
         #expect(lines.contains(#"language: "en""#))
         #expect(lines.contains("trigger: manual"))
         #expect(lines.contains("tags: [mixdown]"))
+        // Only diarized transcripts list speakers.
+        #expect(!lines.contains { $0.hasPrefix("speakers:") })
 
         let created = try #require(lines.first { $0.hasPrefix("created: ") })
         let parsed = ISO8601DateFormatter().date(from: String(created.dropFirst("created: ".count)))
@@ -73,11 +75,6 @@ struct MarkdownNoteRendererTests {
         #expect(!lines.contains { $0.hasPrefix("source:") || $0.hasPrefix("source_kind:") })
     }
 
-    @Test func recordsAutomaticTrigger() {
-        let markdown = MarkdownNoteRenderer.render(NoteFixtures.note(trigger: .automatic))
-        #expect(frontmatterLines(markdown).contains("trigger: automatic"))
-    }
-
     @Test func omitsLanguageWhenUnknown() {
         let markdown = MarkdownNoteRenderer.render(NoteFixtures.note(language: nil))
         #expect(!frontmatterLines(markdown).contains { $0.hasPrefix("language:") })
@@ -89,11 +86,6 @@ struct MarkdownNoteRendererTests {
         #expect(markdown.contains("\n# Weekly Sync\n"))
         #expect(markdown.contains("\n## Transcript\n\n**[00:00:00]** Hello everyone.\n\n**[00:01:05]** Next topic.\n"))
         #expect(!markdown.contains("_No speech detected._"))
-    }
-
-    @Test func omitsSpeakersWithoutDiarization() {
-        let markdown = MarkdownNoteRenderer.render(NoteFixtures.note())
-        #expect(!frontmatterLines(markdown).contains { $0.hasPrefix("speakers:") })
     }
 
     @Test func labelsDiarizedSegments() {

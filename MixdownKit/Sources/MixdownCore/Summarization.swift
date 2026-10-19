@@ -2,7 +2,7 @@ import Foundation
 import os
 
 /// The shape of a summary, chosen per kind of recording.
-public enum SummaryTemplate: String, Sendable, Codable, CaseIterable, Identifiable {
+public enum SummaryTemplate: String, Sendable, CaseIterable, Identifiable {
     /// An overview, key points and action items, for any recording.
     case general
     case oneOnOne
@@ -27,7 +27,7 @@ public enum SummaryTemplate: String, Sendable, Codable, CaseIterable, Identifiab
 }
 
 /// What a summarizer makes of a transcript. Any part may be empty.
-public struct NoteSummary: Sendable, Codable, Equatable {
+public struct NoteSummary: Sendable, Equatable {
     /// The template the summary was made with, which decides its sections.
     public var template: SummaryTemplate
     /// The topic in a few words, to name the note after.
@@ -167,12 +167,12 @@ public struct ChunkedSummarizer: Sendable {
     private static let logger = Logger(subsystem: "app.mixdown", category: "summary")
 
     /// Most estimated tokens (see `estimatedTokens(in:)`) of text handed to one step.
-    public var maxTokens: Int
+    private let maxTokens: Int
     /// Pieces aren't split smaller than this when a step finds them too long; they're left out
     /// instead.
-    public var minTokens: Int
+    private let minTokens: Int
     /// Combining passes before giving up, in case summaries don't get shorter.
-    public var maxCombinePasses: Int
+    private let maxCombinePasses: Int
 
     public init(maxTokens: Int, minTokens: Int = 1, maxCombinePasses: Int = 4) {
         self.maxTokens = max(maxTokens, 1)
@@ -190,7 +190,7 @@ public struct ChunkedSummarizer: Sendable {
         var separator = "\n"
         var pieces = Self.groups(of: Self.lines(of: transcript), maxTokens: maxTokens, separator: separator)
         var kind = Step.transcript
-        for _ in 0...max(maxCombinePasses, 0) {
+        for _ in 0...maxCombinePasses {
             if pieces.count == 1 {
                 do {
                     return try await step(pieces[0].joined(separator: separator), kind)
@@ -273,14 +273,9 @@ public struct ChunkedSummarizer: Sendable {
         return turns.map { turn in turn.speaker.map { "\($0): \(turn.text)" } ?? turn.text }
     }
 
-    /// Joins `items` into as few pieces as fit `maxTokens` each, in order. An item that doesn't
-    /// fit on its own is split, at spaces where possible.
-    static func chunks(of items: [String], maxTokens: Int, separator: String) -> [String] {
-        groups(of: items, maxTokens: maxTokens, separator: separator).map { $0.joined(separator: separator) }
-    }
-
-    /// Like `chunks(of:maxTokens:separator:)`, but keeps the items of each piece apart, so it can
-    /// be split again between them.
+    /// Packs `items` into as few pieces as fit `maxTokens` each, in order, keeping each piece's
+    /// items apart so it can be split again between them. An item that doesn't fit on its own is
+    /// split, at spaces where possible.
     static func groups(of items: [String], maxTokens: Int, separator: String) -> [[String]] {
         var pieces: [[String]] = []
         var current: [String] = []
@@ -331,7 +326,7 @@ public struct ChunkedSummarizer: Sendable {
     /// Hebrew or Arabic; and a whole token per Chinese, Japanese, Korean, Thai or Indic letter or
     /// vowel sign. Tokenizers fall back to bytes for text they've seen little of, so scripts
     /// further from English take more tokens.
-    public static func estimatedTokens(in text: some StringProtocol) -> Int {
+    static func estimatedTokens(in text: some StringProtocol) -> Int {
         (text.utf8.count + 2) / 3
     }
 

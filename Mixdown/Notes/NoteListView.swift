@@ -56,7 +56,7 @@ struct NoteListView<Footer: View>: View {
                                 }
                                 .padding(.vertical, 1)
                                 .offset(y: group == .pinned ? 0 : foldSlide)
-                        case .note(let note, let dateFormat) where row.group == .pinned:
+                        case .note(let note, let dateFormat) where note.isPinned:
                             pinnedNoteButton(note, dateFormat: dateFormat)
                         case .note(let note, let dateFormat):
                             noteButton(note, dateFormat: dateFormat)
@@ -108,12 +108,17 @@ struct NoteListView<Footer: View>: View {
         sections.first { $0.group == .pinned }?.notes ?? []
     }
 
+    /// How tall the rows of the pinned `notes` are together, unfolded.
+    private func unfoldedHeight(of notes: some Sequence<NoteDocument>) -> CGFloat {
+        notes.reduce(0) { $0 + (pinnedRowHeights[$1.id] ?? 0) }
+    }
+
     /// Folds the pinned notes away under the rows below as they slide up over them, or opens them
     /// as the rows slide back down. The rows are laid out folded or not at once and drawn where
     /// they were, and only that offset animates: the lazy stack moves the pinned notes when it
     /// animates their rows shrinking or growing.
     private func slideRows(folding: Bool) {
-        let height = pinnedNotes.reduce(0) { $0 + (pinnedRowHeights[$1.id] ?? 0) }
+        let height = unfoldedHeight(of: pinnedNotes)
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {
@@ -133,7 +138,7 @@ struct NoteListView<Footer: View>: View {
         let isFolded = collapsesPinned
         let isLaidOutFolded = foldsPinnedRows ?? collapsesPinned
         // Under the pinned notes above it, which take no room either.
-        let heightAbove = pinnedNotes.prefix { $0.id != note.id }.reduce(0) { $0 + (pinnedRowHeights[$1.id] ?? 0) }
+        let heightAbove = unfoldedHeight(of: pinnedNotes.prefix { $0.id != note.id })
 
         return noteButton(note, dateFormat: dateFormat)
             .padding(.vertical, 1)
@@ -379,7 +384,7 @@ private struct TriggerIcon: View {
 }
 
 extension NoteSection.Group {
-    var title: String {
+    fileprivate var title: String {
         switch self {
         case .pinned: "Pinned"
         case .date(let group): group.title
@@ -397,7 +402,7 @@ extension NoteSection.Group {
 }
 
 extension NoteDateGroup {
-    var title: String {
+    fileprivate var title: String {
         switch self {
         case .today: "Today"
         case .previousSevenDays: "Previous 7 Days"

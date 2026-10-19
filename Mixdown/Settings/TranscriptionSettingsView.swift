@@ -10,9 +10,6 @@ struct TranscriptionSettingsView: View {
     /// another model is selected. macOS only says so asynchronously.
     @State private var isAppleSpeechInstalled = false
 
-    /// ISO 639-1 codes offered besides "Automatic". The models support many more.
-    static let languages = ["en", "de", "fr", "es", "it", "pt", "nl", "pl", "ja", "zh"]
-
     var body: some View {
         let coordinator = environment.coordinator
 
@@ -52,20 +49,7 @@ struct TranscriptionSettingsView: View {
 
                 modelStatus(for: coordinator.phase)
 
-                Picker(
-                    "Language",
-                    selection: Binding(
-                        get: { environment.language },
-                        set: { environment.setLanguage($0) }
-                    )
-                ) {
-                    Text("Automatic").tag(String?.none)
-                    Divider()
-                    ForEach(Self.languages, id: \.self) { code in
-                        Text(Self.displayName(for: code)).tag(Optional(code))
-                    }
-                }
-                .disabled(!environment.model.supportsLanguageSelection)
+                LanguagePicker()
             } header: {
                 Text("Settings")
             } footer: {
@@ -326,5 +310,31 @@ struct TranscriptionSettingsView: View {
 
     static func displayName(for code: String) -> String {
         Locale.current.localizedString(forLanguageCode: code) ?? code
+    }
+}
+
+/// The language to transcribe in, or Automatic. Disabled for models that detect it themselves.
+/// Also in the setup assistant.
+struct LanguagePicker: View {
+    @Environment(AppEnvironment.self) private var environment
+
+    /// ISO 639-1 codes offered besides "Automatic". The models support many more.
+    private static let languages = ["en", "de", "fr", "es", "it", "pt", "nl", "pl", "ja", "zh"]
+
+    var body: some View {
+        Picker(
+            "Language",
+            selection: Binding(
+                get: { environment.language },
+                set: { environment.setLanguage($0) }
+            )
+        ) {
+            Text("Automatic").tag(String?.none)
+            Divider()
+            ForEach(Self.languages, id: \.self) { code in
+                Text(TranscriptionSettingsView.displayName(for: code)).tag(Optional(code))
+            }
+        }
+        .disabled(!environment.model.supportsLanguageSelection)
     }
 }

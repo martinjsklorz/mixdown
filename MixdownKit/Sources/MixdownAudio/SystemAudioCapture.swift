@@ -248,13 +248,16 @@ private final class ProcessTap: @unchecked Sendable {
         listeners = []
         if aggregateID != AudioObjectID(kAudioObjectUnknown) {
             if let ioProcID {
-                logFailure(AudioDeviceStop(aggregateID, ioProcID), "AudioDeviceStop")
-                logFailure(AudioDeviceDestroyIOProcID(aggregateID, ioProcID), "AudioDeviceDestroyIOProcID")
+                CoreAudioHAL.logFailure(AudioDeviceStop(aggregateID, ioProcID), "AudioDeviceStop")
+                CoreAudioHAL.logFailure(AudioDeviceDestroyIOProcID(aggregateID, ioProcID), "AudioDeviceDestroyIOProcID")
             }
-            logFailure(AudioHardwareDestroyAggregateDevice(aggregateID), "AudioHardwareDestroyAggregateDevice")
+            CoreAudioHAL.logFailure(
+                AudioHardwareDestroyAggregateDevice(aggregateID),
+                "AudioHardwareDestroyAggregateDevice"
+            )
         }
         if tapID != AudioObjectID(kAudioObjectUnknown) {
-            logFailure(AudioHardwareDestroyProcessTap(tapID), "AudioHardwareDestroyProcessTap")
+            CoreAudioHAL.logFailure(AudioHardwareDestroyProcessTap(tapID), "AudioHardwareDestroyProcessTap")
         }
         ioProcID = nil
         aggregateID = AudioObjectID(kAudioObjectUnknown)
@@ -286,10 +289,5 @@ private final class ProcessTap: @unchecked Sendable {
         if changed {
             audioLogger.info("System audio switched to \(newFormat, privacy: .public)")
         }
-    }
-
-    private func logFailure(_ status: OSStatus, _ call: String) {
-        guard status != noErr else { return }
-        audioLogger.error("\(call, privacy: .public) failed: \(status, privacy: .public)")
     }
 }

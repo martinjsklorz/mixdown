@@ -14,7 +14,7 @@ public struct AudioTrack: Sendable, Equatable {
     public private(set) var samples: [Float] = []
     /// Host time of the first sample, if the first chunk carried one.
     public private(set) var startHostTime: TimeInterval?
-    public private(set) var sampleCount = 0
+    private var sampleCount = 0
     private let keepsSamples: Bool
 
     /// - Parameter keepsSamples: Whether to keep the audio, or only follow its timing, e.g. when

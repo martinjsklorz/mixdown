@@ -1,5 +1,5 @@
-/// Wording for when there's no notes folder to save to, shared by the Record view, the menu and
-/// Settings. Recording waits until there is one.
+/// Wording for when there's no notes folder to save to, shared by the Record view, the menu,
+/// Settings and the setup assistant. Recording waits until there is one.
 enum NotesFolderWarning {
     /// "Choose a Notes Folder"; `nil` while the folder is available.
     static func title(for status: NotesFolderStore.Status) -> String? {

@@ -54,32 +54,27 @@ struct ChunkedSummarizerTests {
 
     // MARK: - Estimates and pieces
 
-    @Test func estimatesCJKDenserThanLatin() {
-        #expect(ChunkedSummarizer.estimatedTokens(in: "") == 0)
-        #expect(ChunkedSummarizer.estimatedTokens(in: "abc") == 1)
-        #expect(ChunkedSummarizer.estimatedTokens(in: "abcd") == 2)
-        #expect(ChunkedSummarizer.estimatedTokens(in: "会議です") == 4)
-        #expect(ChunkedSummarizer.estimatedTokens(in: "회의") == 2)
+    /// A third of a token per ASCII letter, two thirds per Cyrillic letter, a whole one per CJK
+    /// character or Thai or Devanagari scalar, even where several make one character.
+    @Test(arguments: [
+        ("", 0), ("abc", 1), ("abcd", 2), ("会議です", 4), ("회의", 2), ("привет", 4), ("สวัสดี", 6),
+        ("नमस्ते", 6),
+    ])
+    func estimatesTokensFromUTF8Bytes(_ text: String, _ tokens: Int) {
+        #expect(ChunkedSummarizer.estimatedTokens(in: text) == tokens)
     }
 
-    @Test func estimatesOtherScriptsDenserThanLatin() {
-        // Two thirds of a token per Cyrillic letter, a whole one per Thai or Devanagari scalar,
-        // even where several make one character.
-        #expect(ChunkedSummarizer.estimatedTokens(in: "привет") == 4)
-        #expect(ChunkedSummarizer.estimatedTokens(in: "สวัสดี") == 6)
-        #expect(ChunkedSummarizer.estimatedTokens(in: "नमस्ते") == 6)
-        #expect(ChunkedSummarizer.split("привет мир", maxTokens: 4) == ["привет", "мир"])
-    }
-
-    @Test func chunksPackLinesInOrderWithinTheLimit() {
+    @Test func groupsPackLinesInOrderWithinTheLimit() {
         // 9 characters each, so 3 tokens; two lines plus a newline are 7.
         let lines = ["aaaaaaaaa", "bbbbbbbbb", "ccccccccc"]
 
         #expect(
-            ChunkedSummarizer.chunks(of: lines, maxTokens: 7, separator: "\n") == ["aaaaaaaaa\nbbbbbbbbb", "ccccccccc"]
+            ChunkedSummarizer.groups(of: lines, maxTokens: 7, separator: "\n") == [
+                ["aaaaaaaaa", "bbbbbbbbb"], ["ccccccccc"],
+            ]
         )
-        #expect(ChunkedSummarizer.chunks(of: lines, maxTokens: 100, separator: "\n") == [lines.joined(separator: "\n")])
-        #expect(ChunkedSummarizer.chunks(of: [], maxTokens: 7, separator: "\n").isEmpty)
+        #expect(ChunkedSummarizer.groups(of: lines, maxTokens: 100, separator: "\n") == [lines])
+        #expect(ChunkedSummarizer.groups(of: [], maxTokens: 7, separator: "\n").isEmpty)
     }
 
     @Test func longLineIsSplitAtSpaces() {
@@ -87,6 +82,7 @@ struct ChunkedSummarizerTests {
 
         #expect(pieces == ["one two", "three", "four five"])
         #expect(pieces.allSatisfy { ChunkedSummarizer.estimatedTokens(in: $0) <= 3 })
+        #expect(ChunkedSummarizer.split("привет мир", maxTokens: 4) == ["привет", "мир"])
     }
 
     @Test func lineWithoutSpacesIsSplitAnywhere() {

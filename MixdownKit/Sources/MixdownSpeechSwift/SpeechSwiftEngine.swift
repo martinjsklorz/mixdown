@@ -15,7 +15,7 @@ import os
 /// (see `LiveRecognizer`). Its calls run on this actor too, one at a time.
 ///
 /// To use a different engine, add a module with a type conforming to `TranscriptionEngine` and construct
-/// it in `AppEnvironment.makeCoordinator` instead of this one. Nothing else refers to speech-swift.
+/// it in `TranscriptionModel.makeEngine()`. Nothing else refers to speech-swift.
 public actor SpeechSwiftEngine: TranscriptionEngine {
     private enum LoadedModels: Sendable {
         case offline(detector: VoiceActivityDetector, recognizer: any SpeechRecognizer)
@@ -26,8 +26,6 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
     public nonisolated var transcribesLive: Bool { model.isLive }
 
     private nonisolated let model: SpeechSwiftModel
-    private nonisolated let modelDirectory: URL?
-    private nonisolated let idleUnloadDelay: Duration
     private var models: LoadedModels?
     private var loading: (task: Task<LoadedModels, any Error>, progress: ProgressRelay)?
     private var lastTranscription: Task<Void, Never>?
@@ -39,22 +37,13 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
     private var pendingUnload: Task<Void, Never>?
     /// Seconds of audio per second of recognition, as last measured on this Mac.
     private var measuredSpeed: Double?
-    private var hasLoggedTranslationNotice = false
 
-    /// - Parameters:
-    ///   - modelDirectory: Where weights are cached. Defaults to `Application Support/Mixdown/Models`
-    ///     (inside the container when sandboxed).
-    ///   - idleUnloadDelay: How long the models stay in memory after the last recording or
-    ///     transcription (or `prepare`). Loading them again from disk takes seconds; keeping them
-    ///     costs 1–2.5 GB.
-    public init(
-        model: SpeechSwiftModel = .default,
-        modelDirectory: URL? = nil,
-        idleUnloadDelay: Duration = .seconds(120)
-    ) {
+    /// How long the models stay in memory after the last recording or transcription (or
+    /// `prepare`). Loading them again from disk takes seconds; keeping them costs 1–2.5 GB.
+    private static let idleUnloadDelay: Duration = .seconds(120)
+
+    public init(model: SpeechSwiftModel) {
         self.model = model
-        self.modelDirectory = modelDirectory
-        self.idleUnloadDelay = idleUnloadDelay
         self.info = TranscriptionEngineInfo(id: "speech-swift", displayName: model.displayName)
     }
 
@@ -96,7 +85,7 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
     }
 
     /// Transcribes a whole recording of 16 kHz mono samples. Segments follow the VAD's speech regions
-    /// (or the model's own timestamps for MOSS). `translateToEnglish` is not supported and ignored.
+    /// (or the model's own timestamps for MOSS).
     /// Throws for the live model, which transcribes while recording instead.
     ///
     /// `progress` covers the VAD pass, then the pieces by length. Within a piece it moves on an
@@ -161,13 +150,13 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
     }
 
     public nonisolated var isDownloaded: Bool {
-        Self.isDownloaded(model, modelDirectory: modelDirectory)
+        Self.isDownloaded(model)
     }
 
     /// Whether `model` (and for offline models the VAD) is already on disk, so `prepare` won't
     /// download anything. Checks files only; it doesn't validate them.
-    public static func isDownloaded(_ model: SpeechSwiftModel, modelDirectory: URL? = nil) -> Bool {
-        guard let base = try? modelDirectory ?? defaultModelDirectory(),
+    public static func isDownloaded(_ model: SpeechSwiftModel) -> Bool {
+        guard let base = try? modelDirectory(),
             let modelCacheDirectory = try? ModelCache.directory(for: model.repositoryID, base: base)
         else { return false }
         guard let recognizerType = model.recognizerType else {
@@ -185,8 +174,7 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
         loading?.task.cancel()
         loading = nil
         unload()
-        let base = try modelDirectory ?? Self.defaultModelDirectory()
-        let directory = try ModelCache.directory(for: model.repositoryID, base: base)
+        let directory = try ModelCache.directory(for: model.repositoryID, base: Self.modelDirectory())
         try FileManager.default.removeItem(at: directory)
         transcriptionLogger.info("Deleted \(self.model.displayName, privacy: .public)")
     }
@@ -227,10 +215,9 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
     private func startLoading() -> (task: Task<LoadedModels, any Error>, progress: ProgressRelay) {
         let relay = ProgressRelay()
         let model = self.model
-        let modelDirectory = self.modelDirectory
         let task = Task {
             do {
-                let loaded = try await Self.load(model, modelDirectory: modelDirectory, progress: relay)
+                let loaded = try await Self.load(model, progress: relay)
                 transcriptionLogger.info("\(model.displayName, privacy: .public) ready")
                 return loaded
             } catch {
@@ -267,7 +254,7 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
     private func scheduleUnload() {
         pendingUnload?.cancel()
         guard !isInUse, models != nil else { return }
-        let delay = idleUnloadDelay
+        let delay = Self.idleUnloadDelay
         pendingUnload = Task { [weak self] in
             try? await Task.sleep(for: delay)
             guard !Task.isCancelled else { return }
@@ -290,12 +277,8 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
         Memory.clearCache()
     }
 
-    private static func load(
-        _ model: SpeechSwiftModel,
-        modelDirectory: URL?,
-        progress: ProgressRelay
-    ) async throws -> LoadedModels {
-        let base = try modelDirectory ?? defaultModelDirectory()
+    private static func load(_ model: SpeechSwiftModel, progress: ProgressRelay) async throws -> LoadedModels {
+        let base = try modelDirectory()
         try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         guard let recognizerType = model.recognizerType else {
             let recognizer = try await LiveRecognizer.load(cacheBase: base) { progress.report($0) }
@@ -312,7 +295,9 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
         return .offline(detector: detector, recognizer: recognizer)
     }
 
-    private static func defaultModelDirectory() throws -> URL {
+    /// Where weights are cached: `Application Support/Mixdown/Models`, inside the container when
+    /// sandboxed.
+    private static func modelDirectory() throws -> URL {
         guard let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
         else {
             throw TranscriptionError.modelUnavailable("Application Support directory not found")
@@ -366,10 +351,6 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
         }
         // Only a language the model was told to use is known; the detected one isn't reported.
         let language = hint == nil ? nil : requestedLanguage
-        if options.translateToEnglish, !hasLoggedTranslationNotice {
-            hasLoggedTranslationNotice = true
-            transcriptionLogger.debug("speech-swift models don't translate; transcribing verbatim")
-        }
 
         // The VAD and recognizer calls below are synchronous and run on this actor. That's fine: the
         // actor has no other work while transcribing, and `info` is nonisolated. Cancellation is checked

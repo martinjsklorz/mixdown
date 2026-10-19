@@ -11,7 +11,6 @@ final class AudioResampler {
     private let targetFormat: AVAudioFormat
     private var sourceFormat: AVAudioFormat?
     private var converter: AVAudioConverter?
-    private var emittedSamples = 0
 
     init() throws {
         guard let format = AVAudioFormat(
@@ -25,8 +24,7 @@ final class AudioResampler {
         targetFormat = format
     }
 
-    /// Converts one buffer. `startTime` is derived from the number of samples emitted so far;
-    /// `hostTime` (see `AudioChunk.hostTime`) is passed through.
+    /// Converts one buffer. `hostTime` (see `AudioChunk.hostTime`) is passed through.
     func process(_ buffer: AVAudioPCMBuffer, hostTime: TimeInterval?) -> AudioChunk? {
         guard buffer.frameLength > 0, let mono = downmix(buffer) else { return nil }
 
@@ -39,13 +37,7 @@ final class AudioResampler {
         }
         guard !samples.isEmpty else { return nil }
 
-        let chunk = AudioChunk(
-            samples: samples,
-            startTime: Double(emittedSamples) / AudioChunk.sampleRate,
-            hostTime: hostTime
-        )
-        emittedSamples += samples.count
-        return chunk
+        return AudioChunk(samples: samples, hostTime: hostTime)
     }
 
     // MARK: - Downmix

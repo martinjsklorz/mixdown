@@ -76,11 +76,7 @@ public enum TranscriptMerger {
         for (order, source) in sources.enumerated() {
             for var segment in source.transcript.segments {
                 if source.device.kind == .microphone, isEcho(segment, of: systemSegments) { continue }
-                if let speaker = segment.speaker {
-                    segment.speaker = "\(source.label) (\(speaker))"
-                } else {
-                    segment.speaker = source.label
-                }
+                segment.speaker = segment.speaker.map { "\(source.label) (\($0))" } ?? source.label
                 merged.append((segment, order))
             }
         }
@@ -124,7 +120,7 @@ public enum TranscriptMerger {
 
     /// The words of `segment` that were probably said between `from` and `to`. Engines only time
     /// whole segments, so this assumes an even pace through each one.
-    static func words(of segment: TranscriptSegment, saidFrom from: TimeInterval, to: TimeInterval) -> [Word] {
+    private static func words(of segment: TranscriptSegment, saidFrom from: TimeInterval, to: TimeInterval) -> [Word] {
         let spoken = words(in: segment.text)
         let total = spoken.reduce(0) { $0 + $1.weight }
         guard total > 0 else { return [] }

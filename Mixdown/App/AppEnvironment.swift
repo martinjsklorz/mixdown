@@ -50,7 +50,8 @@ final class AppEnvironment {
     /// Created the first time it's shown.
     @ObservationIgnored private var dynamicIsland: DynamicIsland?
     /// Opens Record in the main window.
-    @ObservationIgnored private let showRecorder: () -> Void
+    private let showRecorder: () -> Void
+    /// The note `observeNewNotes` announced last.
     @ObservationIgnored private var notifiedNoteURL: URL?
     /// The phase `observePhaseForCues` saw last.
     @ObservationIgnored private var cuedPhase: RecordingCoordinator.Phase = .idle
@@ -64,12 +65,11 @@ final class AppEnvironment {
         let noteTrash = NoteTrash()
         let noteReady = NoteReady(navigation: navigation)
         self.settings = settings
+        self.model = model
         self.summarizer = summarizer
         self.notesFolder = notesFolder
-        self.model = model
         self.noteTrash = noteTrash
         self.noteReady = noteReady
-        self.isRecordingShortcutEnabled = settings.isRecordingShortcutEnabled
         self.notificationResponder = NotificationResponder(noteTrash: noteTrash, noteReady: noteReady)
         self.coordinator = Self.makeCoordinator(
             model: model,
@@ -77,34 +77,24 @@ final class AppEnvironment {
             notesDirectory: notesFolder.directory,
             settings: settings
         )
-        self.notifiesAboutCalls = settings.notifiesAboutCalls
-        self.recordsCallsAutomatically = settings.recordsCallsAutomatically
-        self.showsRecordingInDynamicIsland = settings.showsRecordingInDynamicIsland
-        self.islandLayout = settings.islandLayout
-        let showRecorder: () -> Void = { [weak navigation] in
+        self.showRecorder = { [weak navigation] in
             guard let navigation, let openWindow = navigation.openWindow else { return }
             navigation.show(.recorder, using: openWindow)
         }
-        self.showRecorder = showRecorder
-        startMonitoringDevices()
-        refreshModelStatus()
+        self.notifiesAboutCalls = settings.notifiesAboutCalls
+        self.recordsCallsAutomatically = settings.recordsCallsAutomatically
+        self.isRecordingShortcutEnabled = settings.isRecordingShortcutEnabled
+        self.showsRecordingInDynamicIsland = settings.showsRecordingInDynamicIsland
+        self.islandLayout = settings.islandLayout
+
+        startCoordinatorTasks()
         observeRecording()
         observeDynamicIsland()
         observePhaseForCues()
         observeNotesFolder()
         observeNewNotes()
-        listenForRecordingShortcut(navigation: navigation)
-        let callPrompt = CallPrompt(
-            isRecording: { [weak self] in self?.coordinator.canStopRecording ?? false },
-            startRecording: { [weak self] in self?.startRecordingCall() ?? false },
-            stopRecording: { [weak self] in self?.stopRecordingCall() },
-            markRecordingAsCall: { [weak self] in self?.coordinator.markRecordingAsCall(automatically: $0) },
-            showRecorder: showRecorder
-        )
-        callPrompt.notifies = notifiesAboutCalls
-        callPrompt.recordsAutomatically = recordsCallsAutomatically
-        notificationResponder.callPrompt = callPrompt
-        self.callPrompt = callPrompt
+        listenForRecordingShortcut()
+        startCallPrompt()
     }
 
     // MARK: Composition
@@ -134,24 +124,44 @@ final class AppEnvironment {
         )
     }
 
-    /// Device monitoring lives here rather than in a view's `.task`: menu-style
-    /// `MenuBarExtra` content isn't guaranteed to be alive while the menu is closed.
-    private func startMonitoringDevices() {
+    /// Starts what a new coordinator needs running: device monitoring, and checking whether the
+    /// model is downloaded, for an engine that can only tell asynchronously. Device monitoring
+    /// lives here rather than in a view's `.task`: menu-style `MenuBarExtra` content isn't
+    /// guaranteed to be alive while the menu is closed.
+    private func startCoordinatorTasks() {
         deviceMonitor?.cancel()
         deviceMonitor = Task { [coordinator] in
             await coordinator.monitorDevices()
         }
-    }
-
-    /// Checks whether the model is downloaded, for an engine that can only tell asynchronously.
-    private func refreshModelStatus() {
         Task { [coordinator] in
             await coordinator.refreshModelStatus()
         }
     }
 
-    /// Starts or stops `recordingClock` as the phase changes, and holds it while paused.
-    /// Re-registers itself after every change, including the coordinator being replaced.
+    /// Watches for calls, to offer to record them or record them automatically.
+    private func startCallPrompt() {
+        let callPrompt = CallPrompt(
+            isRecording: { [weak self] in self?.coordinator.canStopRecording ?? false },
+            startRecording: { [weak self] in self?.startRecordingCall() ?? false },
+            stopRecording: { [weak self] in self?.stopRecordingCall() },
+            markRecordingAsCall: { [weak self] in self?.coordinator.markRecordingAsCall(automatically: $0) },
+            showRecorder: showRecorder
+        )
+        callPrompt.notifies = notifiesAboutCalls
+        callPrompt.recordsAutomatically = recordsCallsAutomatically
+        notificationResponder.callPrompt = callPrompt
+        self.callPrompt = callPrompt
+    }
+
+    // MARK: Observation
+    //
+    // Each `observe…` method reads what it depends on in `withObservationTracking`, acts on it, and
+    // re-registers itself on the next change, as tracking only fires once. Those that read
+    // `coordinator` also run again when it's replaced, by a new one that starts out idle and
+    // without a note.
+
+    /// Ticks `recordingElapsed` while recording and holds it while paused, and tells the call
+    /// prompt when a recording starts and stops.
     private func observeRecording() {
         let phase = withObservationTracking {
             coordinator.phase
@@ -200,8 +210,7 @@ final class AppEnvironment {
     }
 
     /// Shows the Dynamic Island while recording, if it's turned on, and lays it out again when its
-    /// settings change. Re-registers itself after every change, including the coordinator being
-    /// replaced.
+    /// settings change.
     private func observeDynamicIsland() {
         let (shows, layout) = withObservationTracking {
             (coordinator.isRecording && showsRecordingInDynamicIsland, islandLayout)
@@ -223,8 +232,7 @@ final class AppEnvironment {
         }
     }
 
-    /// Plays the audio cue for each phase change, such as recording starting. Re-registers itself
-    /// after every change, including the coordinator being replaced, which starts out idle.
+    /// Plays the audio cue for each phase change, such as recording starting.
     private func observePhaseForCues() {
         let phase = withObservationTracking {
             coordinator.phase
@@ -237,7 +245,7 @@ final class AppEnvironment {
     }
 
     /// Points the coordinator at the notes folder whenever it's chosen, goes away or comes back.
-    /// Without one, recording is disabled. Re-registers itself after every change.
+    /// Without one, recording is disabled.
     private func observeNotesFolder() {
         let directory = withObservationTracking {
             notesFolder.directory
@@ -247,9 +255,7 @@ final class AppEnvironment {
         coordinator.noteWriter = directory.map { MarkdownNoteWriter(directory: $0) }
     }
 
-    /// Posts "Note Ready", and plays its cue, for every note the coordinator writes. Re-registers
-    /// itself after every change, including the coordinator being replaced, which starts out
-    /// without a note.
+    /// Posts "Note Ready", and plays its cue, for every note the coordinator writes.
     private func observeNewNotes() {
         let url = withObservationTracking {
             coordinator.lastNoteURL
@@ -355,7 +361,7 @@ final class AppEnvironment {
     /// transcribing or summarizing, it beeps, as recording can start once that's done. When
     /// recording can't start for something the user has to do (no notes folder, model or input),
     /// it opens Record instead, which says what.
-    private func listenForRecordingShortcut(navigation: MainNavigation) {
+    private func listenForRecordingShortcut() {
         KeyboardShortcuts.onKeyUp(for: .toggleRecording) { [weak self] in
             guard let self else { return }
             let coordinator = self.coordinator
@@ -363,8 +369,8 @@ final class AppEnvironment {
                 Task { await coordinator.toggleRecording() }
             } else if !coordinator.isIdle {
                 NSSound.beep()
-            } else if let openWindow = navigation.openWindow {
-                navigation.show(.recorder, using: openWindow)
+            } else {
+                self.showRecorder()
             }
         }
         if !isRecordingShortcutEnabled {
@@ -420,8 +426,7 @@ final class AppEnvironment {
             pendingNotes: coordinator.takePendingNotes(),
             settings: settings
         )
-        startMonitoringDevices()
-        refreshModelStatus()
+        startCoordinatorTasks()
     }
 
     // MARK: Summary

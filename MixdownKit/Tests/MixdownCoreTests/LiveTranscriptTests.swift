@@ -163,9 +163,10 @@ struct LiveTranscriptTests {
     @Test func sourcesCanBeAddedAndRelabeled() {
         var transcript = LiveTranscript(speakers: [nil])
         transcript.apply(update(["Hello."]), fromSource: 0, startHostTime: 100)
-        // System audio turned on a few seconds in.
-        transcript.addSource(speaker: "Others")
+        // System audio turned on a few seconds in, which makes labels necessary.
+        transcript.addSource()
         transcript.setSpeaker("Me", ofSource: 0)
+        transcript.setSpeaker("Others", ofSource: 1)
         transcript.apply(update(["Hi."]), fromSource: 1, startHostTime: 104)
 
         #expect(transcript.lines.map(\.speaker) == ["Me", "Others"])

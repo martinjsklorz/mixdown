@@ -6,7 +6,7 @@ import SwiftUI
 
 /// The main window: search and Record at the top of the sidebar, the notes folder below it (pinned
 /// notes, then by date), and the recorder or the selected note on the right. Above the sidebar
-/// are the notes folder and Settings.
+/// are Open Notes Folder and Settings.
 struct MainView: View {
     static let windowID = "main"
 
@@ -138,7 +138,7 @@ struct MainView: View {
         return VStack(spacing: 0) {
             HStack(spacing: 8) {
                 SidebarSearchField(text: $searchText)
-                RecordButton(coordinator: environment.coordinator)
+                SidebarRecordButton(coordinator: environment.coordinator)
             }
             .padding(.horizontal, 10)
             .padding(.top, 8)
@@ -394,7 +394,7 @@ private struct SidebarSearchField: View {
 
 /// Shows the recorder, beside the search field. Highlighted like a selected note while it's
 /// shown, and says what the recorder is doing while it's busy.
-private struct RecordButton: View {
+private struct SidebarRecordButton: View {
     @Environment(MainNavigation.self) private var navigation
     let coordinator: RecordingCoordinator
 

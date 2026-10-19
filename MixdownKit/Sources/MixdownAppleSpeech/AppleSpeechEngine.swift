@@ -78,7 +78,7 @@ public actor AppleSpeechEngine: TranscriptionEngine {
     }
 
     /// Transcribes 16 kHz mono samples into one segment per phrase the model reports. The language
-    /// is `options.language`, else the Mac's. `translateToEnglish` is not supported and ignored.
+    /// is `options.language`, else the Mac's.
     public func transcribe(
         _ samples: [Float],
         options: TranscriptionOptions,

@@ -11,7 +11,7 @@ struct DynamicIslandView: View {
     /// The rounding of the island's bottom corners.
     fileprivate static let cornerRadius: CGFloat = 10
     /// How far the input levels reach out from the notch.
-    static let levelsWingWidth = LevelWaveform.width() + outerPadding + innerPadding
+    static let levelsWingWidth = LevelWaveform.width + outerPadding + innerPadding
 
     let environment: AppEnvironment
     /// Left empty in the middle, behind the notch. Zero on screens without one.

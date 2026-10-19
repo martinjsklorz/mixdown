@@ -25,10 +25,11 @@ enum SpeechChunker {
         var maxMergeGap: TimeInterval
         /// Silence kept around speech so onsets and word endings aren't clipped.
         var padding: TimeInterval
-        /// A region that is too long is cut at its quietest frame in
-        /// `[minSplitFraction * budget, budget]` after the piece start.
-        var minSplitFraction: Double = 0.5
     }
+
+    /// A region that is too long is cut at its quietest frame in
+    /// `[minSplitFraction * budget, budget]` after the piece start.
+    static let minSplitFraction = 0.5
 
     static func pieces(
         regions: [TimeSpan],
@@ -40,7 +41,6 @@ enum SpeechChunker {
         let padding = max(0, configuration.padding)
         // Speech budget per piece, leaving room for padding on both sides. Never zero, so splitting terminates.
         let budget = max(configuration.maxWindowDuration - 2 * padding, 1)
-        let splitFraction = min(max(configuration.minSplitFraction, 0.1), 1)
 
         let sanitized = regions
             .map { TimeSpan(start: max(0, $0.start), end: min(audioDuration, $0.end)) }
@@ -48,13 +48,7 @@ enum SpeechChunker {
             .sorted { $0.start < $1.start }
 
         let split = sanitized.flatMap {
-            Self.split(
-                $0,
-                budget: budget,
-                splitFraction: splitFraction,
-                probabilities: probabilities,
-                frameDuration: frameDuration
-            )
+            Self.split($0, budget: budget, probabilities: probabilities, frameDuration: frameDuration)
         }
         let merged = merge(split, maxGap: configuration.maxMergeGap, budget: budget)
         return pad(merged, padding: padding, audioDuration: audioDuration)
@@ -63,14 +57,13 @@ enum SpeechChunker {
     private static func split(
         _ region: TimeSpan,
         budget: TimeInterval,
-        splitFraction: Double,
         probabilities: [Float],
         frameDuration: TimeInterval
     ) -> [TimeSpan] {
         var result: [TimeSpan] = []
         var start = region.start
         while region.end - start > budget {
-            let earliest = start + budget * splitFraction
+            let earliest = start + budget * minSplitFraction
             let latest = start + budget
             let cut =
                 quietestPoint(

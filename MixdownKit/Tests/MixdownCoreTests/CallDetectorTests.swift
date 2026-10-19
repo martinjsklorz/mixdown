@@ -98,7 +98,7 @@ struct CallDetectorTests {
             )
         ])
         try await waitUntil { !harness.events.isEmpty }
-        #expect(harness.events.map(\.app.name) == ["Webex"])
+        #expect(harness.detector.activeCalls.map(\.name) == ["Webex"])
         await harness.stop()
     }
 
@@ -162,14 +162,6 @@ struct CallDetectorTests {
         await harness.stop()
         #expect(harness.detector.activeCalls.isEmpty)
         #expect(harness.events == [.started(Self.zoomApp)])
-    }
-}
-
-extension CallDetector.Event {
-    var app: CallApp {
-        switch self {
-        case .started(let app), .ended(let app): app
-        }
     }
 }
 

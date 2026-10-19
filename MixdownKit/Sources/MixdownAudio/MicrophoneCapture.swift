@@ -233,8 +233,8 @@ private final class DeviceInput: @unchecked Sendable {
         listeners.forEach { $0.remove(logsFailures: false) }
         listeners = []
         if deviceID != AudioObjectID(kAudioObjectUnknown), let ioProcID {
-            logFailure(AudioDeviceStop(deviceID, ioProcID), "AudioDeviceStop")
-            logFailure(AudioDeviceDestroyIOProcID(deviceID, ioProcID), "AudioDeviceDestroyIOProcID")
+            CoreAudioHAL.logFailure(AudioDeviceStop(deviceID, ioProcID), "AudioDeviceStop")
+            CoreAudioHAL.logFailure(AudioDeviceDestroyIOProcID(deviceID, ioProcID), "AudioDeviceDestroyIOProcID")
         }
         ioProcID = nil
         deviceID = AudioObjectID(kAudioObjectUnknown)
@@ -266,10 +266,5 @@ private final class DeviceInput: @unchecked Sendable {
         if changed {
             audioLogger.info("“\(self.name, privacy: .public)” switched to \(newFormat, privacy: .public)")
         }
-    }
-
-    private func logFailure(_ status: OSStatus, _ call: String) {
-        guard status != noErr else { return }
-        audioLogger.error("\(call, privacy: .public) failed: \(status, privacy: .public)")
     }
 }

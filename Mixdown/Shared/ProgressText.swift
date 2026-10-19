@@ -1,7 +1,7 @@
 import Foundation
 
 /// Wording for model download and transcription progress, shared by the menu bar, the menu,
-/// the main window and Settings.
+/// the main window, Settings and the setup assistant.
 enum ProgressText {
     /// "34% · about 6 min left", or "34% · estimating time left…" until there's an estimate.
     static func detail(progress: Double, remaining: TimeInterval?) -> String {
@@ -16,7 +16,7 @@ enum ProgressText {
     }
 
     /// "about 6 min left", "about 1 hr, 5 min left", "less than a minute left".
-    static func remainingText(_ remaining: TimeInterval) -> String {
+    private static func remainingText(_ remaining: TimeInterval) -> String {
         guard remaining >= 60 else { return "less than a minute left" }
         let duration = minutes(remaining).formatted(.units(allowed: [.hours, .minutes], width: .abbreviated))
         return "about \(duration) left"

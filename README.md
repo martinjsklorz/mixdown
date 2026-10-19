@@ -5,12 +5,14 @@
 Mixdown records your microphone, whatever your Mac is playing (such as a call or a video), or
 both at once, turns the speech into text, and saves it as a Markdown note. It has a small main
 window and also lives in your Mac's menu bar.
+
 Everything happens on your Mac. Your audio never leaves it.
 
 ## Using Mixdown
 
 Mixdown's window has a sidebar with a search field and the **Record** button (●) at the top, and
-your recordings below it under **Today**, **Previous 7 Days** and then each month. The cog above the sidebar, next to the sidebar button, opens Settings.
+your recordings below it under **Today**, **Previous 7 Days** and then each month. The cog above
+the sidebar, next to the sidebar button, opens Settings.
 
 1. Open Mixdown. **Record** shows the big record button and what the next recording uses:
    microphone, system audio, speech model, language and notes folder.
@@ -22,50 +24,81 @@ your recordings below it under **Today**, **Previous 7 Days** and then each mont
 3. Pick your inputs in the **Recording** menu (a microphone, **System Audio**, or both), or with
    **Change…** next to the setup summary.
 4. Click the red button (or press ⌘R) to record, and again to stop. From any other app, press
-   ⌃⌥⌘R. Change that shortcut or turn it off under **Settings → General**.
+   ⌃⌥⌘R. Change that shortcut or turn it off under **Settings → General**. The smaller button
+   beside Stop (or ⇧⌘P) pauses; nothing is recorded until you resume.
+
+### While recording
 
 With the live model (the default), **Record** shows the words as you speak, about half a second
 behind and labeled **Me** and **Others** when you record a call. That text is the note.
 
+Record shows a level meter per input and warns (also in the menu bar) when an input has made no
+sound for 10 seconds. The elapsed time shows in the menu bar or, with **Settings → Design → Show
+recording in the Dynamic Island** on (the default), in an island around the camera notch with the
+input levels. Click the island to open Record.
+
+Short sounds mark recording starting and stopping, a note being ready, and something going wrong
+(recording couldn't start or stopped early, or a note couldn't be finished), so you can tell
+without looking. Pick a different macOS sound, or **None**, for each under **Settings →
+Notifications → Sounds**, or untick **Play sounds**. They aren't recorded from system audio, but
+without headphones your microphone may hear the start sound.
+
+### Your notes
+
 Soon after you stop, the note appears under **Today** in the sidebar and opens, rendered much like
 Apple Notes. A **Note Ready** notification says so too, with **Open** to show the note in Mixdown
 and **Show in Finder** for its file, so you can stop from the menu bar and carry on elsewhere.
-Search the sidebar (⌘F) to find older recordings. Notes you file into
-subfolders of the notes folder are listed too, with their folder under the title; hidden folders
-like Obsidian's `.obsidian` and `.trash` are skipped.
+
+Search the sidebar (⌘F) to find older recordings. Notes you file into subfolders of the notes
+folder are listed too, with their folder under the title; hidden folders like Obsidian's
+`.obsidian` and `.trash` are skipped.
+
 The buttons above a note, or right-clicking it in the sidebar, pin it, rename it, copy its
-transcript as plain text, share it, or move it to the Trash (⌘⌫, or Delete in the sidebar). Pinned
-notes stay at the top of the sidebar under **Pinned** (click the heading to fold them away);
-pinning sets `pinned: true` in the note's frontmatter, so it travels with the file. Renaming changes
-both the title inside the note and its file name. File names leave out characters that break
-Obsidian links: `[ ]` become `( )`, `|` becomes `-`, and `#` and `^` are dropped. The File and Edit menus have the same commands
-for the note that's open.
-Mixdown asks before moving a note to the Trash (tick **Do not ask again**, or turn it back on under
-**Settings → General**), then shows a notification with **Restore** to put the note back. Copying
-a transcript is confirmed with a notification too. To turn all of Mixdown's notifications off,
-untick **Show notifications** under **Settings → Notifications**; notes can then only be restored from
-the Trash.
-**File → Open Notes Folder** and **Reveal Last Note in Finder** take you to the files.
+transcript as plain text, share it, or move it to the Trash (⌘⌫, or Delete in the sidebar). The
+File and Edit menus have the same commands for the note that's open.
 
-Short sounds mark recording starting and stopping, a note being ready, and something going wrong
-(recording couldn't start or stopped early, or a note couldn't be finished), so you can tell from
-the menu bar without looking. Pick a different macOS sound, or **None**, for each under
-**Settings → Notifications → Sounds**, or untick **Play sounds**. They aren't recorded from system
-audio, but without headphones your microphone may hear the start sound.
+- Pinned notes stay at the top of the sidebar under **Pinned** (click the heading to fold them
+  away). Pinning sets `pinned: true` in the note's frontmatter, so it travels with the file.
+- Renaming changes both the title inside the note and its file name. File names leave out
+  characters that break Obsidian links: `[ ]` become `( )`, `|` becomes `-`, and `#` and `^` are
+  dropped.
+- Mixdown asks before moving a note to the Trash (tick **Do not ask again**, or turn it back on
+  under **Settings → General**), then shows a notification with **Restore** to put the note back.
+  Copying a transcript is confirmed with a notification too.
 
-**View → Record / Notes** (⌘1, ⌘2) switch the window's section, and **Mixdown → Settings…** (⌘,)
-opens Settings. The waveform icon in the menu bar can start and stop recording and pick inputs
-without the window, and has **Settings…** too. Recording carries on there if
-you close the window; **Open Mixdown** in that menu, **Window → Mixdown** (⌘0) or the Dock icon
-brings it back. **Help → Mixdown Help** (⌘?) explains all of this inside the app, and the Help
-menu's search field finds its topics as well as menu commands.
+To turn all of Mixdown's notifications off, untick **Show notifications** under **Settings →
+Notifications**; notes can then only be restored from the Trash. **File → Open Notes Folder** and
+**Reveal Last Note in Finder** take you to the files.
 
-The first time, macOS asks for permission: **Microphone** to record your voice, or **System
-Audio Recording** to record what your Mac plays. If system audio comes out silent, check that
-Mixdown is on under System Settings › Privacy & Security › Screen & System Audio Recording ›
-System Audio Recording Only. macOS gives a muted recording rather than an error when it's off,
-so while recording Mixdown shows a level meter per input and warns (also in the menu bar) when an
-input has made no sound for 10 seconds.
+### Menu bar and windows
+
+Mixdown's icon in the menu bar can start, pause and stop recording and pick inputs without the
+window, and has **Settings…** too. Recording carries on there if you close the window; **Open
+Mixdown** in that menu, **Window → Mixdown** (⌘0) or the Dock icon brings it back.
+
+**Help → Mixdown Help** (⌘?) explains all of this inside the app, and the Help menu's search field
+finds its topics as well as menu commands.
+
+| Shortcut | Action |
+| -------- | ------ |
+| ⌘R | Start or stop recording |
+| ⌃⌥⌘R | Start or stop recording from any app |
+| ⇧⌘P | Pause or resume recording |
+| ⌘1 / ⌘2 | Show Record / Notes |
+| ⌘F | Search recordings |
+| ⌘0 | Open the Mixdown window |
+| ⇧⌘O | Open the notes folder |
+| ⌘⌫ | Move the open note to the Trash |
+| ⌘, | Open Settings |
+| ⌘? | Open Mixdown Help |
+
+### Permissions
+
+The first time, macOS asks for permission: **Microphone** to record your voice, or **System Audio
+Recording** to record what your Mac plays. If system audio comes out silent, check that Mixdown is
+on under System Settings › Privacy & Security › Screen & System Audio Recording › System Audio
+Recording Only. macOS gives a muted recording rather than an error when it's off, which is what
+the 10-second silence warning catches.
 
 ## Recording calls
 
@@ -86,30 +119,33 @@ Each input is recorded and transcribed on its own, then the lines are merged by 
 **Me** and **Others**. Change the names under **Settings → Transcription**.
 
 Wear headphones if you can. Without them your microphone also hears the other people, and while
-Mixdown drops lines it recognizes as that echo, it can't catch all of it.
+Mixdown drops lines it recognizes as that echo, it can't catch all of it. The live model's text
+on screen still shows the echo while you record; only the note leaves it out.
+
+### Call detection
 
 Mixdown notices when a call starts: when a call or voice chat app (Zoom, Microsoft Teams, Webex,
 Slack, FaceTime, Discord, Mumble, TeamSpeak, WhatsApp, Telegram, Signal, Element, Viber, GoTo
 Meeting, Jitsi Meet) or a browser (Safari, Chrome, Edge, Firefox, Arc, Brave, Vivaldi, Opera) has
-been using a microphone for a few seconds. A browser counts as soon as any site uses the microphone.
-Two switches under **Settings → Recording → Calls** decide what happens:
+been using a microphone for a few seconds. A browser counts as soon as any site uses the
+microphone. Two switches under **Settings → Recording → Calls** decide what happens:
 
 - **Notify when calls start and end** (on by default): a notification asks **Record This Call?**
   Click it (or its **Record** button, which shows when you point at it) to start recording with
   System Audio turned on, plus your microphone if one is selected. If Mixdown can't record yet, for
   example because the model isn't downloaded, the window opens at **Record** to show why. The
   notification goes away when the call ends, and none appears while Mixdown is already recording.
-  When the call ends while Mixdown is recording (and no other call is going on), a notification asks
-  **Stop Recording?** Click it, or its **Stop Recording** button, to stop and transcribe.
+  When the call ends while Mixdown is recording (and no other call is going on), a notification
+  asks **Stop Recording?** Click it, or its **Stop Recording** button, to stop and transcribe.
 - **Record calls automatically** (off by default): recording starts by itself when a call starts,
   the same way, and stops when the call ends. With notifications on, **Recording Call** and **Call
   Recording Stopped** say so instead of asking, and if Mixdown can't record yet, it asks with
-  **Record This Call?** after all. With notifications off, the menu bar icon is the only sign.
-  A recording you started yourself isn't stopped when a call ends; with notifications on, Mixdown
+  **Record This Call?** after all. With notifications off, the menu bar icon is the only sign. A
+  recording you started yourself isn't stopped when a call ends; with notifications on, Mixdown
   asks **Stop Recording?** instead.
 
-With both off, calls aren't watched. Turning off **Show notifications** under **Settings → Notifications**
-turns off the call notifications too, but not automatic recording.
+With both off, calls aren't watched. Turning off **Show notifications** under **Settings →
+Notifications** turns off the call notifications too, but not automatic recording.
 
 ## Speech models
 
@@ -120,14 +156,6 @@ Choose a model under **Settings → Transcription**, in one of two categories:
 - **Offline** transcribes the whole recording once you stop. The audio is kept in memory until
   then. Qwen3 and MOSS are more accurate than the live model, and MOSS can tell speakers apart.
 
-A model is downloaded once, from **Download
-Model** in the window, the Recording menu or Settings, and the time left shows next to the menu bar icon. After
-switching models, download the new one before recording. **Cancel Download** in the menu (or **Cancel** in Settings) stops
-it; files already fetched are kept, so the next download picks up where it left off.
-The model menu there marks downloaded models with a green check. To free up disk space, select
-a model and click the trash button next to the menu; you'll need to download it again before
-recording with it.
-
 | Category | Model | Size | Good for |
 | -------- | ----- | ---- | -------- |
 | Live (default) | Nemotron 3.5 ASR Streaming 0.6B | ~540 MB | Long meetings, text as you speak |
@@ -136,32 +164,41 @@ recording with it.
 | Offline · Speakers | MOSS Transcribe Diarize 0.9B | ~1 GB | Meetings: labels who is speaking |
 | Offline | Apple Speech | Managed by macOS | Light on memory; kept up to date by macOS |
 
+A model is downloaded once, from **Download Model** in the window, the Recording menu or Settings,
+and the time left shows next to the menu bar icon. After switching models, download the new one
+before recording. **Cancel Download** in the menu (or **Cancel** in Settings) stops it; files
+already fetched are kept, so the next download picks up where it left off. The model menu in
+Settings marks downloaded models with a green check. To free up disk space, select a model and
+click the trash button next to the menu; you'll need to download it again before recording with
+it.
+
 Apple Speech is Apple's on-device model, the one Notes and Voice Memos use. macOS downloads it
-once per language, keeps it up to date and shares it with other apps, so it has no trash
-button. It doesn't detect the language: **Automatic** uses your Mac's language.
+once per language, keeps it up to date and shares it with other apps, so it has no trash button.
+It doesn't detect the language: **Automatic** uses your Mac's language.
 
-With MOSS, speaker numbers start over every 10 minutes, so "Speaker 1" may be someone else
-later in a long recording. When recording a call, MOSS numbers the speakers within each input,
-e.g. "Me (Speaker 1)" and "Me (Speaker 2)" for two people at your Mac, and "Others (Speaker 1)"
-and "Others (Speaker 2)" for two people on the call. The other models don't tell speakers apart,
-so their lines are just labeled "Me" and "Others".
-
-The live model also drops the echo of the call from your microphone's lines in the note, but the
-text on screen still shows it while you record.
+With MOSS, speaker numbers start over every 10 minutes, so "Speaker 1" may be someone else later
+in a long recording. When recording a call, MOSS numbers the speakers within each input, e.g. "Me
+(Speaker 1)" and "Me (Speaker 2)" for two people at your Mac, and "Others (Speaker 1)" and "Others
+(Speaker 2)" for two people on the call. The other models don't tell speakers apart, so their
+lines are just labeled "Me" and "Others".
 
 ## Summaries
 
 With Apple Intelligence turned on, each note starts with a summary: a short overview, the key
 points and any action items, in the language of the recording. Apple Intelligence writes it on
-your Mac after the transcript is ready, so the note takes a little longer to appear. Nothing extra is downloaded, and the transcript doesn't leave your Mac. Long
-recordings are summarized in parts, which are then combined. Action items are saved as Markdown
-checkboxes (`- [ ]`), so you can tick them off in editors like Obsidian.
+your Mac after the transcript is ready, so the note takes a little longer to appear. Nothing extra
+is downloaded, and the transcript doesn't leave your Mac. Long recordings are summarized in parts,
+which are then combined. Action items are saved as Markdown checkboxes (`- [ ]`), so you can tick
+them off in editors like Obsidian.
 
 The summary also names the note after its topic, e.g. "Release timeline". A call recorded from
-Mixdown's call notification, or automatically (see **Settings → Recording**), is titled as one in
-the language of the recording, e.g. "Call about Release timeline" or "Anruf zu Budgetplanung".
-Recordings started any other way aren't, even during a call. Without a summary, a note is titled
-with the date and time it was recorded.
+Mixdown's call notification, or automatically, is titled as one in the language of the recording,
+e.g. "Call about Release timeline" or "Anruf zu Budgetplanung". Recordings started any other way
+aren't, even during a call.
+
+Turn summaries off under **Settings → Transcription**, which also says why summaries aren't
+available on this Mac if they aren't. Without them, or if summarizing fails, the note is saved
+with just the transcript and the date and time it was recorded as its title.
 
 ### Templates
 
@@ -178,21 +215,17 @@ detected calls (recordings started from the call notification or automatically):
 That template is preselected for each recording. To use another one for this recording only, pick
 it under **Record** while recording or transcribing, until the summary starts.
 
-Turn summaries off under **Settings → Transcription**, which also says why summaries aren't
-available on this Mac if they aren't. Without them, or if summarizing fails, the note is saved
-with just the transcript and the date as its title.
-
 ## Notes
 
 Notes are saved to a folder you choose the first time you open Mixdown, for example a new
-`Mixdown` folder in Documents (use **New Folder** in the dialog). Change it under
-**Settings → General**. Notes recorded by earlier versions of Mixdown, which saved them inside
-the app's container at `~/Library/Containers/app.mixdown.Mixdown/Data/Documents/Mixdown`, move
-to the folder you choose.
+`Mixdown` folder in Documents (use **New Folder** in the dialog). Change it under **Settings →
+General**. Notes recorded by earlier versions of Mixdown, which saved them inside the app's
+container at `~/Library/Containers/app.mixdown.Mixdown/Data/Documents/Mixdown`, move to the folder
+you choose.
 
-If the folder can't be reached, for example because it's on a drive that isn't connected,
-Mixdown says so on **Record**, in the menu bar and in Settings, and doesn't record until it's back
-or you choose another folder. It picks the folder up again as soon as the drive is connected.
+If the folder can't be reached, for example because it's on a drive that isn't connected, Mixdown
+says so on **Record**, in the menu bar and in Settings, and doesn't record until it's back or you
+choose another folder. It picks the folder up again as soon as the drive is connected.
 
 A note looks like this:
 
@@ -204,6 +237,8 @@ duration: 754
 source: "MacBook Pro Microphone"
 source_kind: microphone
 engine: "MOSS Transcribe Diarize 0.9B"
+trigger: manual
+language: "en"
 speakers: ["Speaker 1", "Speaker 2"]
 tags: [mixdown]
 ---
@@ -229,7 +264,9 @@ The team went through the release timeline for the weekly sync.
 **[00:00:04] Speaker 2:** First up, the release timeline…
 ```
 
-A call recorded from a microphone and system audio lists both sources and labels each line:
+`trigger` is `manual` for recordings you started (including from a call notification) and
+`automatic` for calls recorded automatically. `language` is left out when the model doesn't report
+one. A call recorded from a microphone and system audio lists both sources and labels each line:
 
 ```markdown
 sources: ["MacBook Pro Microphone", "System Audio"]
@@ -247,17 +284,35 @@ You need a Mac with Apple Silicon running macOS 26 or later, Xcode, and
 [Homebrew](https://brew.sh).
 
 ```sh
-make bootstrap   # one-time setup
+make bootstrap   # one-time setup: XcodeGen and the Metal Toolchain
 make run         # build and launch
-make test        # run the tests
+make test        # run the MixdownKit tests
+make logs        # follow the app's log output
+make format      # format with swift-format (`make lint` checks)
 make clean       # quit Mixdown, delete all build output and refresh the Dock icon
 ```
 
-To sign the app with your Apple developer account, set `DEVELOPMENT_TEAM` in `project.yml`.
+`Mixdown.xcodeproj` is generated from `project.yml` by XcodeGen and isn't checked in; `make`
+regenerates it when needed. To sign the app with your Apple developer account, set
+`DEVELOPMENT_TEAM` in `project.yml`.
 
-The speech engines sit behind one interface (`TranscriptionEngine`), and so does the summarizer
+### Project layout
+
+The app target (`Mixdown/`) is SwiftUI and AppKit glue. Everything that can be tested without a
+window lives in the `MixdownKit` package:
+
+| Module | What it does |
+| ------ | ------------ |
+| `MixdownCore` | Domain types and protocols, plus `RecordingCoordinator`, which runs a recording from start to saved note: captures, live or offline transcription, merging tracks, summary, writing. No dependencies beyond Foundation. |
+| `MixdownAudio` | Core Audio: microphone capture (HAL IO proc), system audio (process tap), the device list, and which apps use a microphone (for call detection). |
+| `MixdownSpeechSwift` | Nemotron, Qwen3-ASR and MOSS via [speech-swift](https://github.com/soniqo/speech-swift) (MLX). |
+| `MixdownAppleSpeech` | Apple's on-device model via `SpeechAnalyzer`. |
+| `MixdownFoundationModels` | Summaries and titles via Apple Intelligence. |
+| `MixdownNotes` | Rendering notes to Markdown, writing them, and reading the notes folder back. |
+
+The speech engines sit behind one protocol (`TranscriptionEngine`), and so does the summarizer
 (`Summarizer`). Speech models from any engine are listed in `Mixdown/App/TranscriptionModel.swift`;
-the summarizer is chosen in `Mixdown/App/AppEnvironment.swift`.
+`Mixdown/App/AppEnvironment.swift` wires everything together.
 
 ## License
 
