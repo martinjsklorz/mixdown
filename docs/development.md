@@ -31,7 +31,7 @@ window lives in the `MixdownKit` package:
 | `MixdownAppleSpeech` | Apple's on-device model via `SpeechAnalyzer`. |
 | `MixdownFoundationModels` | Summaries and titles via Apple Intelligence. |
 | `MixdownAppleTranslation` | Translating transcripts with Apple's on-device models via the Translation framework. |
-| `MixdownNotes` | Rendering notes to Markdown, writing them, and reading the notes folder back. |
+| `MixdownNotes` | Rendering notes to Markdown, writing them, reading the notes folder back, and what Spotlight gets of each note (`NoteSearchIndex`; the app's `NoteSpotlight` hands it to Core Spotlight). |
 
 The speech engines sit behind one protocol (`TranscriptionEngine`), and so do the summarizer
 (`Summarizer`) and the translator (`Translator`). Speech models from any engine are listed in

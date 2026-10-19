@@ -23,6 +23,7 @@ final class AppEnvironment {
     let notesFolder: NotesFolderStore
     let noteTrash: NoteTrash
     private let noteReady: NoteReady
+    private let noteSpotlight = NoteSpotlight()
     /// Created at launch, as it handles buttons on notifications from an earlier run.
     private let notificationResponder: NotificationResponder
 
@@ -42,6 +43,8 @@ final class AppEnvironment {
     private(set) var showsRecordingInDynamicIsland: Bool
     /// What the Dynamic Island shows, and where.
     private(set) var islandLayout: DynamicIsland.Layout
+    /// Whether the notes are in Spotlight. See `NoteSpotlight`.
+    private(set) var indexesNotesInSpotlight: Bool
     /// Whether the Dynamic Island is showing the recording time where it can always be seen, so
     /// the menu bar leaves it out. See `DynamicIsland.showsTimeAlone`.
     private(set) var dynamicIslandShowsTimeAlone = false
@@ -96,6 +99,7 @@ final class AppEnvironment {
         self.isRecordingShortcutEnabled = settings.isRecordingShortcutEnabled
         self.showsRecordingInDynamicIsland = settings.showsRecordingInDynamicIsland
         self.islandLayout = settings.islandLayout
+        self.indexesNotesInSpotlight = settings.indexesNotesInSpotlight
 
         startCoordinatorTasks()
         observeRecording()
@@ -264,8 +268,8 @@ final class AppEnvironment {
         AudioCues.play(cue, settings: settings)
     }
 
-    /// Points the coordinator at the notes folder whenever it's chosen, goes away or comes back.
-    /// Without one, recording is disabled.
+    /// Points the coordinator and Spotlight at the notes folder whenever it's chosen, goes away or
+    /// comes back. Without one, recording is disabled.
     private func observeNotesFolder() {
         let directory = withObservationTracking {
             notesFolder.directory
@@ -273,6 +277,7 @@ final class AppEnvironment {
             Task { @MainActor in self?.observeNotesFolder() }
         }
         coordinator.noteWriter = directory.map { MarkdownNoteWriter(directory: $0) }
+        noteSpotlight.update(directory: directory, isEnabled: indexesNotesInSpotlight)
     }
 
     /// Posts "Note Ready", and plays its cue, for every note the coordinator writes.
@@ -514,6 +519,12 @@ final class AppEnvironment {
     }
 
     // MARK: Notes
+
+    func setIndexesNotesInSpotlight(_ enabled: Bool) {
+        settings.indexesNotesInSpotlight = enabled
+        indexesNotesInSpotlight = enabled
+        noteSpotlight.update(directory: notesFolder.directory, isEnabled: enabled)
+    }
 
     func chooseNotesFolder() {
         notesFolder.chooseFolder()

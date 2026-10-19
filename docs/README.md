@@ -14,7 +14,7 @@ The same topics are in the app under **Help → Mixdown Help** (⌘?).
 - [Speech models](speech-models.md): live and offline models, downloading and deleting them
 - [Summaries](summaries.md): Apple Intelligence summaries, titles and templates
 - [Translation](translation.md): notes, and the live text, in another language
-- [Notes](notes.md): the sidebar, working with notes, the notes folder and the file format
+- [Notes](notes.md): the sidebar, working with notes, Spotlight, the notes folder and the file format
 - [Notifications and sounds](notifications-and-sounds.md)
 - [Settings](settings.md): every setting, tab by tab
 - [Keyboard shortcuts](keyboard-shortcuts.md)

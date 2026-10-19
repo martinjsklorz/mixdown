@@ -25,6 +25,8 @@ Everything happens on your Mac. Your audio never leaves it.
   translated as it's spoken, so you can follow a call in a language you don't speak.
 - **Plain Markdown notes**: saved to a folder you choose, ready for Obsidian or any editor. Browse,
   search, pin and rename them in Mixdown.
+- **Spotlight search**: every line of every note is in Spotlight, so ⌘Space finds the exact
+  transcript line or action item without opening Mixdown.
 - **Always at hand**: a global shortcut (⌃⌥⌘R), the menu bar, and a Dynamic Island around the
   camera notch while recording.
 

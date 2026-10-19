@@ -43,6 +43,16 @@ struct GeneralSettingsView: View {
                         set: { suppressesTrashConfirmation = !$0 }
                     )
                 )
+                Toggle(
+                    "Show notes in Spotlight",
+                    isOn: Binding(
+                        get: { environment.indexesNotesInSpotlight },
+                        set: { environment.setIndexesNotesInSpotlight($0) }
+                    )
+                )
+                Text("Search for any line of a note with Spotlight (⌘Space). The index stays on this Mac.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section {

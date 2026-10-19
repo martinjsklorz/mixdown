@@ -50,7 +50,8 @@ struct MainView: View {
             let directory = environment.notesFolder.directory
             // Started first, so nothing that changes during the first reload is missed.
             let changes = directory.map { NotesFolderWatcher.changes(in: $0) }
-            await reload(selecting: navigation.takeNoteToShow())
+            let shown = navigation.takeNoteToShow()
+            await reload(selecting: shown?.url, line: shown?.line)
             guard let changes else { return }
             for await _ in changes { await reload() }
         }
@@ -95,7 +96,8 @@ struct MainView: View {
         // If the window was closed, the `.task` above takes the note when it opens.
         .onChange(of: navigation.noteToShow) { _, url in
             guard url != nil else { return }
-            Task { await reload(selecting: navigation.takeNoteToShow()) }
+            let shown = navigation.takeNoteToShow()
+            Task { await reload(selecting: shown?.url, line: shown?.line) }
         }
         // Shows a note put back with Restore in its notification.
         .onChange(of: environment.noteTrash.lastRestored) { _, restored in
@@ -338,8 +340,9 @@ struct MainView: View {
     }
 
     /// Reloads the folder, then selects the note at `url` if given, else keeps the selection if
-    /// that note still exists, else selects the newest note.
-    private func reload(selecting url: URL? = nil) async {
+    /// that note still exists, else selects the newest note. With a `line` of the note at `url`
+    /// (see `MainNavigation.noteLineToShow`), has its view scroll to it.
+    private func reload(selecting url: URL? = nil, line: Int? = nil) async {
         await library.reload(from: environment.notesFolder.directory)
         let notes = library.notes
         // By name: the writer's URL and the directory listing's can differ in form. Notes in
@@ -351,6 +354,9 @@ struct MainView: View {
                 ? named.first(where: { resolvedPath($0.url) == resolvedPath(url) }) ?? named.first : named.first
         {
             navigation.selectedNoteID = note.id
+            if let line, let block = NoteSearchIndex.lines(of: note).dropFirst(line).first?.block {
+                navigation.blockToShow = MainNavigation.NoteBlock(noteID: note.id, index: block)
+            }
         } else if !notes.contains(where: { $0.id == navigation.selectedNoteID }) {
             navigation.selectedNoteID = notes.first?.id
         }

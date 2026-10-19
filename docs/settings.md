@@ -8,6 +8,8 @@ Press ⌘, or click the cog above the sidebar to open Settings. **Settings…** 
   it, and **Try Again** looks for it again when it can't be reached. See
   [Notes](notes.md#the-notes-folder).
 - **Ask before deleting a note**: on by default.
+- **Show notes in Spotlight**: on by default. Each line of a note shows up in Spotlight; see
+  [Searching in Spotlight](notes.md#searching-in-spotlight).
 - **Global Shortcut → Start and stop recording from any app**: on by default, with ⌃⌥⌘R. Click
   the shortcut and press new keys to change it.
 - **Startup → Launch Mixdown at login**. If macOS needs your approval, allow Mixdown in System
