@@ -32,7 +32,7 @@ struct SettingsView: View {
         switch tab {
         case .general: 440
         case .recording: 420
-        case .transcription: 650
+        case .transcription: 790
         case .notifications: 460
         case .design: 420
         }

@@ -48,7 +48,7 @@ struct MenuBarLabel: View {
         case .startingCapture: Image(systemName: "record.circle")
         case .recording: Image(systemName: "record.circle.fill")
         case .paused: Image(systemName: "pause.circle.fill")
-        case .transcribing, .summarizing: Image(systemName: "ellipsis.circle")
+        case .transcribing, .translating, .summarizing: Image(systemName: "ellipsis.circle")
         case .failed: Image(systemName: "exclamationmark.triangle")
         }
     }
@@ -85,6 +85,7 @@ struct MenuBarLabel: View {
             }
         case .transcribing(let progress):
             "Mixdown, transcribing, \(ProgressText.detail(progress: progress, remaining: remaining))"
+        case .translating: "Mixdown, translating"
         case .summarizing: "Mixdown, summarizing"
         case .failed: "Mixdown, error"
         }

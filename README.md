@@ -19,6 +19,8 @@ Everything happens on your Mac. Your audio never leaves it.
   offline models (one tells speakers apart), or Apple Speech.
 - **Summaries**: Apple Intelligence adds an overview, key points and action items, and names the
   note. Templates for 1:1s, standups and client calls.
+- **Translation**: notes in another language, translated on your Mac by Apple's translation
+  models, with the summary and title in that language too.
 - **Plain Markdown notes**: saved to a folder you choose, ready for Obsidian or any editor. Browse,
   search, pin and rename them in Mixdown.
 - **Always at hand**: a global shortcut (⌃⌥⌘R), the menu bar, and a Dynamic Island around the
@@ -36,8 +38,9 @@ recording. The note opens a few seconds later.
 
 The [docs](docs/README.md) cover every feature in detail: [recording](docs/recording.md),
 [calls](docs/calls.md), [speech models](docs/speech-models.md), [summaries](docs/summaries.md),
-[notes and their file format](docs/notes.md), [settings](docs/settings.md),
-[shortcuts](docs/keyboard-shortcuts.md) and [troubleshooting](docs/troubleshooting.md).
+[translation](docs/translation.md), [notes and their file format](docs/notes.md),
+[settings](docs/settings.md), [shortcuts](docs/keyboard-shortcuts.md) and
+[troubleshooting](docs/troubleshooting.md).
 
 ## Building from source
 

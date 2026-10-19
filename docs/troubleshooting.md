@@ -47,6 +47,12 @@ Summaries need Apple Intelligence turned on. **Settings → Transcription → Su
 they aren't available on this Mac if they aren't. If summarizing fails, the note is saved with
 just the transcript.
 
+## No translation
+
+macOS hasn't downloaded the languages for that recording; Mixdown says which ones. Download them
+from **Settings → Transcription → Translation**, or under System Settings → General → Language &
+Region → Translation Languages. See [Translation](translation.md).
+
 ## Logs
 
 When building from source, `make logs` follows Mixdown's log output. Otherwise, filter Console for

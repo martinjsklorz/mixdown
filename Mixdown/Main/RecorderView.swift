@@ -101,6 +101,16 @@ struct RecorderView: View {
                 progressBar(progress, for: coordinator)
                 summaryTemplatePicker(for: coordinator)
 
+            case .translating:
+                headline(
+                    "Translating…",
+                    detail: "\(environment.translator.info.displayName) is translating the transcript into "
+                        + "\(TranslationSettings.name(of: environment.translationLanguage ?? ""))."
+                )
+                ProgressView()
+                    .controlSize(.large)
+                summaryTemplatePicker(for: coordinator)
+
             case .summarizing:
                 headline(
                     "Summarizing…",

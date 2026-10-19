@@ -39,6 +39,8 @@ public final class RecordingCoordinator {
         case paused(recorded: TimeInterval)
         /// `progress` is 0...1 across all of the recording's sources.
         case transcribing(progress: Double)
+        /// Translating the transcript into `translationLanguage` before it's summarized.
+        case translating
         /// Summarizing the transcript before the note is saved.
         case summarizing
         case failed(message: String)
@@ -96,6 +98,12 @@ public final class RecordingCoordinator {
     public private(set) var recordingSummaryTemplate: SummaryTemplate?
     /// Whether the user picked `recordingSummaryTemplate`, so marking a call keeps it.
     @ObservationIgnored private var isRecordingSummaryTemplateChosen = false
+    /// Adds a translation of the transcript to each note, into `translationLanguage`. Summaries are
+    /// then made from the translation, so they're in that language too.
+    public var translator: (any Translator)?
+    /// The BCP 47 identifier of the language to translate notes into, e.g. `"de"`; `nil` while
+    /// translation is off. Read once the recording is transcribed.
+    public var translationLanguage: String?
     /// Changes apply to the next recording; the one in progress is transcribed with the options it
     /// started with.
     public var options: TranscriptionOptions {
@@ -186,8 +194,8 @@ public final class RecordingCoordinator {
         }
     }
 
-    /// Nothing is downloading, deleting, recording, transcribing or summarizing. An error may be
-    /// showing.
+    /// Nothing is downloading, deleting, recording, transcribing, translating or summarizing. An
+    /// error may be showing.
     public var isIdle: Bool {
         guard !isCapturing, !isDeletingModel else { return false }
         switch phase {
@@ -434,6 +442,8 @@ public final class RecordingCoordinator {
         summarizer: (any Summarizer)? = nil,
         summaryTemplate: SummaryTemplate = .general,
         callSummaryTemplate: SummaryTemplate = .general,
+        translator: (any Translator)? = nil,
+        translationLanguage: String? = nil,
         options: TranscriptionOptions = .init(),
         sourceLabels: SourceLabels = .init(),
         preferredDeviceIDs: [String] = [],
@@ -451,6 +461,8 @@ public final class RecordingCoordinator {
         self.summarizer = summarizer
         self.summaryTemplate = summaryTemplate
         self.callSummaryTemplate = callSummaryTemplate
+        self.translator = translator
+        self.translationLanguage = translationLanguage
         self.options = options
         self.sourceLabels = sourceLabels
         self.preferredDeviceIDs = preferredDeviceIDs
@@ -1028,22 +1040,24 @@ public final class RecordingCoordinator {
             } else {
                 (transcript, trackFailure) = try await transcribeSeparately(tracks, session: session)
             }
+            let (translation, translationError) = await translate(transcript)
             let template = recordingSummaryTemplate ?? (session.isCall ? callSummaryTemplate : summaryTemplate)
             // The template can't change once the summary is under way.
             recordingSummaryTemplate = nil
-            let summary = await summarize(transcript, template: template)
+            let summary = await summarize(translation ?? transcript, template: template)
             let note = Note(
                 title: NoteTitle.make(
                     for: session.startedAt,
                     summaryTitle: summary?.title,
                     isCall: session.isCall,
-                    language: summary?.language ?? transcript.language
+                    language: summary?.language ?? (translation ?? transcript).language
                 ),
                 createdAt: session.startedAt,
                 duration: duration,
                 sources: session.devices,
                 engine: engine.info,
                 transcript: transcript,
+                translation: translation,
                 summary: summary,
                 trigger: session.trigger
             )
@@ -1054,6 +1068,7 @@ public final class RecordingCoordinator {
             let messages = [
                 interruption.map(Self.interruptedMessage(for:)),
                 trackFailure.map { Self.untranscribedMessage(for: $0.devices, error: $0.error) },
+                translationError.map(Self.untranslatedMessage(for:)),
                 pendingNotes.isEmpty ? nil : Self.unsavedMessage(for: saveError ?? NoteWritingError.noFolder),
             ].compactMap { $0 }
             if messages.isEmpty {
@@ -1165,6 +1180,25 @@ public final class RecordingCoordinator {
     private func restartProgressEstimate() {
         progressEstimator = RemainingTimeEstimator()
         progressEstimator.add(progress: 0, at: now())
+    }
+
+    /// The transcript in `translationLanguage`, or `nil` if translation is off, the transcript is
+    /// empty or in that language already, or translating fails. The note is saved either way, so a
+    /// failure is returned to be mentioned alongside it rather than thrown.
+    private func translate(_ transcript: Transcript) async -> (Transcript?, (any Error)?) {
+        guard let translator, let translationLanguage, !transcript.isEmpty else { return (nil, nil) }
+        phase = .translating
+        do {
+            return (try await translator.translate(transcript, to: translationLanguage), nil)
+        } catch is CancellationError {
+            return (nil, nil)
+        } catch {
+            let name = translator.info.displayName
+            logger.error(
+                "Translating with \(name, privacy: .public) failed: \(error.localizedDescription, privacy: .public)"
+            )
+            return (nil, error)
+        }
     }
 
     /// The transcript's summary, or `nil` if there's no summarizer, it isn't available or it
@@ -1616,6 +1650,11 @@ public final class RecordingCoordinator {
     nonisolated static func untranscribedMessage(for devices: [AudioInputDevice], error: any Error) -> String {
         let names = devices.map(\.name).formatted(.list(type: .and))
         return "Couldn't transcribe \(names). \(error.localizedDescription) The note has the other inputs."
+    }
+
+    /// Shown once a note is written without the translation that was asked for.
+    nonisolated static func untranslatedMessage(for error: any Error) -> String {
+        "The note has no translation. \(error.localizedDescription)"
     }
 
     nonisolated static let tooShortMessage =

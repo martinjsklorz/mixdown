@@ -13,6 +13,7 @@ The same topics are in the app under **Help → Mixdown Help** (⌘?).
 - [Recording calls](calls.md): both sides of a call, echo, and call detection
 - [Speech models](speech-models.md): live and offline models, downloading and deleting them
 - [Summaries](summaries.md): Apple Intelligence summaries, titles and templates
+- [Translation](translation.md): notes in another language
 - [Notes](notes.md): the sidebar, working with notes, the notes folder and the file format
 - [Notifications and sounds](notifications-and-sounds.md)
 - [Settings](settings.md): every setting, tab by tab

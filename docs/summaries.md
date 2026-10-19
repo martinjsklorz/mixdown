@@ -1,7 +1,8 @@
 # Summaries
 
 With Apple Intelligence turned on, each note starts with a summary: a short overview, the key
-points and any action items, in the language of the recording.
+points and any action items, in the language of the recording (or of the
+[translation](translation.md), if you translate notes).
 
 Apple Intelligence writes it on your Mac after the transcript is ready, so the note takes a little
 longer to appear. Nothing extra is downloaded, and the transcript doesn't leave your Mac. Long

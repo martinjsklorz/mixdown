@@ -25,16 +25,17 @@ window lives in the `MixdownKit` package:
 
 | Module | What it does |
 | ------ | ------------ |
-| `MixdownCore` | Domain types and protocols, plus `RecordingCoordinator`, which runs a recording from start to saved note: captures, live or offline transcription, merging tracks, summary, writing. No dependencies beyond Foundation. |
+| `MixdownCore` | Domain types and protocols, plus `RecordingCoordinator`, which runs a recording from start to saved note: captures, live or offline transcription, merging tracks, translation, summary, writing. No dependencies beyond Foundation. |
 | `MixdownAudio` | Core Audio: microphone capture (HAL IO proc), system audio (process tap), the device list, and which apps use a microphone (for call detection). |
 | `MixdownSpeechSwift` | Nemotron, Qwen3-ASR and MOSS via [speech-swift](https://github.com/soniqo/speech-swift) (MLX). |
 | `MixdownAppleSpeech` | Apple's on-device model via `SpeechAnalyzer`. |
 | `MixdownFoundationModels` | Summaries and titles via Apple Intelligence. |
+| `MixdownAppleTranslation` | Translating transcripts with Apple's on-device models via the Translation framework. |
 | `MixdownNotes` | Rendering notes to Markdown, writing them, and reading the notes folder back. |
 
-The speech engines sit behind one protocol (`TranscriptionEngine`), and so does the summarizer
-(`Summarizer`). Speech models from any engine are listed in `Mixdown/App/TranscriptionModel.swift`;
-`Mixdown/App/AppEnvironment.swift` wires everything together.
+The speech engines sit behind one protocol (`TranscriptionEngine`), and so do the summarizer
+(`Summarizer`) and the translator (`Translator`). Speech models from any engine are listed in
+`Mixdown/App/TranscriptionModel.swift`; `Mixdown/App/AppEnvironment.swift` wires everything together.
 
 ## In-app Help
 

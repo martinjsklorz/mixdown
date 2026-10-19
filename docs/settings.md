@@ -29,6 +29,9 @@ Press ⌘, or click the cog above the sidebar to open Settings. **Settings…** 
   record both.
 - **Summary**: **Summarize recordings**, and the templates for **Manual recordings** and
   **Detected calls**. See [Summaries](summaries.md).
+- **Translation**: **Translate to** a language, or **None**, and whether macOS has downloaded the
+  languages to translate your recordings, with a **Download** button. See
+  [Translation](translation.md).
 
 ## Notifications
 

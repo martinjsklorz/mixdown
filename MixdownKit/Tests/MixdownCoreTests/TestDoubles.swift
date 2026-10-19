@@ -501,3 +501,25 @@ final class MockSummarizer: Summarizer {
         return summary
     }
 }
+
+/// Returns `translation`, or throws `error`, and records the transcripts and languages it was given.
+final class MockTranslator: Translator {
+    let info = TranslatorInfo(id: "mock", displayName: "Mock Translator")
+    private let translation: Transcript?
+    private let error: (any Error)?
+    private let received = LockedValue<[(Transcript, String)]>([])
+
+    init(translation: Transcript? = nil, error: (any Error)? = nil) {
+        self.translation = translation
+        self.error = error
+    }
+
+    var receivedTranscripts: [Transcript] { received.current.map(\.0) }
+    var receivedLanguages: [String] { received.current.map(\.1) }
+
+    func translate(_ transcript: Transcript, to target: String) async throws -> Transcript? {
+        received.update { $0.append((transcript, target)) }
+        if let error { throw error }
+        return translation
+    }
+}

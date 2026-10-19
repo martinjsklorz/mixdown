@@ -101,6 +101,7 @@ The team went through the release timeline for the weekly sync.
 | `trigger` | `manual` for recordings you started (including from a call notification), `automatic` for calls recorded automatically |
 | `language` | The recording's language; left out when the model doesn't report one |
 | `speakers` | The speaker labels used in the transcript |
+| `translation_language` | The language of the `## Translation` section, when the note was translated (see [Translation](translation.md)) |
 | `pinned` | `true` when the note is pinned |
 | `tags` | Always includes `mixdown` |
 
