@@ -118,8 +118,11 @@ struct RecorderView: View {
                     .symbolRenderingMode(.multicolor)
                     .multilineTextAlignment(.center)
                 Button("Dismiss") { coordinator.dismissError() }
-                // After a failed download, recording still needs the model.
-                if coordinator.isModelDownloaded {
+                // Recording still needs a notes folder, such as after the note couldn't be saved,
+                // and the model, after a failed download.
+                if environment.notesFolder.directory == nil {
+                    notesFolderButtons
+                } else if coordinator.isModelDownloaded {
                     startButton(for: coordinator)
                 } else {
                     downloadButton(for: coordinator)
@@ -188,13 +191,18 @@ struct RecorderView: View {
     @ViewBuilder
     private var notesFolderPrompt: some View {
         let notesFolder = environment.notesFolder
-        let isUnavailable = notesFolder.status != .notChosen
-
         headline(
             NotesFolderWarning.title(for: notesFolder.status) ?? "",
             detail: NotesFolderWarning.message(for: notesFolder.status, hasLegacyNotes: notesFolder.hasLegacyNotes)
         )
-        HStack {
+        notesFolderButtons
+    }
+
+    /// Choose Folder, or for a folder that can't be reached, Choose Another Folder and Try Again.
+    private var notesFolderButtons: some View {
+        let notesFolder = environment.notesFolder
+        let isUnavailable = notesFolder.status != .notChosen
+        return HStack {
             Button(isUnavailable ? "Choose Another Folder…" : "Choose Folder…", systemImage: "folder") {
                 environment.chooseNotesFolder()
             }
