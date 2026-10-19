@@ -245,8 +245,9 @@ private struct LiveTextLine: View {
         .font(.system(size: 12))
         .lineLimit(1)
         .fixedSize()
-        // Overflows to the left, keeping the newest word in sight.
-        .frame(maxWidth: .infinity, alignment: .trailing)
+        // Overflows to the left, keeping the newest word in sight. Without a minimum width, the
+        // frame would grow to the words' width and be centered, cutting off the newest words.
+        .frame(minWidth: 0, maxWidth: .infinity, alignment: .trailing)
         .animation(.easeOut(duration: 0.3), value: transcript.revision)
         .clipped()
         .mask {
