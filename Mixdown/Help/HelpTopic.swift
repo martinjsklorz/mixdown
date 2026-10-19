@@ -136,6 +136,12 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
 
             Do the same again to stop. Recording carries on if you close the window.
 
+            ## Pause
+
+            Click the pause button beside Stop, or choose **Recording → Pause Recording** (⇧⌘P). \
+            While paused, Mixdown records nothing, and macOS no longer shows the microphone in use. \
+            Resume the same way to carry on in the same note; the paused time is left out of it.
+
             ## Inputs
 
             Pick inputs in the **Recording** menu, in the menu bar, or under **Settings → \

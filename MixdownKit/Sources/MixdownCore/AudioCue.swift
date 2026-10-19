@@ -5,6 +5,8 @@ import Foundation
 public enum AudioCue: String, CaseIterable, Identifiable, Sendable {
     case recordingStarted
     case recordingStopped
+    case recordingPaused
+    case recordingResumed
     case noteReady
     /// Recording couldn't start or stopped early, or the model or note couldn't be finished.
     case failed
@@ -22,10 +24,12 @@ public enum AudioCue: String, CaseIterable, Identifiable, Sendable {
     ) -> AudioCue? {
         guard old != new else { return nil }
         switch (old, new) {
-        case (.recording, .recording): return nil
+        case (.recording, .recording), (.paused, .paused): return nil
+        case (.recording, .paused): return .recordingPaused
+        case (.paused, .recording): return .recordingResumed
         case (_, .recording): return .recordingStarted
         case (_, .failed): return .failed
-        case (.recording, _): return .recordingStopped
+        case (.recording, _), (.paused, _): return .recordingStopped
         default: return nil
         }
     }

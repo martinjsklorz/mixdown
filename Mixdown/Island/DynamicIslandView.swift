@@ -100,18 +100,27 @@ extension View {
     }
 }
 
-/// A pulsing red dot and the time recorded so far.
+/// A pulsing red dot and the time recorded so far; a pause sign instead while paused.
 private struct ElapsedWing: View {
     let environment: AppEnvironment
     let side: DynamicIsland.Side
 
     var body: some View {
         let elapsed = environment.recordingElapsed ?? 0
+        let isPaused = environment.coordinator.isPaused
+        let state = isPaused ? "Recording paused" : "Recording"
         HStack(spacing: 5) {
-            Image(systemName: "circle.fill")
-                .font(.system(size: 8))
-                .foregroundStyle(.red)
-                .symbolEffect(.pulse)
+            Group {
+                if isPaused {
+                    Image(systemName: "pause.fill")
+                        .foregroundStyle(.white.opacity(0.75))
+                } else {
+                    Image(systemName: "circle.fill")
+                        .foregroundStyle(.red)
+                        .symbolEffect(.pulse)
+                }
+            }
+            .font(.system(size: 8))
             Text(MenuBarLabel.elapsedText(elapsed))
                 .font(.system(size: 13, weight: .semibold))
                 .monospacedDigit()
@@ -122,7 +131,7 @@ private struct ElapsedWing: View {
         .fixedSize()
         .wingPadding(side)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Recording, \(Duration.seconds(elapsed).formatted(.units(width: .wide)))")
+        .accessibilityLabel("\(state), \(Duration.seconds(elapsed).formatted(.units(width: .wide)))")
     }
 }
 

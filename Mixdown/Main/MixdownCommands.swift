@@ -133,6 +133,11 @@ private struct RecordingMenuItems: View {
         }
         .keyboardShortcut("r")
         .disabled(!coordinator.canStartRecording && !coordinator.canStopRecording)
+        Button(coordinator.isPaused ? "Resume Recording" : "Pause Recording") {
+            Task { await coordinator.togglePause() }
+        }
+        .keyboardShortcut("p", modifiers: [.command, .shift])
+        .disabled(!coordinator.isRecording)
 
         if case .preparingModel = coordinator.phase {
             Button("Cancel Download") { coordinator.cancelPreparation() }

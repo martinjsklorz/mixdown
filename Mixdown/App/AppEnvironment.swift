@@ -22,7 +22,7 @@ final class AppEnvironment {
     /// Created at launch, as it handles buttons on notifications from an earlier run.
     private let notificationResponder: NotificationResponder
 
-    /// Whole seconds since the current recording started, advanced every second; `nil` unless
+    /// Whole seconds recorded so far, advanced every second and held while paused; `nil` unless
     /// recording. Ticked here because the menu bar label only redraws on observed changes; it
     /// doesn't run `TimelineView` or `.task`.
     private(set) var recordingElapsed: Int?
@@ -145,28 +145,39 @@ final class AppEnvironment {
         }
     }
 
-    /// Starts or stops `recordingClock` as the phase changes. Re-registers itself after every
-    /// change, including the coordinator being replaced.
+    /// Starts or stops `recordingClock` as the phase changes, and holds it while paused.
+    /// Re-registers itself after every change, including the coordinator being replaced.
     private func observeRecording() {
         let phase = withObservationTracking {
             coordinator.phase
         } onChange: { [weak self] in
             Task { @MainActor in self?.observeRecording() }
         }
-        // Neither started nor stopped yet; the call prompt is waiting for the recording to start.
-        if phase == .startingCapture { return }
-        guard case .recording(let startedAt) = phase else {
-            callPrompt?.recordingDidStop()
-            recordingClock?.cancel()
-            recordingClock = nil
-            recordingClockStart = nil
-            recordingElapsed = nil
+        switch phase {
+        case .startingCapture:
+            // Neither started nor stopped yet; the call prompt is waiting for the recording to start.
             return
+        case .paused(let recorded):
+            // The same recording carries on, so the call prompt isn't told.
+            stopRecordingClock()
+            recordingElapsed = Int(recorded)
+        case .recording(let startedAt):
+            guard startedAt != recordingClockStart else { return }
+            // Set while recording or paused, so resuming isn't taken for a new recording.
+            if recordingElapsed == nil { callPrompt?.recordingDidStart() }
+            startRecordingClock(from: startedAt)
+        default:
+            callPrompt?.recordingDidStop()
+            stopRecordingClock()
+            recordingElapsed = nil
         }
-        guard startedAt != recordingClockStart else { return }
-        callPrompt?.recordingDidStart()
+    }
+
+    /// Ticks `recordingElapsed` every second from `startedAt`.
+    private func startRecordingClock(from startedAt: Date) {
         recordingClock?.cancel()
         recordingClockStart = startedAt
+        recordingElapsed = Int(max(Date.now.timeIntervalSince(startedAt), 0))
         recordingClock = Task { [weak self] in
             while !Task.isCancelled {
                 let elapsed = max(Date.now.timeIntervalSince(startedAt), 0)
@@ -175,6 +186,12 @@ final class AppEnvironment {
                 try? await Task.sleep(for: .seconds(1 - elapsed.truncatingRemainder(dividingBy: 1)))
             }
         }
+    }
+
+    private func stopRecordingClock() {
+        recordingClock?.cancel()
+        recordingClock = nil
+        recordingClockStart = nil
     }
 
     /// Shows the Dynamic Island while recording, if it's turned on, and lays it out again when its

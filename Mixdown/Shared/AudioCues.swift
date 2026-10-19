@@ -41,6 +41,8 @@ extension AudioCue {
         switch self {
         case .recordingStarted: "Recording starts"
         case .recordingStopped: "Recording stops"
+        case .recordingPaused: "Recording pauses"
+        case .recordingResumed: "Recording resumes"
         case .noteReady: "Note is ready"
         case .failed: "Something goes wrong"
         }
@@ -51,6 +53,8 @@ extension AudioCue {
         switch self {
         case .recordingStarted: "Tink"
         case .recordingStopped: "Pop"
+        case .recordingPaused: "Bottle"
+        case .recordingResumed: "Morse"
         case .noteReady: "Glass"
         case .failed: "Basso"
         }

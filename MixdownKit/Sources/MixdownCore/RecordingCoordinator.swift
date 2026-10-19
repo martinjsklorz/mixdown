@@ -13,6 +13,10 @@ import os
 /// out, is replaced by the default microphone, and the user can switch microphones or turn
 /// system audio on and off. Each kind of input keeps one track, whichever device it came from.
 ///
+/// A recording can be paused: its inputs stop, so nothing is recorded and macOS shows no
+/// microphone in use, and start again on resume. The paused time is left out of the audio, so
+/// the note's duration and times count only what was recorded.
+///
 /// Engines that transcribe live instead turn each input into text while it's recorded, shown as
 /// `liveTranscript`, and the note is written from that text. Their audio isn't kept, so a long
 /// recording takes no more memory than a short one.
@@ -28,7 +32,11 @@ public final class RecordingCoordinator {
         case preparingModel(progress: Double)
         /// Starting the captures, which waits on the user while macOS asks for permission to record.
         case startingCapture
+        /// `startedAt` moves later by the time spent paused, so the time since it is the time
+        /// recorded. `recordingStartedAt` is when the recording really started.
         case recording(startedAt: Date)
+        /// Recording, but paused after `recorded` seconds. Nothing is captured until it resumes.
+        case paused(recorded: TimeInterval)
         /// `progress` is 0...1 across all of the recording's sources.
         case transcribing(progress: Double)
         /// Summarizing the transcript before the note is saved.
@@ -52,6 +60,8 @@ public final class RecordingCoordinator {
     public private(set) var devices: [AudioInputDevice] = []
     /// Inputs the running recording captures, or the next one will, in `devices` order.
     public private(set) var selectedDevices: [AudioInputDevice] = []
+    /// When the recording in progress started, paused or not; `nil` when there's none.
+    public private(set) var recordingStartedAt: Date?
     /// Location of the most recently written note.
     public private(set) var lastNoteURL: URL?
     /// Whether the current recording is transcribed live. Stays true until its note is written.
@@ -118,11 +128,21 @@ public final class RecordingCoordinator {
     /// it, so `cancelPreparation()` can't stop it.
     public private(set) var isPreparingModelForRecording = false
 
+    /// A recording is under way, paused or not.
     public var isRecording: Bool {
         switch phase {
-        case .recording: true
+        case .recording, .paused: true
         default: false
         }
+    }
+
+    public var isPaused: Bool {
+        if case .paused = phase { true } else { false }
+    }
+
+    /// Recording, and not paused.
+    public var canPauseRecording: Bool {
+        if case .recording = phase { true } else { false }
     }
 
     /// Recording, or starting to. Stopping while the captures start ends the recording as soon as
@@ -168,6 +188,7 @@ public final class RecordingCoordinator {
     private let engine: any TranscriptionEngine
     private let playbackMonitor: (any AudioPlaybackMonitoring)?
     private let now: @Sendable () -> Date
+    private let hostClock: @Sendable () -> TimeInterval
     private let logger = Logger(subsystem: "app.mixdown", category: "coordinator")
 
     /// The user's choice of inputs, by ID. May hold `AudioInputDevice.defaultMicrophoneID` and
@@ -217,6 +238,16 @@ public final class RecordingCoordinator {
         /// Inputs whose device went away and that are waiting for the system to pick a new
         /// default. The recording doesn't end for lack of inputs while there are any.
         var pendingReplacements = 0
+        /// When the recording was paused, on the host clock; `nil` unless paused, or resumed and
+        /// waiting for its first input to start again.
+        var pausedAt: TimeInterval?
+        /// Whether the recording is paused. No input starts while it is.
+        var isPaused = false
+        /// Stops the inputs for a pause; resuming waits for it.
+        var pausing: Task<Void, Never>?
+        /// The time spent paused so far, on the host clock. Taken off the host time of everything
+        /// captured afterwards, which leaves the pauses out of the tracks.
+        var pausedDuration: TimeInterval = 0
 
         init(startedAt: Date) {
             self.startedAt = startedAt
@@ -350,6 +381,8 @@ public final class RecordingCoordinator {
     ///   - playbackMonitor: Tells silent system audio with nothing playing from a missing permission.
     ///     Without one, system audio is flagged like a microphone.
     ///   - now: Clock used for recording start times. Injectable for tests.
+    ///   - hostClock: Seconds on the clock of `AudioChunk.hostTime`, to measure pauses with.
+    ///     `systemUptime` counts `mach_absolute_time` on macOS. Injectable for tests.
     public init(
         deviceProvider: any AudioDeviceProvider,
         captureFactory: any AudioCaptureFactory,
@@ -362,7 +395,8 @@ public final class RecordingCoordinator {
         sourceLabels: SourceLabels = .init(),
         preferredDeviceIDs: [String] = [],
         playbackMonitor: (any AudioPlaybackMonitoring)? = nil,
-        now: @escaping @Sendable () -> Date = { Date() }
+        now: @escaping @Sendable () -> Date = { Date() },
+        hostClock: @escaping @Sendable () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     ) {
         self.deviceProvider = deviceProvider
         self.captureFactory = captureFactory
@@ -378,6 +412,7 @@ public final class RecordingCoordinator {
         self.preferredDeviceIDs = preferredDeviceIDs
         self.playbackMonitor = playbackMonitor
         self.now = now
+        self.hostClock = hostClock
     }
 
     // MARK: - Devices
@@ -443,6 +478,8 @@ public final class RecordingCoordinator {
         if !resolved.isEmpty, resolved != selectedDevices {
             selectedDevices = resolved
         }
+        // A paused recording records from the selection once it resumes.
+        guard !session.isPaused else { return }
         guard Set(selectedDevices.map(\.id)) != Set(session.activeDevices.map(\.id)) else { return }
         if session.isSyncing {
             // Set right away, so the running sync can't decide that no input is left first.
@@ -600,6 +637,7 @@ public final class RecordingCoordinator {
 
         let session = Session(startedAt: now())
         self.session = session
+        recordingStartedAt = session.startedAt
         recordingSummaryTemplate = summaryTemplate
         isRecordingSummaryTemplateChosen = false
         if engine.transcribesLive {
@@ -632,6 +670,12 @@ public final class RecordingCoordinator {
     /// Makes `started` the lane's current capture: drains its stream into a track, watches for it
     /// ending on its own, and checks that it isn't silent. With a live engine, also transcribes it.
     private func attach(_ started: StartedCapture, to lane: Lane, in session: Session) {
+        // The first input to start again after a pause ends it.
+        if let pausedAt = session.pausedAt {
+            session.pausedDuration += max(hostClock() - pausedAt, 0)
+            session.pausedAt = nil
+        }
+        let hostTimeShift = session.pausedDuration
         let stream = started.stream
         let deviceID = started.device.id
         let sessionID = session.id
@@ -648,7 +692,16 @@ public final class RecordingCoordinator {
                 feed?.continuation.finish()
             }
             do {
-                for try await chunk in stream {
+                for try await captured in stream {
+                    // Moved back by the time spent paused, so the pause leaves no gap to fill.
+                    let chunk =
+                        hostTimeShift > 0
+                        ? AudioChunk(
+                            samples: captured.samples,
+                            startTime: captured.startTime,
+                            hostTime: captured.hostTime.map { $0 - hostTimeShift }
+                        )
+                        : captured
                     // Including silence filled into a gap, so the live session's clock stays in step
                     // with the track's.
                     let added = track.append(chunk)
@@ -803,6 +856,7 @@ public final class RecordingCoordinator {
         guard self.session === session else { return }
         // Clearing the session first makes repeated stops and the end-of-stream handlers no-ops.
         self.session = nil
+        recordingStartedAt = nil
         resetLevels()
         let lanes = await endCaptures(of: session)
         let liveError = await finishLiveTranscription(of: session)
@@ -1172,6 +1226,56 @@ public final class RecordingCoordinator {
         }
     }
 
+    /// Pauses the recording: its inputs stop until `resumeRecording()`. Ignored unless recording
+    /// and not paused.
+    public func pauseRecording() async {
+        guard let session, case .recording(let startedAt) = phase else { return }
+        session.isPaused = true
+        // Already set if no input started again since the last pause, which then still counts.
+        session.pausedAt = session.pausedAt ?? hostClock()
+        phase = .paused(recorded: max(now().timeIntervalSince(startedAt), 0))
+        // Cleared first, so the inputs ending isn't taken for them going away.
+        let running = session.lanes.compactMap(\.current)
+        for lane in session.lanes {
+            lane.current = nil
+        }
+        for capture in running {
+            clearLevel(of: capture.device)
+        }
+        let pausing = Task {
+            await withTaskGroup(of: Void.self) { group in
+                for capture in running.map(\.capture) {
+                    group.addTask { await capture.stop() }
+                }
+            }
+        }
+        session.pausing = pausing
+        await pausing.value
+        logger.info("Recording paused")
+    }
+
+    /// Records again from the selected inputs, which may have changed while paused. The recording
+    /// ends, keeping what it has, if none of them starts. Ignored unless paused.
+    public func resumeRecording() async {
+        guard let session, case .paused(let recorded) = phase else { return }
+        session.isPaused = false
+        phase = .recording(startedAt: now().addingTimeInterval(-recorded))
+        logger.info("Recording resumed")
+        // An input may not start again on a device it hasn't stopped on yet.
+        await session.pausing?.value
+        session.pausing = nil
+        guard self.session === session, !session.isPaused else { return }
+        await syncCaptures(of: session)
+    }
+
+    public func togglePause() async {
+        if isPaused {
+            await resumeRecording()
+        } else {
+            await pauseRecording()
+        }
+    }
+
     /// Clears a `.failed` phase.
     public func dismissError() {
         if case .failed = phase {
@@ -1223,7 +1327,8 @@ public final class RecordingCoordinator {
     /// Starts and stops captures until `session` records `selectedDevices`, then ends the
     /// recording if no input is left. Calls made while it runs make it go around once more.
     private func syncCaptures(of session: Session) async {
-        guard self.session === session else { return }
+        // Resuming syncs again.
+        guard self.session === session, !session.isPaused else { return }
         guard !session.isSyncing else {
             session.needsSync = true
             return
@@ -1232,10 +1337,12 @@ public final class RecordingCoordinator {
         repeat {
             session.needsSync = false
             await applySelection(to: session)
-        } while session.needsSync && self.session === session
+        } while session.needsSync && self.session === session && !session.isPaused
         session.isSyncing = false
 
-        guard self.session === session, session.activeDevices.isEmpty, session.pendingReplacements == 0 else { return }
+        guard self.session === session, !session.isPaused, session.activeDevices.isEmpty,
+            session.pendingReplacements == 0
+        else { return }
         logger.error("No input left to record from")
         await end(session, interruption: session.lastCaptureError)
     }
@@ -1255,7 +1362,7 @@ public final class RecordingCoordinator {
         }
 
         for device in wanted where !session.activeDevices.contains(where: { $0.id == device.id }) {
-            guard self.session === session else { return }
+            guard self.session === session, !session.isPaused else { return }
             let started: StartedCapture
             do {
                 let capture = try captureFactory.makeCapture(for: device)
@@ -1270,7 +1377,8 @@ public final class RecordingCoordinator {
                 reconcileSelection()
                 continue
             }
-            guard self.session === session else {
+            // Paused while it started.
+            guard self.session === session, !session.isPaused else {
                 await started.capture.stop()
                 return
             }

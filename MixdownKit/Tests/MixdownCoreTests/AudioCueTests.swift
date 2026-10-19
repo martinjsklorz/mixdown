@@ -14,6 +14,15 @@ struct AudioCueTests {
         #expect(AudioCue.cue(from: started, to: .idle) == .recordingStopped)
     }
 
+    @Test func pausingAndResumingAreCued() {
+        let paused = RecordingCoordinator.Phase.paused(recorded: 5)
+        #expect(AudioCue.cue(from: started, to: paused) == .recordingPaused)
+        #expect(AudioCue.cue(from: paused, to: started) == .recordingResumed)
+        #expect(AudioCue.cue(from: paused, to: .transcribing(progress: 0)) == .recordingStopped)
+        #expect(AudioCue.cue(from: paused, to: .failed(message: "Unplugged")) == .failed)
+        #expect(AudioCue.cue(from: paused, to: paused) == nil)
+    }
+
     @Test func errorsAreCued() {
         // Starting failed, e.g. without microphone permission.
         #expect(AudioCue.cue(from: .idle, to: .failed(message: "Denied")) == .failed)

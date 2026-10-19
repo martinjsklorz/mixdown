@@ -438,6 +438,10 @@ private struct RecorderStatusBadge: View {
             Text(startedAt, style: .timer)
                 .monospacedDigit()
                 .foregroundStyle(.red)
+        case .paused(let recorded):
+            Text(MenuBarLabel.elapsedText(Int(recorded)))
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
         case .preparingModel(let progress), .transcribing(let progress):
             Text(progress.formatted(.percent.precision(.fractionLength(0))))
                 .monospacedDigit()

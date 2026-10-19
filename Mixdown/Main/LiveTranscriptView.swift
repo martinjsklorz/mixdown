@@ -41,7 +41,7 @@ struct LiveTranscriptView: View {
             }
             .overlay {
                 if transcript.isEmpty, coordinator.isRecording {
-                    Text("Listening…")
+                    Text(coordinator.isPaused ? "Paused" : "Listening…")
                         .foregroundStyle(.secondary)
                 }
             }

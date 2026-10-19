@@ -2,8 +2,8 @@ import MixdownCore
 import SwiftUI
 
 /// The status item: an icon reflecting the coordinator's phase, plus the time left while a
-/// model downloads or a recording is transcribed, or the time elapsed while recording (unless the
-/// Dynamic Island shows it).
+/// model downloads or a recording is transcribed, or the time recorded while recording or paused
+/// (unless the Dynamic Island shows it).
 struct MenuBarLabel: View {
     let environment: AppEnvironment
 
@@ -24,7 +24,7 @@ struct MenuBarLabel: View {
             } else if case .transcribing(let progress) = phase {
                 Text(ProgressText.compact(progress: progress, remaining: remaining))
                     .monospacedDigit()
-            } else if case .recording = phase, let recordingElapsed {
+            } else if coordinator.isRecording, let recordingElapsed {
                 Text(Self.elapsedText(recordingElapsed))
                     .monospacedDigit()
             }
@@ -47,6 +47,7 @@ struct MenuBarLabel: View {
         case .preparingModel: Image(systemName: "arrow.down.circle")
         case .startingCapture: Image(systemName: "record.circle")
         case .recording: Image(systemName: "record.circle.fill")
+        case .paused: Image(systemName: "pause.circle.fill")
         case .transcribing, .summarizing: Image(systemName: "ellipsis.circle")
         case .failed: Image(systemName: "exclamationmark.triangle")
         }
@@ -75,6 +76,12 @@ struct MenuBarLabel: View {
                 "Mixdown, recording, \(Duration.seconds(elapsed).formatted(.units(width: .wide)))"
             } else {
                 "Mixdown, recording"
+            }
+        case .paused:
+            if let elapsed {
+                "Mixdown, recording paused, \(Duration.seconds(elapsed).formatted(.units(width: .wide))) recorded"
+            } else {
+                "Mixdown, recording paused"
             }
         case .transcribing(let progress):
             "Mixdown, transcribing, \(ProgressText.detail(progress: progress, remaining: remaining))"

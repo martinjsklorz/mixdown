@@ -16,9 +16,16 @@ struct MenuBarContent: View {
         }
         .keyboardShortcut("r")
         .disabled(!coordinator.canStartRecording && !coordinator.canStopRecording)
+        if coordinator.isRecording {
+            Button(coordinator.isPaused ? "Resume Recording" : "Pause Recording") {
+                Task { await coordinator.togglePause() }
+            }
+            .keyboardShortcut("p", modifiers: [.command, .shift])
+        }
 
         RecordingStatusView(
             phase: coordinator.phase,
+            recordingStartedAt: coordinator.recordingStartedAt,
             engineName: coordinator.engineInfo.displayName,
             isModelDownloaded: coordinator.isModelDownloaded,
             notesFolder: environment.notesFolder.status,

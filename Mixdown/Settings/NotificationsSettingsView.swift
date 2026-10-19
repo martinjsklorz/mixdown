@@ -2,7 +2,7 @@ import AppKit
 import MixdownCore
 import SwiftUI
 
-/// Notifications and the sounds that mark recording starting, stopping and finishing.
+/// Notifications and the sounds that mark recording starting, pausing, stopping and finishing.
 struct NotificationsSettingsView: View {
     @AppStorage(AppSettings.Key.showsNotifications) private var showsNotifications = true
     @AppStorage(AppSettings.Key.playsSounds) private var playsSounds = true
