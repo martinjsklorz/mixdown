@@ -1670,11 +1670,15 @@ struct RecordingCoordinatorTests {
         let live = MockLiveSession(updatesBySampleCount: [
             32_000: LiveTranscriptUpdate(words: [
                 LiveWord(text: "See", start: 0.1, end: 0.3),
-                LiveWord(text: "you.", start: 0.4, end: 0.6),
+                LiveWord(text: "you", start: 0.35, end: 0.55),
+                LiveWord(text: "next", start: 0.6, end: 0.8),
+                LiveWord(text: "week.", start: 0.85, end: 1.05),
             ]),
             16_000: LiveTranscriptUpdate(words: [
                 LiveWord(text: "See", start: 0, end: 0.2),
-                LiveWord(text: "you.", start: 0.3, end: 0.5),
+                LiveWord(text: "you", start: 0.25, end: 0.45),
+                LiveWord(text: "next", start: 0.5, end: 0.7),
+                LiveWord(text: "week.", start: 0.75, end: 0.95),
             ]),
         ])
         let writer = InMemoryNoteWriter()
@@ -1696,7 +1700,7 @@ struct RecordingCoordinatorTests {
         // However the two inputs' lines interleaved on screen.
         #expect(
             await writer.notes.first?.transcript.segments == [
-                TranscriptSegment(start: 0, end: 0.5, text: "See you.", speaker: "Others")
+                TranscriptSegment(start: 0, end: 0.95, text: "See you next week.", speaker: "Others")
             ]
         )
     }

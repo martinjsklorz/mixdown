@@ -50,12 +50,12 @@ public struct SourceTranscript: Sendable, Equatable {
 
 /// Combines per-source transcripts into one conversation.
 public enum TranscriptMerger {
-    /// Microphone segments shorter than this are never treated as echo: replies like "Yes." or
-    /// "Sounds good." are too common to tell apart from what the others said.
-    static let echoMinimumWords = 4
-    /// Share of each of two segments that must overlap the other in time for them to be compared
-    /// at all.
-    static let echoTimeOverlap = 0.5
+    /// Microphone segments shorter than this many words are never treated as echo: replies like
+    /// "Yes." or "Sounds good." are too common to tell apart from what the others said. Text
+    /// without spaces between words is weighed by characters, see `words(in:)`.
+    static let echoMinimumWords = 4.0
+    /// How far apart in time the two engines may place the same speech, in seconds.
+    static let echoDrift = 1.0
     /// Share of a microphone segment's word pairs that must also appear, in the same order, in
     /// overlapping system audio for it to be dropped as echo.
     static let echoWordShare = 0.6
@@ -97,13 +97,18 @@ public enum TranscriptMerger {
     /// Whether most of `segment`'s word pairs were said, in the same order, in `reference` at the
     /// same time.
     static func isEcho(_ segment: TranscriptSegment, of reference: [TranscriptSegment]) -> Bool {
-        let words = normalizedWords(segment.text)
-        guard words.count >= echoMinimumWords else { return false }
-        let pairs = wordPairs(words)
+        let spoken = words(in: segment.text)
+        guard spoken.reduce(0, { $0 + $1.weight }) >= echoMinimumWords else { return false }
+        let pairs = wordPairs(spoken)
 
+        // Only the words the others said around the same time, so a short reply isn't compared
+        // with a long stretch of them talking, and echo the engines cut up differently still
+        // lines up.
+        let from = segment.start - echoDrift
+        let to = segment.end + echoDrift
         var available: [WordPair: Int] = [:]
-        for other in reference where overlaps(segment, other) {
-            for pair in wordPairs(normalizedWords(other.text)) {
+        for other in reference where other.start <= to && other.end >= from {
+            for pair in wordPairs(words(of: other, saidFrom: from, to: to)) {
                 available[pair, default: 0] += 1
             }
         }
@@ -117,13 +122,28 @@ public enum TranscriptMerger {
         return Double(matched) / Double(pairs.count) >= echoWordShare
     }
 
-    /// Whether `a` and `b` overlap for at least `echoTimeOverlap` of each one's length, so a short
-    /// reply isn't compared with a long stretch of the others talking around it.
-    static func overlaps(_ a: TranscriptSegment, _ b: TranscriptSegment) -> Bool {
-        let overlap = min(a.end, b.end) - max(a.start, b.start)
-        guard overlap >= 0 else { return false }
-        let longer = max(a.end - a.start, b.end - b.start)
-        return overlap >= longer * echoTimeOverlap
+    /// The words of `segment` that were probably said between `from` and `to`. Engines only time
+    /// whole segments, so this assumes an even pace through each one.
+    static func words(of segment: TranscriptSegment, saidFrom from: TimeInterval, to: TimeInterval) -> [Word] {
+        let spoken = words(in: segment.text)
+        let total = spoken.reduce(0) { $0 + $1.weight }
+        guard total > 0 else { return [] }
+        let secondsPerWeight = max(segment.end - segment.start, 0) / total
+        var said: [Word] = []
+        var position = 0.0
+        for word in spoken {
+            let middle = segment.start + (position + word.weight / 2) * secondsPerWeight
+            if middle >= from && middle <= to { said.append(word) }
+            position += word.weight
+        }
+        return said
+    }
+
+    struct Word: Equatable {
+        var text: Substring
+        /// How much of a typical word this is: 1, or less for a single character of a script
+        /// written without spaces.
+        var weight: Double
     }
 
     private struct WordPair: Hashable {
@@ -132,15 +152,55 @@ public enum TranscriptMerger {
     }
 
     /// Each word with the one after it, so matches have to keep the word order.
-    private static func wordPairs(_ words: [Substring]) -> [WordPair] {
-        zip(words, words.dropFirst()).map { WordPair(first: $0, second: $1) }
+    private static func wordPairs(_ words: [Word]) -> [WordPair] {
+        zip(words, words.dropFirst()).map { WordPair(first: $0.text, second: $1.text) }
     }
 
     /// Lowercased words without punctuation. Apostrophes are dropped rather than split on, so
     /// "it's" counts as one word.
-    static func normalizedWords(_ text: String) -> [Substring] {
-        text.lowercased()
-            .filter { $0 != "'" && $0 != "\u{2019}" }
-            .split { !$0.isLetter && !$0.isNumber }
+    ///
+    /// Chinese, Japanese, Thai and other scripts written without spaces can't be split into words
+    /// without a dictionary, so each of their characters is a word of its own, weighted by how
+    /// many of them a word typically takes.
+    static func words(in text: String) -> [Word] {
+        let text = text.lowercased().filter { $0 != "'" && $0 != "\u{2019}" }
+        var words: [Word] = []
+        var wordStart: String.Index?
+        for index in text.indices {
+            let character = text[index]
+            let characterWeight = unspacedWeight(of: character)
+            if characterWeight == nil, character.isLetter || character.isNumber {
+                if wordStart == nil { wordStart = index }
+                continue
+            }
+            if let start = wordStart {
+                words.append(Word(text: text[start..<index], weight: 1))
+                wordStart = nil
+            }
+            if let characterWeight {
+                words.append(Word(text: text[index...index], weight: characterWeight))
+            }
+        }
+        if let start = wordStart {
+            words.append(Word(text: text[start...], weight: 1))
+        }
+        return words
+    }
+
+    /// The weight of one character of a script written without spaces, or `nil` for any other
+    /// character.
+    private static func unspacedWeight(of character: Character) -> Double? {
+        guard let scalar = character.unicodeScalars.first else { return nil }
+        switch scalar.value {
+        // Chinese characters, also used in Japanese: a word is usually two.
+        case 0x3005...0x3007, 0x3400...0x4DBF, 0x4E00...0x9FFF, 0xF900...0xFAFF, 0x20000...0x323AF:
+            return 1 / 2
+        // Japanese kana, then Thai, Lao, Myanmar and Khmer: a word is usually three or more.
+        case 0x3040...0x30FF, 0x31F0...0x31FF, 0xFF66...0xFF9F,
+            0x0E00...0x0EFF, 0x1000...0x109F, 0x1780...0x17FF:
+            return 1 / 3
+        default:
+            return nil
+        }
     }
 }
