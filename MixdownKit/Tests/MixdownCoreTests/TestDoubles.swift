@@ -206,6 +206,7 @@ actor MockEngine: TranscriptionEngine {
     private let liveError: (any Error)?
     private nonisolated let downloaded: LockedValue<Bool>
     private(set) var receivedSampleCounts: [Int] = []
+    private(set) var receivedSamples: [[Float]] = []
     /// The `progress` callback of each `transcribe` call, by sample count, to report more later.
     private(set) var progressCallbacks: [Int: @Sendable (Double) -> Void] = [:]
     private(set) var prepareCount = 0
@@ -315,6 +316,7 @@ actor MockEngine: TranscriptionEngine {
         progress: (@Sendable (Double) -> Void)?
     ) async throws -> Transcript {
         receivedSampleCounts.append(samples.count)
+        receivedSamples.append(samples)
         progressCallbacks[samples.count] = progress
         recordingsInProgressWhileTranscribing.append(recordingsInProgress.current)
         if let fraction = progressBySampleCount[samples.count] { progress?(fraction) }

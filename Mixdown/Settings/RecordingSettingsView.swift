@@ -35,6 +35,28 @@ struct RecordingSettingsView: View {
                 .foregroundStyle(.secondary)
             }
 
+            if hasSystemAudio {
+                Section {
+                    Toggle(
+                        "Remove echo from the microphone",
+                        isOn: Binding(
+                            get: { environment.cancelsEcho },
+                            set: { environment.cancelsEcho = $0 }
+                        )
+                    )
+                } header: {
+                    Text("Echo")
+                } footer: {
+                    Text(
+                        "Without headphones, your microphone also hears the system audio from your speakers. "
+                            + "While both record, Mixdown takes that echo out of the microphone, so the others "
+                            + "aren't transcribed twice. Applies from the next recording."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+            }
+
             Section {
                 Toggle(
                     "Notify when calls start and end",

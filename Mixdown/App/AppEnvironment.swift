@@ -4,6 +4,7 @@ import MixdownAudio
 import MixdownCore
 import MixdownFoundationModels
 import MixdownNotes
+import MixdownSpeechSwift
 import Observation
 
 /// Composition root: wires concrete implementations into the `RecordingCoordinator` and keeps
@@ -43,6 +44,8 @@ final class AppEnvironment {
     private(set) var dynamicIslandShowsTimeAlone = false
 
     private let settings: AppSettings
+    /// Shared by every coordinator, so the canceller it keeps loaded survives a model change.
+    private static let echoCancellation = LocalVQEEchoCancellation()
     @ObservationIgnored private var deviceMonitor: Task<Void, Never>?
     @ObservationIgnored private var recordingClock: Task<Void, Never>?
     @ObservationIgnored private var recordingClockStart: Date?
@@ -106,7 +109,7 @@ final class AppEnvironment {
         pendingNotes: [Note] = [],
         settings: AppSettings
     ) -> RecordingCoordinator {
-        RecordingCoordinator(
+        let coordinator = RecordingCoordinator(
             deviceProvider: CoreAudioDeviceProvider(),
             captureFactory: DefaultAudioCaptureFactory(),
             // `TranscriptionModel.makeEngine()` is the ONE place the transcription engine is chosen.
@@ -120,8 +123,11 @@ final class AppEnvironment {
             options: TranscriptionOptions(language: settings.language),
             sourceLabels: settings.sourceLabels,
             preferredDeviceIDs: settings.selectedDeviceIDs,
-            playbackMonitor: CoreAudioPlaybackMonitor()
+            playbackMonitor: CoreAudioPlaybackMonitor(),
+            echoCancellation: echoCancellation
         )
+        coordinator.cancelsEcho = settings.cancelsEcho
+        return coordinator
     }
 
     /// Starts what a new coordinator needs running: device monitoring, and checking whether the
@@ -313,6 +319,16 @@ final class AppEnvironment {
     private func applySelection(_ selection: [AudioInputDevice]) {
         guard coordinator.selectDevices(selection) else { return }
         settings.selectedDeviceIDs = selection.map(\.id)
+    }
+
+    /// Whether to take the system audio's echo out of the microphone. Takes effect from the next
+    /// recording.
+    var cancelsEcho: Bool {
+        get { coordinator.cancelsEcho }
+        set {
+            settings.cancelsEcho = newValue
+            coordinator.cancelsEcho = newValue
+        }
     }
 
     /// Speaker names for multi-source recordings. Takes effect from the next transcription.

@@ -31,8 +31,9 @@ let package = Package(
         // which other apps are recording (for call detection).
         .target(name: "MixdownAudio", dependencies: ["MixdownCore"]),
 
-        // speech-swift (MLX) implementation of `TranscriptionEngine`. The only module that
-        // knows about speech-swift, so the engine can be replaced without touching the rest.
+        // speech-swift (MLX) implementation of `TranscriptionEngine`, and its LocalVQE echo
+        // canceller (`EchoCancellation`). The only module that knows about speech-swift, so either
+        // can be replaced without touching the rest.
         .target(
             name: "MixdownSpeechSwift",
             dependencies: [
@@ -42,6 +43,7 @@ let package = Package(
                 .product(name: "MossTranscribe", package: "speech-swift"),
                 .product(name: "NemotronStreamingASR", package: "speech-swift"),
                 .product(name: "Qwen3ASR", package: "speech-swift"),
+                .product(name: "SpeechEnhancement", package: "speech-swift"),
                 .product(name: "SpeechVAD", package: "speech-swift"),
             ]
         ),

@@ -31,7 +31,7 @@ struct SettingsView: View {
     private func height(for tab: MainNavigation.SettingsTab) -> CGFloat {
         switch tab {
         case .general: 440
-        case .recording: 420
+        case .recording: 540
         case .transcription: 650
         case .notifications: 460
         case .design: 360

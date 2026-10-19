@@ -297,7 +297,7 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
 
     /// Where weights are cached: `Application Support/Mixdown/Models`, inside the container when
     /// sandboxed.
-    private static func modelDirectory() throws -> URL {
+    static func modelDirectory() throws -> URL {
         guard let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
         else {
             throw TranscriptionError.modelUnavailable("Application Support directory not found")
