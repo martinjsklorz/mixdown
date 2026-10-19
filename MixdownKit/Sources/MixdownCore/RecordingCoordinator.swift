@@ -96,13 +96,10 @@ public final class RecordingCoordinator {
     public private(set) var recordingSummaryTemplate: SummaryTemplate?
     /// Whether the user picked `recordingSummaryTemplate`, so marking a call keeps it.
     @ObservationIgnored private var isRecordingSummaryTemplateChosen = false
+    /// Changes apply to the next recording; the one in progress is transcribed with the options it
+    /// started with.
     public var options: TranscriptionOptions {
-        didSet {
-            guard options.language != oldValue.language else { return }
-            engine.languageDidChange(to: options.language)
-            isModelDownloaded = engine.isDownloaded
-            Task { await refreshModelStatus() }
-        }
+        didSet { syncEngineLanguage() }
     }
     /// Speaker names for multi-source recordings.
     public var sourceLabels: SourceLabels
@@ -146,6 +143,21 @@ public final class RecordingCoordinator {
     /// it, so `cancelPreparation()` can't stop it.
     public private(set) var isPreparingModelForRecording = false
 
+    /// True from `cancelPreparation()` until the download has actually stopped. The phase stays
+    /// `.preparingModel` meanwhile, so nothing else starts before it has.
+    public private(set) var isCancellingPreparation = false
+
+    /// Whether `cancelPreparation()` would stop a download: one started by `prepareEngine()` that
+    /// isn't being cancelled already.
+    public var canCancelPreparation: Bool {
+        guard case .preparingModel = phase else { return false }
+        return !isPreparingModelForRecording && !isCancellingPreparation
+    }
+
+    /// True once `stopRecording()` was called while the captures were starting. The recording
+    /// is then discarded as soon as they have, as nothing was recorded yet.
+    public private(set) var isStopPending = false
+
     /// A recording is under way, paused or not.
     public var isRecording: Bool {
         switch phase {
@@ -181,6 +193,7 @@ public final class RecordingCoordinator {
     /// transcribing. `nil` until there's enough progress to extrapolate from (a few seconds in).
     public var timeRemaining: TimeInterval? {
         switch phase {
+        case .preparingModel where isCancellingPreparation: return nil
         case .preparingModel, .transcribing: return progressEstimator.remaining
         default: return nil
         }
@@ -229,9 +242,11 @@ public final class RecordingCoordinator {
     @ObservationIgnored private var preparation: Task<Void, any Error>?
     /// True while the captures are starting; blocks a second start.
     private var isStartingCapture: Bool { phase == .startingCapture }
-    /// Whether `stopRecording()` was called while the captures were starting, to be done once
-    /// they have.
-    @ObservationIgnored private var isStopPending = false
+    /// The language the engine was last told about with `languageDidChange(to:)`.
+    @ObservationIgnored private var engineLanguage: String?
+    /// From `startRecording()` until the recording is transcribed, discarded or failed, while the
+    /// engine is held with `recordingWillStart()`. The engine's language doesn't change meanwhile.
+    @ObservationIgnored private var isEngineHeldForRecording = false
     /// Sources of the current recording that delivered sound at least once.
     @ObservationIgnored private var heardDeviceIDs: Set<String> = []
     /// Add each recording device to `silentDevices` once `silenceWarningDelay` has passed, by ID.
@@ -247,6 +262,8 @@ public final class RecordingCoordinator {
     private final class Session {
         let id = UUID()
         let startedAt: Date
+        /// `options` as the recording started, used to transcribe all of it.
+        let options: TranscriptionOptions
         /// Whether the recording was started for a call, from a notification or automatically.
         var isCall = false
         var trigger = RecordingTrigger.manual
@@ -273,8 +290,9 @@ public final class RecordingCoordinator {
         /// captured afterwards, which leaves the pauses out of the tracks.
         var pausedDuration: TimeInterval = 0
 
-        init(startedAt: Date) {
+        init(startedAt: Date, options: TranscriptionOptions) {
             self.startedAt = startedAt
+            self.options = options
         }
 
         /// The devices recording right now.
@@ -380,8 +398,8 @@ public final class RecordingCoordinator {
         }
     }
 
-    /// Combines the progress of a recording's tracks, each weighted by its length. speech-swift
-    /// transcribes them one after another, so the total keeps moving at about the same pace.
+    /// Combines the progress of a recording's tracks, each weighted by its length. The engines
+    /// transcribe them one after another, at a pace that depends on how much speech each has.
     private struct TranscriptionProgress {
         let sessionID: UUID
         let sampleCounts: [Int]
@@ -429,6 +447,7 @@ public final class RecordingCoordinator {
         self.captureFactory = captureFactory
         self.engine = engine
         engine.languageDidChange(to: options.language)
+        self.engineLanguage = options.language
         self.isModelDownloaded = engine.isDownloaded
         self.noteWriter = noteWriter
         self.summarizer = summarizer
@@ -578,9 +597,8 @@ public final class RecordingCoordinator {
             preparation.cancel()
         }
 
-        // After a cancel, a newer preparation may own `phase` already.
-        guard self.preparation == preparation else { return }
         self.preparation = nil
+        isCancellingPreparation = false
         // Checked on every outcome: a failed or cancelled download may still have finished.
         isModelDownloaded = engine.isDownloaded
         switch result {
@@ -603,15 +621,36 @@ public final class RecordingCoordinator {
         isModelDownloaded = engine.isDownloaded
     }
 
+    /// Tells the engine about a new `options.language`, unless a recording holds it: that one is
+    /// transcribed in the language it started with, and the engine follows once it's done.
+    private func syncEngineLanguage() {
+        guard !isEngineHeldForRecording, options.language != engineLanguage else { return }
+        engineLanguage = options.language
+        engine.languageDidChange(to: options.language)
+        isModelDownloaded = engine.isDownloaded
+        Task { await refreshModelStatus() }
+    }
+
+    /// Keeps the engine's model loaded, and its language, until `releaseEngine()`.
+    private func holdEngine() {
+        isEngineHeldForRecording = true
+        engine.recordingWillStart()
+    }
+
+    private func releaseEngine() {
+        engine.recordingDidFinish()
+        isEngineHeldForRecording = false
+        syncEngineLanguage()
+    }
+
     /// Stops an in-progress model download. Files already fetched are kept, so the next
-    /// `prepareEngine()` (or recording) resumes from them. Ignored while
+    /// `prepareEngine()` (or recording) resumes from them. The phase becomes `.idle` once the
+    /// engine has stopped, which `isCancellingPreparation` tells meanwhile. Ignored while
     /// `isPreparingModelForRecording`.
     public func cancelPreparation() {
-        guard case .preparingModel = phase, let preparation else { return }
+        guard canCancelPreparation, let preparation else { return }
+        isCancellingPreparation = true
         preparation.cancel()
-        self.preparation = nil
-        isModelDownloaded = engine.isDownloaded
-        phase = .idle
     }
 
     /// Deletes the downloaded model to free disk space. Recording is unavailable until it's
@@ -649,24 +688,40 @@ public final class RecordingCoordinator {
     public func startRecording() async {
         guard canStartRecording else { return }
         let devices = selectedDevices
+        // Taken now, as the language can change while macOS asks for permission.
+        let options = options
         phase = .startingCapture
         isStopPending = false
         // Held until `end(_:interruption:)` has transcribed the recording.
-        engine.recordingWillStart()
+        holdEngine()
 
         let startedCaptures: [StartedCapture]
         do {
             startedCaptures = try await startCaptures(for: devices)
         } catch {
             logger.error("Starting capture failed: \(error.localizedDescription, privacy: .public)")
-            engine.recordingDidFinish()
             isStopPending = false
+            releaseEngine()
             phase = .failed(message: error.localizedDescription)
             reconcileSelection()
             return
         }
 
-        let session = Session(startedAt: now())
+        // Stopped before anything was recorded, e.g. during the permission prompt or by a quick
+        // second press of the shortcut. That's no error, just a recording that didn't happen.
+        guard !isStopPending else {
+            logger.info("Recording stopped while starting; discarding it")
+            for capture in startedCaptures.map(\.capture) {
+                await capture.stop()
+            }
+            isStopPending = false
+            releaseEngine()
+            phase = .idle
+            reconcileSelection()
+            return
+        }
+
+        let session = Session(startedAt: now(), options: options)
         self.session = session
         recordingStartedAt = session.startedAt
         recordingSummaryTemplate = summaryTemplate
@@ -681,12 +736,6 @@ public final class RecordingCoordinator {
         phase = .recording(startedAt: session.startedAt)
         let names = devices.map(\.name).joined(separator: " + ")
         logger.info("Recording started on \(names, privacy: .public)")
-        if isStopPending {
-            isStopPending = false
-            logger.info("Stopping the recording, as it was stopped while starting")
-            await end(session, interruption: nil)
-            return
-        }
         // Catches devices that changed while the captures were starting.
         reconcileSelection()
     }
@@ -759,7 +808,7 @@ public final class RecordingCoordinator {
             // A lane's captures are transcribed one after another, so its words stay in order.
             let previous = lane.captures.last?.live
             let source = lane.index
-            let options = options
+            let options = session.options
             return Task { [weak self] () -> (any Error)? in
                 _ = await previous?.value
                 guard let self else { return nil }
@@ -893,7 +942,7 @@ public final class RecordingCoordinator {
         let liveError = await finishLiveTranscription(of: session)
         await finish(session, lanes: lanes, interruption: interruption ?? liveError)
         recordingSummaryTemplate = nil
-        engine.recordingDidFinish()
+        releaseEngine()
     }
 
     /// Waits for `session`'s live sessions to transcribe the rest of their input. Returns the
@@ -971,12 +1020,12 @@ public final class RecordingCoordinator {
             let transcript: Transcript
             var trackFailure: TrackFailure?
             if engine.transcribesLive {
-                transcript = transcriptFromLiveText(tracks)
+                transcript = transcriptFromLiveText(tracks, language: session.options.language)
             } else if let track = tracks.first, tracks.count == 1 {
                 transcriptionProgress = TranscriptionProgress(sessionID: session.id, tracks: tracks)
                 transcript = try await engine.transcribe(
                     track.samples,
-                    options: options,
+                    options: session.options,
                     progress: progressHandler(track: 0, sessionID: session.id)
                 )
             } else {
@@ -1021,6 +1070,9 @@ public final class RecordingCoordinator {
             if let interruption, case TranscriptionError.modelUnavailable = interruption {
                 modelError = interruption.localizedDescription
             }
+        } catch is CancellationError {
+            logger.info("Finishing recording cancelled")
+            phase = .idle
         } catch {
             logger.error("Finishing recording failed: \(error.localizedDescription, privacy: .public)")
             if case TranscriptionError.modelUnavailable = error {
@@ -1141,7 +1193,7 @@ public final class RecordingCoordinator {
 
     /// The note's transcript from what the live sessions recognized: per track like
     /// `transcribeSeparately`, merged by time when there are several.
-    private func transcriptFromLiveText(_ tracks: [RecordedTrack]) -> Transcript {
+    private func transcriptFromLiveText(_ tracks: [RecordedTrack], language: String?) -> Transcript {
         let transcripts = tracks.map { track in
             let segments = liveTranscript.segments(fromSource: track.lane).map { segment in
                 var segment = segment
@@ -1149,7 +1201,7 @@ public final class RecordingCoordinator {
                 segment.end += track.offset
                 return segment
             }
-            return Transcript(segments: segments, language: options.language)
+            return Transcript(segments: segments, language: language)
         }
         guard tracks.count > 1 else { return transcripts.first ?? Transcript(segments: []) }
         let lanes = tracks.map(\.device)
@@ -1179,7 +1231,7 @@ public final class RecordingCoordinator {
         session: Session
     ) async throws -> (Transcript, TrackFailure?) {
         let engine = engine
-        let options = options
+        let options = session.options
         let sourceLabels = sourceLabels
         let audible = tracks.filter {
             Double($0.samples.count) / AudioChunk.sampleRate >= Self.minimumRecordingDuration
@@ -1232,14 +1284,15 @@ public final class RecordingCoordinator {
         var sources: [SourceTranscript] = []
         var failedDevices: [AudioInputDevice] = []
         var firstError: (any Error)?
-        var anyTranscribed = false
         for (track, result) in zip(audible, results) {
             switch result {
             case .success(let transcript):
-                anyTranscribed = true
                 sources += Self.split(transcript, byDeviceOf: track).map { device, part in
                     SourceTranscript(device: device, label: sourceLabels.label(for: device, among: lanes), transcript: part)
                 }
+            // Cancelling the transcription stops every track; none of them failed.
+            case .failure(let error) where error is CancellationError || Task.isCancelled:
+                throw CancellationError()
             case .failure(let error):
                 logger.error(
                     "Transcribing \(track.device.name, privacy: .public) failed: \(error.localizedDescription, privacy: .public)"
@@ -1250,10 +1303,12 @@ public final class RecordingCoordinator {
                 }
             }
         }
-        // With nothing transcribed there's no note to save, so the recording fails as a whole.
-        if let firstError, !anyTranscribed { throw firstError }
+        // With no speech from the tracks that worked, the note would only be empty, so the
+        // recording fails as a whole.
+        let transcript = TranscriptMerger.merge(sources)
+        if let firstError, transcript.isEmpty { throw firstError }
         let failure = firstError.map { TrackFailure(devices: failedDevices, error: $0) }
-        return (TranscriptMerger.merge(sources), failure)
+        return (transcript, failure)
     }
 
     /// `transcript`'s segments grouped by the device that recorded them, in order of first use.
@@ -1287,9 +1342,17 @@ public final class RecordingCoordinator {
         guard case .transcribing = phase, var transcriptionProgress, transcriptionProgress.sessionID == sessionID,
             transcriptionProgress.fractions.indices.contains(index), progress.isFinite
         else { return }
-        transcriptionProgress.fractions[index] = max(transcriptionProgress.fractions[index], min(max(progress, 0), 1))
+        let fraction = max(transcriptionProgress.fractions[index], min(max(progress, 0), 1))
+        let finishesTrack = fraction == 1 && transcriptionProgress.fractions[index] < 1
+        transcriptionProgress.fractions[index] = fraction
         self.transcriptionProgress = transcriptionProgress
         let total = transcriptionProgress.total
+        // Tracks go at very different paces: one without speech is done in a moment, and its share
+        // of the bar with it. The time left is extrapolated from the tracks still running only,
+        // rather than from a rate that took in that jump.
+        if finishesTrack, transcriptionProgress.fractions.contains(where: { $0 < 1 }) {
+            progressEstimator = RemainingTimeEstimator()
+        }
         progressEstimator.add(progress: total, at: now())
         phase = .transcribing(progress: total)
     }

@@ -55,7 +55,10 @@ struct RecorderView: View {
                 downloadButton(for: coordinator)
 
             case .preparingModel(let progress):
-                headline("Downloading Model…", detail: downloadDetail(for: coordinator))
+                headline(
+                    coordinator.isCancellingPreparation ? "Cancelling Download…" : "Downloading Model…",
+                    detail: downloadDetail(for: coordinator)
+                )
                 ProgressView(value: progress) {
                     EmptyView()
                 } currentValueLabel: {
@@ -70,6 +73,7 @@ struct RecorderView: View {
                 } else {
                     Button("Cancel Download") { coordinator.cancelPreparation() }
                         .controlSize(.large)
+                        .disabled(!coordinator.canCancelPreparation)
                 }
 
             case .startingCapture:
@@ -77,7 +81,8 @@ struct RecorderView: View {
                 RecordButton(isRecording: true) {
                     Task { await coordinator.stopRecording() }
                 }
-                caption("Click to stop")
+                .disabled(coordinator.isStopPending)
+                caption(coordinator.isStopPending ? "Stopping…" : "Click to stop")
 
             case .recording(let startedAt):
                 Text(startedAt, style: .timer)
@@ -125,8 +130,11 @@ struct RecorderView: View {
                     .symbolRenderingMode(.multicolor)
                     .multilineTextAlignment(.center)
                 Button("Dismiss") { coordinator.dismissError() }
-                // After a failed download, recording still needs the model.
-                if coordinator.isModelDownloaded {
+                // Recording still needs a notes folder, such as after the note couldn't be saved,
+                // and the model, after a failed download.
+                if environment.notesFolder.directory == nil {
+                    notesFolderButtons
+                } else if coordinator.isModelDownloaded {
                     startButton(for: coordinator)
                 } else {
                     downloadButton(for: coordinator)
@@ -210,13 +218,18 @@ struct RecorderView: View {
     @ViewBuilder
     private var notesFolderPrompt: some View {
         let notesFolder = environment.notesFolder
-        let isUnavailable = notesFolder.status != .notChosen
-
         headline(
             NotesFolderWarning.title(for: notesFolder.status) ?? "",
             detail: NotesFolderWarning.message(for: notesFolder.status, hasLegacyNotes: notesFolder.hasLegacyNotes)
         )
-        HStack {
+        notesFolderButtons
+    }
+
+    /// Choose Folder, or for a folder that can't be reached, Choose Another Folder and Try Again.
+    private var notesFolderButtons: some View {
+        let notesFolder = environment.notesFolder
+        let isUnavailable = notesFolder.status != .notChosen
+        return HStack {
             Button(isUnavailable ? "Choose Another Folder…" : "Choose Folder…", systemImage: "folder") {
                 environment.chooseNotesFolder()
             }

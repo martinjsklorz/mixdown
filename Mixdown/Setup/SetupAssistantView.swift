@@ -378,7 +378,7 @@ private struct ModelPage: View {
                         .monospacedDigit()
                 }
                 Button("Cancel") { coordinator.cancelPreparation() }
-                    .disabled(coordinator.isPreparingModelForRecording)
+                    .disabled(!coordinator.canCancelPreparation)
             }
             caption("You can go on while it downloads. The menu bar shows the time left.")
         } else if coordinator.isModelDownloaded {

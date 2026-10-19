@@ -46,6 +46,7 @@ struct MenuBarContent: View {
             // A download for a finished recording can't be cancelled.
             if !coordinator.isPreparingModelForRecording {
                 Button("Cancel Download") { coordinator.cancelPreparation() }
+                    .disabled(!coordinator.canCancelPreparation)
             }
         } else if !coordinator.isModelDownloaded && coordinator.isIdle {
             Button("Download Model") {

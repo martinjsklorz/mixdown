@@ -202,12 +202,15 @@ actor MockEngine: TranscriptionEngine {
     private let ungatedSampleCounts: Set<Int>
     private let prepareError: (any Error)?
     private let preparesUntilCancelled: Bool
+    private let cancellationGate: Gate?
     private let preparationGate: Gate?
     private let deleteError: (any Error)?
     private let liveSession: MockLiveSession?
     private let liveError: (any Error)?
     private nonisolated let downloaded: LockedValue<Bool>
     private(set) var receivedSampleCounts: [Int] = []
+    /// The `progress` callback of each `transcribe` call, by sample count, to report more later.
+    private(set) var progressCallbacks: [Int: @Sendable (Double) -> Void] = [:]
     private(set) var prepareCount = 0
     private(set) var cancelledPrepareCount = 0
     private(set) var deleteCount = 0
@@ -220,6 +223,8 @@ actor MockEngine: TranscriptionEngine {
     ///   - isDownloaded: Whether the model starts out on disk. A successful `prepare` downloads it.
     ///   - preparesUntilCancelled: `prepare` stalls halfway, like a slow download, until its task
     ///     is cancelled.
+    ///   - cancellationGate: A cancelled `prepare` throws once it opens, like a download that takes a
+    ///     while to stop.
     ///   - preparationGate: `prepare` stalls halfway until it opens.
     ///   - deleteError: Thrown by `deleteModel`, which then leaves the model on disk.
     ///   - liveSession: Handed out by `makeLiveSession` for every input; `nil` if the engine
@@ -240,6 +245,7 @@ actor MockEngine: TranscriptionEngine {
         isDownloaded: Bool = true,
         prepareError: (any Error)? = nil,
         preparesUntilCancelled: Bool = false,
+        cancellationGate: Gate? = nil,
         preparationGate: Gate? = nil,
         deleteError: (any Error)? = nil,
         liveSession: MockLiveSession? = nil,
@@ -255,6 +261,7 @@ actor MockEngine: TranscriptionEngine {
         self.downloaded = LockedValue(isDownloaded)
         self.prepareError = prepareError
         self.preparesUntilCancelled = preparesUntilCancelled
+        self.cancellationGate = cancellationGate
         self.preparationGate = preparationGate
         self.deleteError = deleteError
         self.liveSession = liveSession
@@ -278,6 +285,7 @@ actor MockEngine: TranscriptionEngine {
                 try await Task.sleep(for: .seconds(60))
             } catch {
                 cancelledPrepareCount += 1
+                await cancellationGate?.wait()
                 throw error
             }
         }
@@ -312,9 +320,11 @@ actor MockEngine: TranscriptionEngine {
         progress: (@Sendable (Double) -> Void)?
     ) async throws -> Transcript {
         receivedSampleCounts.append(samples.count)
+        progressCallbacks[samples.count] = progress
         recordingsInProgressWhileTranscribing.append(recordingsInProgress.current)
         if let fraction = progressBySampleCount[samples.count] { progress?(fraction) }
         if !ungatedSampleCounts.contains(samples.count) { await transcriptionGate?.wait() }
+        try Task.checkCancellation()
         if let error = transcribeErrorsBySampleCount[samples.count] ?? transcribeError { throw error }
         return transcriptsBySampleCount[samples.count] ?? transcript
     }
@@ -367,6 +377,8 @@ actor PerLanguageEngine: TranscriptionEngine {
     /// `installed` as of the last `refreshDownloadStatus()` or `prepare`.
     private nonisolated let checked = LockedValue<Set<String?>>([])
     nonisolated let language = LockedValue<String?>(nil)
+    /// `options.language` of each `transcribe` call.
+    private(set) var transcribedLanguages: [String?] = []
 
     init(installed: Set<String?>) {
         self.installed = LockedValue(installed)
@@ -395,7 +407,8 @@ actor PerLanguageEngine: TranscriptionEngine {
         options: TranscriptionOptions,
         progress: (@Sendable (Double) -> Void)?
     ) async throws -> Transcript {
-        Transcript(segments: [], language: language.current)
+        transcribedLanguages.append(options.language)
+        return Transcript(segments: [], language: language.current)
     }
 }
 

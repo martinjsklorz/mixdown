@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The status item: an icon reflecting the coordinator's phase, plus the time left while a
 /// model downloads or a recording is transcribed, or the time recorded while recording or paused
-/// (unless the Dynamic Island shows it).
+/// (unless the Dynamic Island shows it where it can always be seen).
 struct MenuBarLabel: View {
     let environment: AppEnvironment
 
@@ -11,9 +11,9 @@ struct MenuBarLabel: View {
     private var hasSilentInput: Bool { !coordinator.silentDevices.isEmpty }
 
     var body: some View {
-        // Whole seconds recorded so far, while recording; `nil` while the Dynamic Island shows them,
-        // which also spares the label redrawing every second.
-        let recordingElapsed = environment.showsRecordingInDynamicIsland ? nil : environment.recordingElapsed
+        // Whole seconds recorded so far, while recording; `nil` while the Dynamic Island alone shows
+        // them, which also spares the label redrawing every second.
+        let recordingElapsed = environment.dynamicIslandShowsTimeAlone ? nil : environment.recordingElapsed
         let phase = coordinator.phase
         let remaining = coordinator.timeRemaining
         HStack(spacing: 4) {

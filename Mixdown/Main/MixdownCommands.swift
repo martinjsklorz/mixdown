@@ -141,7 +141,7 @@ private struct RecordingMenuItems: View {
 
         if case .preparingModel = coordinator.phase {
             Button("Cancel Download") { coordinator.cancelPreparation() }
-                .disabled(coordinator.isPreparingModelForRecording)
+                .disabled(!coordinator.canCancelPreparation)
         } else {
             Button("Download Model") {
                 Task { await coordinator.prepareEngine() }

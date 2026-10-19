@@ -38,6 +38,9 @@ final class AppEnvironment {
     private(set) var showsRecordingInDynamicIsland: Bool
     /// What the Dynamic Island shows, and where.
     private(set) var islandLayout: DynamicIsland.Layout
+    /// Whether the Dynamic Island is showing the recording time where it can always be seen, so
+    /// the menu bar leaves it out. See `DynamicIsland.showsTimeAlone`.
+    private(set) var dynamicIslandShowsTimeAlone = false
 
     private let settings: AppSettings
     @ObservationIgnored private var deviceMonitor: Task<Void, Never>?
@@ -206,7 +209,13 @@ final class AppEnvironment {
             Task { @MainActor in self?.observeDynamicIsland() }
         }
         if shows {
-            let island = dynamicIsland ?? DynamicIsland(environment: self, openRecorder: showRecorder)
+            let island =
+                dynamicIsland
+                ?? DynamicIsland(
+                    environment: self,
+                    openRecorder: showRecorder,
+                    showsTimeAloneChanged: { [weak self] in self?.dynamicIslandShowsTimeAlone = $0 }
+                )
             dynamicIsland = island
             island.show(layout)
         } else {
@@ -342,14 +351,18 @@ final class AppEnvironment {
 
     // MARK: Global shortcut
 
-    /// Starts or stops recording on the global shortcut, from any app. When recording can't start
-    /// yet (no notes folder or model, or busy transcribing), it opens Record instead, which says why.
+    /// Starts or stops recording on the global shortcut, from any app. While busy downloading,
+    /// transcribing or summarizing, it beeps, as recording can start once that's done. When
+    /// recording can't start for something the user has to do (no notes folder, model or input),
+    /// it opens Record instead, which says what.
     private func listenForRecordingShortcut(navigation: MainNavigation) {
         KeyboardShortcuts.onKeyUp(for: .toggleRecording) { [weak self] in
             guard let self else { return }
             let coordinator = self.coordinator
             if coordinator.canStopRecording || coordinator.canStartRecording {
                 Task { await coordinator.toggleRecording() }
+            } else if !coordinator.isIdle {
+                NSSound.beep()
             } else if let openWindow = navigation.openWindow {
                 navigation.show(.recorder, using: openWindow)
             }
