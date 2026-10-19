@@ -15,8 +15,7 @@ enum NotesFolderWatcher {
     /// An element per batch of changes, at most one per `latency` seconds, until the task
     /// iterating it is cancelled. Covers subfolders too. Changes to files that aren't notes, like
     /// `.DS_Store` or an editor's temporary files, and to hidden folders like `.obsidian` are
-    /// left out. Batches that arrive while the last one is still
-    /// being handled are merged into one.
+    /// left out. Batches that arrive while the last one is still being handled are merged into one.
     static func changes(in directory: URL, latency: TimeInterval = 0.3) -> AsyncStream<Void> {
         AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
             guard let stream = EventStream(directory: directory, latency: latency, continuation: continuation) else {

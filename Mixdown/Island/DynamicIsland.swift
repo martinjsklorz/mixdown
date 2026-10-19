@@ -45,9 +45,9 @@ final class DynamicIsland {
     private let openRecorder: () -> Void
     /// Told whether the island is the only place the time needs to be; see `showsTimeAlone`.
     private let showsTimeAloneChanged: (Bool) -> Void
-    /// Created on first `show()`, as windows shouldn't be made before the app has launched.
+    /// Created on the first `show(_:)`, as windows shouldn't be made before the app has launched.
     private var panel: IslandPanel?
-    private(set) var isShown = false
+    private var isShown = false
     private var layout = Layout()
     private let presence = Presence()
     /// The time's wing as wide as the view last measured it, which grows with the time.
@@ -183,7 +183,7 @@ final class DynamicIsland {
 
     /// The notch in screen coordinates. On a screen without one, a zero-width rectangle at the top
     /// center, as tall as the menu bar.
-    static func notch(on screen: NSScreen) -> NSRect {
+    private static func notch(on screen: NSScreen) -> NSRect {
         let frame = screen.frame
         if screen.safeAreaInsets.top > 0,
             let left = screen.auxiliaryTopLeftArea,

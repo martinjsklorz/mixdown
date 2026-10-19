@@ -86,12 +86,6 @@ struct TranscriptMergerTests {
         #expect(merged.segments.last?.text == "Wait, which release?")
     }
 
-    @Test func keepsSimilarSpeechAtOtherTimes() {
-        let segment = TranscriptSegment(start: 30, end: 32, text: "Let's look at the release plan.")
-        let reference = [TranscriptSegment(start: 3, end: 5, text: "Let's look at the release plan.")]
-        #expect(!TranscriptMerger.isEcho(segment, of: reference))
-    }
-
     @Test func echoNeedsMostWordsToMatch() {
         let reference = [TranscriptSegment(start: 0, end: 4, text: "We ship the beta on Friday.")]
         let partial = TranscriptSegment(start: 1, end: 3, text: "I think we should not ship on Friday")

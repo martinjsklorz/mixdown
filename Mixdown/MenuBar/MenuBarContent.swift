@@ -31,13 +31,11 @@ struct MenuBarContent: View {
             notesFolder: environment.notesFolder.status,
             timeRemaining: coordinator.timeRemaining
         )
-        if !coordinator.silentDevices.isEmpty {
-            ForEach(coordinator.silentDevices) { device in
-                Label(SilentInputWarning.title(for: device), systemImage: "speaker.slash")
-            }
-            if SilentInputWarning.needsPermission(coordinator.silentDevices) {
-                Button("Open Privacy Settings…") { SilentInputWarning.openPrivacySettings() }
-            }
+        ForEach(coordinator.silentDevices) { device in
+            Label(SilentInputWarning.title(for: device), systemImage: "speaker.slash")
+        }
+        if SilentInputWarning.needsPermission(coordinator.silentDevices) {
+            Button("Open Privacy Settings…") { SilentInputWarning.openPrivacySettings() }
         }
         if environment.notesFolder.directory == nil && !coordinator.isRecording {
             Button("Choose Notes Folder…") { environment.chooseNotesFolder() }
@@ -56,13 +54,7 @@ struct MenuBarContent: View {
 
         Divider()
 
-        DevicePicker(
-            devices: coordinator.devices,
-            selectedIDs: Set(coordinator.selectedDevices.map(\.id)),
-            followsDefaultMicrophone: environment.followsDefaultMicrophone,
-            onSelectMicrophone: environment.selectMicrophone,
-            onSetSystemAudio: environment.setRecordsSystemAudio
-        )
+        DevicePicker(environment: environment)
 
         Divider()
 

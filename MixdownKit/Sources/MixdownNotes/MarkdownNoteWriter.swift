@@ -12,7 +12,7 @@ public struct MarkdownNoteWriter: NoteWriting {
     /// the date, a collision suffix and the extension.
     static let maxTitleBytes = 255 - "yyyy-MM-dd HHmm ".utf8.count - " \(maxCollisionSuffix).md".utf8.count
 
-    public let directory: URL
+    let directory: URL
 
     /// - Parameter directory: Destination folder. Created on first write if missing.
     public init(directory: URL) {
@@ -26,10 +26,7 @@ public struct MarkdownNoteWriter: NoteWriting {
 
         // Write to a hidden temp file in the same directory, then move it into place. The move
         // is an atomic rename and fails instead of replacing an existing file.
-        let temporaryURL = directory.appending(
-            path: ".\(UUID().uuidString).mixdown-tmp",
-            directoryHint: .notDirectory
-        )
+        let temporaryURL = Self.temporaryURL(in: directory)
         defer { try? fileManager.removeItem(at: temporaryURL) }
         try Data(MarkdownNoteRenderer.render(note).utf8).write(to: temporaryURL)
 
@@ -48,13 +45,18 @@ public struct MarkdownNoteWriter: NoteWriting {
         throw CocoaError(.fileWriteFileExists)
     }
 
+    /// A hidden file name in `directory` to write to before moving the file into place.
+    static func temporaryURL(in directory: URL) -> URL {
+        directory.appending(path: ".\(UUID().uuidString).mixdown-tmp", directoryHint: .notDirectory)
+    }
+
     // MARK: - File names
 
-    static func fileNameStem(for note: Note, timeZone: TimeZone = .current) -> String {
+    private static func fileNameStem(for note: Note) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.timeZone = timeZone
+        formatter.timeZone = .current
         formatter.dateFormat = "yyyy-MM-dd HHmm"
         return "\(formatter.string(from: note.createdAt)) \(sanitizedTitle(note.title))"
     }

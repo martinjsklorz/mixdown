@@ -28,6 +28,6 @@ struct InputLevelTests {
     /// `seconds` of audio whose first samples are `samples`, the rest silence.
     private func chunk(seconds: Double, samples: [Float]) -> AudioChunk {
         let count = Int(seconds * AudioChunk.sampleRate)
-        return AudioChunk(samples: samples + Array(repeating: 0, count: count - samples.count), startTime: 0)
+        return AudioChunk(samples: samples + Array(repeating: 0, count: count - samples.count))
     }
 }

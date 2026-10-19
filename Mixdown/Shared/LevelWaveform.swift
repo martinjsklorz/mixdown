@@ -7,7 +7,7 @@ import SwiftUI
 ///
 /// Shown in the Dynamic Island and in the Record view.
 struct LevelWaveform: View {
-    static let barCount = 5
+    private static let barCount = 5
 
     let coordinator: RecordingCoordinator
     let isSilent: Bool
@@ -24,9 +24,9 @@ struct LevelWaveform: View {
     private static let barWidth: CGFloat = 2.5
     private static let barSpacing: CGFloat = 1.5
 
-    /// How wide the waveform is at `scale`.
-    static func width(scale: CGFloat = 1) -> CGFloat {
-        (CGFloat(barCount) * barWidth + CGFloat(barCount - 1) * barSpacing) * scale
+    /// How wide the waveform is at a `scale` of 1.
+    static var width: CGFloat {
+        CGFloat(barCount) * barWidth + CGFloat(barCount - 1) * barSpacing
     }
 
     /// The loudest selected input right now, system audio included.

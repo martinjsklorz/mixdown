@@ -60,3 +60,18 @@ struct DevicePicker: View {
         return "System Default (\(current.name))"
     }
 }
+
+extension DevicePicker {
+    /// The inputs of `environment`'s coordinator, chosen through `environment`, which remembers
+    /// the choice.
+    @MainActor init(environment: AppEnvironment) {
+        let coordinator = environment.coordinator
+        self.init(
+            devices: coordinator.devices,
+            selectedIDs: Set(coordinator.selectedDevices.map(\.id)),
+            followsDefaultMicrophone: environment.followsDefaultMicrophone,
+            onSelectMicrophone: environment.selectMicrophone,
+            onSetSystemAudio: environment.setRecordsSystemAudio
+        )
+    }
+}

@@ -99,7 +99,9 @@ private final class ProcessInputWatcher: @unchecked Sendable {
         }
 
         let clients = processes.compactMap { objectID -> AudioInputClient? in
-            guard Self.isRunningInput(objectID), let pid = Self.processID(of: objectID) else { return nil }
+            guard CoreAudioHAL.boolProperty(kAudioProcessPropertyIsRunningInput, of: objectID),
+                let pid = CoreAudioHAL.processID(of: objectID)
+            else { return nil }
             return AudioInputClient(
                 processID: pid,
                 bundleID: Self.bundleID(of: objectID),
@@ -141,23 +143,7 @@ private final class ProcessInputWatcher: @unchecked Sendable {
         }
     }
 
-    // MARK: - HAL
-
-    private static func isRunningInput(_ objectID: AudioObjectID) -> Bool {
-        var address = CoreAudioHAL.propertyAddress(kAudioProcessPropertyIsRunningInput)
-        var running: UInt32 = 0
-        var size = UInt32(MemoryLayout<UInt32>.size)
-        let status = AudioObjectGetPropertyData(objectID, &address, 0, nil, &size, &running)
-        return status == noErr && running != 0
-    }
-
-    private static func processID(of objectID: AudioObjectID) -> Int32? {
-        var address = CoreAudioHAL.propertyAddress(kAudioProcessPropertyPID)
-        var pid: pid_t = 0
-        var size = UInt32(MemoryLayout<pid_t>.size)
-        guard AudioObjectGetPropertyData(objectID, &address, 0, nil, &size, &pid) == noErr else { return nil }
-        return pid
-    }
+    // MARK: - Process details
 
     /// The bundle ID of the outermost app the process's executable lives in, e.g. `Webex.app` for
     /// `/Applications/Webex.app/Contents/Frameworks/Helper.app/Contents/MacOS/Helper`. `nil` if

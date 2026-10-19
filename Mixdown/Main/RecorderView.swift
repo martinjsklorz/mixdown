@@ -59,15 +59,7 @@ struct RecorderView: View {
                     coordinator.isCancellingPreparation ? "Cancelling Download…" : "Downloading Model…",
                     detail: downloadDetail(for: coordinator)
                 )
-                ProgressView(value: progress) {
-                    EmptyView()
-                } currentValueLabel: {
-                    Text(
-                        ProgressText.detail(progress: progress, remaining: coordinator.timeRemaining)
-                    )
-                    .monospacedDigit()
-                }
-                .frame(maxWidth: 320)
+                progressBar(progress, for: coordinator)
                 if coordinator.isPreparingModelForRecording {
                     summaryTemplatePicker(for: coordinator)
                 } else {
@@ -78,10 +70,8 @@ struct RecorderView: View {
 
             case .startingCapture:
                 headline("Starting to Record…", detail: "Allow Mixdown to record if macOS asks.")
-                RecordButton(isRecording: true) {
-                    Task { await coordinator.stopRecording() }
-                }
-                .disabled(coordinator.isStopPending)
+                stopButton(for: coordinator)
+                    .disabled(coordinator.isStopPending)
                 caption(coordinator.isStopPending ? "Stopping…" : "Click to stop")
 
             case .recording(let startedAt):
@@ -108,13 +98,7 @@ struct RecorderView: View {
 
             case .transcribing(let progress):
                 headline("Transcribing…", detail: "Your note appears in the sidebar when it's done.")
-                ProgressView(value: progress) {
-                    EmptyView()
-                } currentValueLabel: {
-                    Text(ProgressText.detail(progress: progress, remaining: coordinator.timeRemaining))
-                        .monospacedDigit()
-                }
-                .frame(maxWidth: 320)
+                progressBar(progress, for: coordinator)
                 summaryTemplatePicker(for: coordinator)
 
             case .summarizing:
@@ -155,13 +139,28 @@ struct RecorderView: View {
             // Balances the pause button, so Stop stays where Record was.
             Color.clear
                 .frame(width: PauseButton.size, height: PauseButton.size)
-            RecordButton(isRecording: true) {
-                Task { await coordinator.stopRecording() }
-            }
+            stopButton(for: coordinator)
             PauseButton(isPaused: coordinator.isPaused) {
                 Task { await coordinator.togglePause() }
             }
         }
+    }
+
+    private func stopButton(for coordinator: RecordingCoordinator) -> some View {
+        RecordButton(isRecording: true) {
+            Task { await coordinator.stopRecording() }
+        }
+    }
+
+    /// A download's or transcription's progress, with the time left.
+    private func progressBar(_ progress: Double, for coordinator: RecordingCoordinator) -> some View {
+        ProgressView(value: progress) {
+            EmptyView()
+        } currentValueLabel: {
+            Text(ProgressText.detail(progress: progress, remaining: coordinator.timeRemaining))
+                .monospacedDigit()
+        }
+        .frame(maxWidth: 320)
     }
 
     /// The template this recording's summary gets, preselected from Settings → Transcription and
@@ -204,14 +203,9 @@ struct RecorderView: View {
         }
     }
 
+    /// Only shown with a notes folder; without one, `hero(for:)` asks for it instead.
     private func startCaption(for coordinator: RecordingCoordinator) -> String {
-        if coordinator.selectedDevices.isEmpty {
-            "Choose an input to record"
-        } else if environment.notesFolder.directory == nil {
-            "Choose a notes folder to record"
-        } else {
-            "Click to record · ⌘R"
-        }
+        coordinator.selectedDevices.isEmpty ? "Choose an input to record" : "Click to record · ⌘R"
     }
 
     /// Asks for a notes folder on first run, or for another one when it can't be reached.

@@ -8,7 +8,7 @@ import MixdownCore
 /// still pick them up.
 @MainActor
 enum AudioCues {
-    static func play(_ cue: AudioCue, settings: AppSettings = AppSettings()) {
+    static func play(_ cue: AudioCue, settings: AppSettings) {
         guard settings.playsSounds, let name = settings.sound(for: cue) else { return }
         play(named: name)
     }

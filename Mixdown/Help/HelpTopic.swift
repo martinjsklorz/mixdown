@@ -15,7 +15,7 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
     case shortcuts
     case troubleshooting
 
-    static let urlScheme = "mixdown-help"
+    private static let urlScheme = "mixdown-help"
 
     var id: Self { self }
 
@@ -130,7 +130,7 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
 
             - Click the red button on **Record**.
             - Choose **Recording → Start Recording** (⌘R).
-            - Choose **Start Recording** from the waveform icon in the menu bar.
+            - Choose **Start Recording** from Mixdown's icon in the menu bar.
             - From any other app, press ⌃⌥⌘R. Change that shortcut or turn it off under \
             **Settings → General → Global Shortcut**.
 
@@ -158,15 +158,17 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             ## While recording
 
             - **Record** shows a level meter for each input.
-            - The elapsed time shows in the menu bar. With **Settings → Design → Show recording in \
-            the Dynamic Island** on, the time and levels appear in a Dynamic Island around the camera \
-            notch instead (at the top center of the screen on Macs without one). Click it to open \
-            Record.
+            - With **Settings → Design → Show recording in the Dynamic Island** on (the default), \
+            the time and levels appear in a Dynamic Island around the camera notch instead of the \
+            time in the menu bar. Without a notch, or with another display connected, the island \
+            appears at the top center of the screen and the menu bar keeps the time too. Click the \
+            island to open Record. With the setting off, the time shows in the menu bar.
             - If an input makes no sound for 10 seconds, Mixdown warns on Record and in the menu \
             bar. See [Troubleshooting](mixdown-help:troubleshooting).
 
-            When you stop, Mixdown transcribes the recording and shows its progress on Record and in \
-            the menu bar. Then the note opens.
+            With the live model (the default), Record shows the words as you speak, and the note is \
+            ready moments after you stop. With an offline model, Mixdown transcribes the recording \
+            when you stop and shows its progress on Record and in the menu bar. Then the note opens.
             """
         case .calls:
             """
@@ -211,17 +213,19 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             - **Rename** it. This changes both the title inside the note and its file name.
             - **Copy Transcript** as plain text.
             - **Share** it.
-            - **Move to Trash** (⌘⌫, or Delete in the sidebar). Mixdown asks first, then shows a \
-            notification with **Restore** to put the note back.
+            - **Delete** it (⌘⌫, or Delete in the sidebar), which moves it to the Trash. Mixdown \
+            asks first (turn that off under **Settings → General**), then shows a notification with \
+            **Restore** to put the note back.
 
-            Right-clicking also offers **Open in Default App** and **Show in Finder**.
+            Right-clicking also offers **Open in Default App**.
 
             ## The notes folder
 
             Each note is a Markdown file in the folder you chose. Open it with **File → Open Notes \
             Folder** (⇧⌘O), and change it under **Settings → General**. Notes work with any \
             Markdown editor, such as Obsidian. Action items are saved as checkboxes (`- [ ]`) you \
-            can tick off there.
+            can tick off there. Notes you file into subfolders are listed too, with their folder \
+            under the title; hidden folders such as Obsidian's `.obsidian` are skipped.
 
             If the folder can't be reached, for example because it's on a drive that isn't \
             connected, Mixdown says so and doesn't record until it's back or you choose another \
@@ -230,9 +234,18 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
         case .speechModels:
             """
             Mixdown turns speech into text with a model that runs on your Mac. Choose one under \
-            **Settings → Transcription**:
+            **Settings → Transcription**, in one of two kinds:
 
-            - **Qwen3-ASR 0.6B** (default, about 0.9 GB): fast, everyday notes.
+            - **Live** models transcribe while you record, so the note is ready when you stop. The \
+            audio isn't kept, so an hours-long meeting takes no more memory than a short one.
+            - **Offline** models transcribe the whole recording once you stop, keeping its audio in \
+            memory until then. Qwen3 and MOSS are more accurate than the live model.
+
+            The models:
+
+            - **Nemotron 3.5 ASR Streaming 0.6B** (live, the default, about 540 MB): long meetings, \
+            with the text as you speak.
+            - **Qwen3-ASR 0.6B** (about 0.9 GB): fast, everyday notes.
             - **Qwen3-ASR 1.7B** (about 2.3 GB): better accuracy, on Macs with 24 GB of memory or \
             more.
             - **MOSS Transcribe Diarize 0.9B** (about 1 GB): meetings, because it labels who is \
@@ -325,6 +338,7 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
         case .shortcuts:
             """
             - ⌘R: Start or stop recording
+            - ⇧⌘P: Pause or resume recording
             - ⌃⌥⌘R: Start or stop recording from any app (change it under **Settings → General**)
             - ⌘1: Show Record
             - ⌘2: Show Notes

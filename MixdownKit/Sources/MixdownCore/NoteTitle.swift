@@ -4,15 +4,15 @@ import Foundation
 /// else after the time recorded.
 enum NoteTitle {
     /// The words put around a call's title, e.g. `Call about ` before it.
-    struct CallWording: Equatable {
+    private struct CallWording {
         var prefix: String
         var suffix = ""
     }
 
-    static let englishCallWording = CallWording(prefix: "Call about ")
+    private static let englishCallWording = CallWording(prefix: "Call about ")
 
     /// By ISO 639-1 code, for the languages Settings offers. The rest get English.
-    static let callWordings: [String: CallWording] = [
+    private static let callWordings: [String: CallWording] = [
         "en": englishCallWording,
         "de": CallWording(prefix: "Anruf zu "),
         "fr": CallWording(prefix: "Appel concernant "),
@@ -42,13 +42,13 @@ enum NoteTitle {
         return wording.prefix + title + wording.suffix
     }
 
-    static func callWording(for language: String?) -> CallWording {
+    private static func callWording(for language: String?) -> CallWording {
         let code = language?.lowercased().split(whereSeparator: { $0 == "-" || $0 == "_" }).first.map(String.init)
         return code.flatMap { callWordings[$0] } ?? englishCallWording
     }
 
     /// `title` on one line, without the quotes or the full stop models like to put around one.
-    static func cleaned(_ title: String) -> String {
+    private static func cleaned(_ title: String) -> String {
         title.split(whereSeparator: \.isWhitespace).joined(separator: " ")
             .trimmingCharacters(in: CharacterSet(charactersIn: "\"“”„«». "))
     }

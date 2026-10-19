@@ -68,9 +68,10 @@ public struct LiveTranscript: Sendable, Equatable {
 
     public var isEmpty: Bool { lines.isEmpty }
 
-    /// Adds an input, such as system audio turned on mid-recording. Its index follows the others'.
-    public mutating func addSource(speaker: String? = nil) {
-        sources.append(Source(speaker: speaker))
+    /// Adds an unlabeled input, such as system audio turned on mid-recording. Its index follows
+    /// the others'.
+    public mutating func addSource() {
+        sources.append(Source(speaker: nil))
     }
 
     /// Starts input `index`'s next word on a segment of its own, e.g. when it switches devices, so

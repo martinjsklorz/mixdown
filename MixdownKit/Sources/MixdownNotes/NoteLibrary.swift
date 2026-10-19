@@ -6,14 +6,8 @@ public enum NoteLibrary {
 
     /// Every Markdown file in `directory` and its subfolders, newest first. Hidden files and
     /// folders (like Obsidian's `.obsidian` and `.trash`) and packages are skipped, and a folder
-    /// that doesn't exist yet has no notes.
-    public static func loadNotes(in directory: URL) throws -> [NoteDocument] {
-        var cache = Cache()
-        return try loadNotes(in: directory, cache: &cache)
-    }
-
-    /// Like `loadNotes(in:)`, but only reads the files that are new or changed since `cache` last
-    /// saw them, and updates `cache`.
+    /// that doesn't exist yet has no notes. Only reads the files that are new or changed since
+    /// `cache` last saw them, and updates `cache`.
     public static func loadNotes(in directory: URL, cache: inout Cache) throws -> [NoteDocument] {
         let fileManager = FileManager.default
         guard fileManager.fileExists(atPath: directory.path(percentEncoded: false)) else {
@@ -98,9 +92,8 @@ public enum NoteLibrary {
     }
 
     /// Whether the file at `url` would be listed as a note, judged by its name alone: a Markdown
-    /// file that isn't hidden. Lets a folder watcher skip changes to `.DS_Store` and editors'
-    /// temporary files.
-    public static func isNote(_ url: URL) -> Bool {
+    /// file that isn't hidden.
+    private static func isNote(_ url: URL) -> Bool {
         !url.lastPathComponent.hasPrefix(".") && fileExtensions.contains(url.pathExtension.lowercased())
     }
 
@@ -151,10 +144,7 @@ public enum NoteLibrary {
         guard let contents = String(data: try Data(contentsOf: url), encoding: .utf8) else {
             throw CocoaError(.fileReadInapplicableStringEncoding, userInfo: [NSURLErrorKey: url])
         }
-        let temporaryURL = url.deletingLastPathComponent().appending(
-            path: ".\(UUID().uuidString).mixdown-tmp",
-            directoryHint: .notDirectory
-        )
+        let temporaryURL = MarkdownNoteWriter.temporaryURL(in: url.deletingLastPathComponent())
         defer { try? fileManager.removeItem(at: temporaryURL) }
         try Data(transform(contents).utf8).write(to: temporaryURL)
         // Swaps the contents in atomically while keeping the file's creation date, which dates
@@ -181,10 +171,7 @@ public enum NoteLibrary {
         let fileManager = FileManager.default
         let directory = originalURL.deletingLastPathComponent()
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        let temporaryURL = directory.appending(
-            path: ".\(UUID().uuidString).mixdown-tmp",
-            directoryHint: .notDirectory
-        )
+        let temporaryURL = MarkdownNoteWriter.temporaryURL(in: directory)
         defer { try? fileManager.removeItem(at: temporaryURL) }
         try contents.write(to: temporaryURL)
         return try move(
@@ -213,10 +200,7 @@ public enum NoteLibrary {
             do {
                 if changesCaseOnly {
                     // Moving straight to the new name may count as overwriting the file itself.
-                    let temporaryURL = directory.appending(
-                        path: ".\(UUID().uuidString).mixdown-tmp",
-                        directoryHint: .notDirectory
-                    )
+                    let temporaryURL = MarkdownNoteWriter.temporaryURL(in: directory)
                     try fileManager.moveItem(at: url, to: temporaryURL)
                     do {
                         try fileManager.moveItem(at: temporaryURL, to: destination)

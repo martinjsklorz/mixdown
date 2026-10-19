@@ -1,7 +1,7 @@
 import Foundation
 
 /// Where an input device gets its audio from.
-public enum AudioSourceKind: String, Codable, Sendable, CaseIterable {
+public enum AudioSourceKind: String, Sendable {
     /// A hardware or virtual CoreAudio input device (built-in mic, USB interface, …).
     case microphone
     /// Everything the Mac is playing back, captured via a Core Audio process tap.
@@ -9,7 +9,7 @@ public enum AudioSourceKind: String, Codable, Sendable, CaseIterable {
 }
 
 /// A selectable audio source shown in the menu bar device picker. Several can record at once.
-public struct AudioInputDevice: Identifiable, Hashable, Sendable, Codable {
+public struct AudioInputDevice: Identifiable, Hashable, Sendable {
     /// Identifier for the system-audio pseudo device.
     public static let systemAudioID = "mixdown.system-audio"
     /// Identifier for the default-microphone pseudo device.
@@ -51,15 +51,12 @@ public struct AudioChunk: Sendable, Equatable {
     public static let sampleRate: Double = 16_000
 
     public let samples: [Float]
-    /// Offset of the first sample relative to the start of the capture session.
-    public let startTime: TimeInterval
     /// When the first sample was captured, in seconds on the host clock (`mach_absolute_time`).
     /// Lines up chunks from different sources and reveals gaps. `nil` if the capture can't tell.
     public let hostTime: TimeInterval?
 
-    public init(samples: [Float], startTime: TimeInterval, hostTime: TimeInterval? = nil) {
+    public init(samples: [Float], hostTime: TimeInterval? = nil) {
         self.samples = samples
-        self.startTime = startTime
         self.hostTime = hostTime
     }
 

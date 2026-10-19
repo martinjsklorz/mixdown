@@ -334,29 +334,9 @@ private struct ModelPage: View {
                     .pickerStyle(.radioGroup)
                     .disabled(!environment.canChangeModel)
 
-                    Picker(
-                        "Language",
-                        selection: Binding(
-                            get: { environment.language },
-                            set: { environment.setLanguage($0) }
-                        )
-                    ) {
-                        Text("Automatic").tag(String?.none)
-                        Divider()
-                        ForEach(TranscriptionSettingsView.languages, id: \.self) { code in
-                            Text(TranscriptionSettingsView.displayName(for: code)).tag(Optional(code))
-                        }
-                    }
-                    .disabled(!environment.model.supportsLanguageSelection)
+                    LanguagePicker()
                 } footer: {
-                    caption(
-                        environment.model.labelsSpeakers
-                            ? "This model labels speakers and detects the language itself."
-                            : environment.model.isManagedBySystem
-                                ? "Apple's model is part of macOS. Automatic uses your Mac's language."
-                                : "Larger models are more accurate but slower. Change it later under "
-                                    + "Settings → Transcription."
-                    )
+                    caption(footer(for: environment.model))
                 }
 
                 Section {
@@ -364,6 +344,19 @@ private struct ModelPage: View {
                 }
             }
             .formStyle(.grouped)
+        }
+    }
+
+    private func footer(for model: TranscriptionModel) -> String {
+        if model.labelsSpeakers {
+            "This model labels speakers and detects the language itself."
+        } else if model.isManagedBySystem {
+            "Apple's model is part of macOS. Automatic uses your Mac's language."
+        } else if model.isLive {
+            "The live model shows the text as you speak, and the note is ready when you stop. Change "
+                + "it later under Settings → Transcription."
+        } else {
+            "Larger models are more accurate but slower. Change it later under Settings → Transcription."
         }
     }
 

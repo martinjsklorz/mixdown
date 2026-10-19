@@ -145,18 +145,14 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
         // Collapsed like the heading's plain text, so a title with runs of spaces still matches.
         let currentTitle = NoteDocument(url: url, contents: contents, fileDate: .distantPast).title
             .split(whereSeparator: \.isWhitespace).joined(separator: " ")
-        var text = contents.replacingOccurrences(of: "\r\n", with: "\n")
-        if text.hasPrefix("\u{FEFF}") { text.removeFirst() }
-        var lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        var lines = normalizedLines(contents)
         let titleLine = "title: \(MarkdownNoteRenderer.yamlQuoted(title))"
 
         var bodyStart = 0
         let frontmatter = frontmatterEnd(lines)
         if let end = frontmatter {
-            if let index = lines[1..<end].firstIndex(where: { frontmatterKey($0) == "title" }) {
-                // Also drop the lines a multi-line value continues on, up to the next key.
-                let next = lines[(index + 1)..<end].firstIndex { $0.first.map { !$0.isWhitespace } ?? false }
-                lines.replaceSubrange(index..<(next ?? end), with: [titleLine])
+            if let field = fieldLines("title", in: lines, frontmatterEnd: end) {
+                lines.replaceSubrange(field, with: [titleLine])
             } else {
                 lines.insert(titleLine, at: 1)
             }
@@ -193,19 +189,15 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
     /// A note without frontmatter gets some when pinned, and loses frontmatter that held nothing
     /// else when unpinned. Line endings become `\n`.
     static func pinned(_ contents: String, _ isPinned: Bool) -> String {
-        var text = contents.replacingOccurrences(of: "\r\n", with: "\n")
-        if text.hasPrefix("\u{FEFF}") { text.removeFirst() }
-        var lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        var lines = normalizedLines(contents)
         let pinnedLines = isPinned ? ["pinned: true"] : []
 
         guard let end = frontmatterEnd(lines) else {
             if isPinned { lines.insert(contentsOf: ["---"] + pinnedLines + ["---", ""], at: 0) }
             return lines.joined(separator: "\n")
         }
-        if let index = lines[1..<end].firstIndex(where: { frontmatterKey($0) == "pinned" }) {
-            // Also drop the lines a multi-line value continues on, up to the next key.
-            let next = lines[(index + 1)..<end].firstIndex { $0.first.map { !$0.isWhitespace } ?? false }
-            lines.replaceSubrange(index..<(next ?? end), with: pinnedLines)
+        if let field = fieldLines("pinned", in: lines, frontmatterEnd: end) {
+            lines.replaceSubrange(field, with: pinnedLines)
         } else {
             lines.insert(contentsOf: pinnedLines, at: end)
         }
@@ -221,8 +213,7 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
     /// Splits off a leading `---` … `---` block and reads its top-level `key: value` lines.
     /// Values are kept as written; decode them with `yamlScalar(_:)` or `yamlFlowSequence(_:)`.
     static func splitFrontmatter(_ contents: String) -> (fields: [String: String], body: String) {
-        var text = contents.replacingOccurrences(of: "\r\n", with: "\n")
-        if text.hasPrefix("\u{FEFF}") { text.removeFirst() }
+        let text = normalized(contents)
         let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
         guard let end = frontmatterEnd(lines) else { return ([:], text) }
 
@@ -233,6 +224,25 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
             fields[key] = value
         }
         return (fields, lines[(end + 1)...].joined(separator: "\n"))
+    }
+
+    /// `contents` with `\n` line endings and without a byte order mark.
+    private static func normalized(_ contents: String) -> String {
+        var text = contents.replacingOccurrences(of: "\r\n", with: "\n")
+        if text.hasPrefix("\u{FEFF}") { text.removeFirst() }
+        return text
+    }
+
+    private static func normalizedLines(_ contents: String) -> [String] {
+        normalized(contents).split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+    }
+
+    /// The lines of the top-level `key` field in the frontmatter closed at `end`, including the
+    /// lines a multi-line value continues on, up to the next key.
+    private static func fieldLines(_ key: String, in lines: [String], frontmatterEnd end: Int) -> Range<Int>? {
+        guard let index = lines[1..<end].firstIndex(where: { frontmatterKey($0) == key }) else { return nil }
+        let next = lines[(index + 1)..<end].firstIndex { $0.first.map { !$0.isWhitespace } ?? false }
+        return index..<(next ?? end)
     }
 
     /// The index of the line closing the frontmatter, if `lines` start with frontmatter.

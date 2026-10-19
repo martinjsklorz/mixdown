@@ -15,6 +15,12 @@ struct NoteLibraryTests {
         try Data(contents.utf8).write(to: directory.appending(path: name, directoryHint: .notDirectory))
     }
 
+    /// Loads with a fresh cache, so every file is read.
+    private func loadNotes(in directory: URL) throws -> [NoteDocument] {
+        var cache = NoteLibrary.Cache()
+        return try NoteLibrary.loadNotes(in: directory, cache: &cache)
+    }
+
     @Test func loadsMarkdownFilesNewestFirst() async throws {
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -33,7 +39,7 @@ struct NoteLibraryTests {
             withIntermediateDirectories: false
         )
 
-        let notes = try NoteLibrary.loadNotes(in: directory)
+        let notes = try loadNotes(in: directory)
 
         // "Plain" has no `created`, so it's dated now by the file system and comes first.
         #expect(notes.map(\.title) == ["Plain", "Newer", "Newer", "Older"])
@@ -55,7 +61,7 @@ struct NoteLibraryTests {
         try write("# Settings", to: ".obsidian/Settings.md", in: directory)
         try write("# Trashed", to: ".trash/Trashed.md", in: directory)
 
-        let notes = try NoteLibrary.loadNotes(in: directory)
+        let notes = try loadNotes(in: directory)
 
         let folders = Dictionary(uniqueKeysWithValues: notes.map { ($0.title, $0.folder) })
         #expect(folders == ["Root": nil, "Client": "Clients", "Acme": "Clients/Acme"])
@@ -76,14 +82,14 @@ struct NoteLibraryTests {
             try? FileManager.default.removeItem(at: directory)
         }
 
-        #expect(try NoteLibrary.loadNotes(in: directory).map(\.title) == ["Root"])
+        #expect(try loadNotes(in: directory).map(\.title) == ["Root"])
     }
 
     @Test func missingDirectoryHasNoNotes() throws {
         let directory = FileManager.default.temporaryDirectory
             .appending(path: "NoteLibraryTests-missing-\(UUID().uuidString)", directoryHint: .isDirectory)
 
-        #expect(try NoteLibrary.loadNotes(in: directory).isEmpty)
+        #expect(try loadNotes(in: directory).isEmpty)
     }
 
     // MARK: Reloading with a cache
@@ -124,7 +130,7 @@ struct NoteLibraryTests {
         try setModificationDate(date, of: "Note.md", in: directory)
         #expect(try NoteLibrary.loadNotes(in: directory, cache: &cache).map(\.title) == ["Old"])
         // Without the cache it is read.
-        #expect(try NoteLibrary.loadNotes(in: directory).map(\.title) == ["New"])
+        #expect(try loadNotes(in: directory).map(\.title) == ["New"])
     }
 
     @Test func cachedReloadOfAnotherFolderHasOnlyItsNotes() throws {
@@ -145,19 +151,6 @@ struct NoteLibraryTests {
         #expect(try NoteLibrary.loadNotes(in: first, cache: &cache).map(\.title) == ["First"])
     }
 
-    @Test func tellsNotesByName() {
-        let directory = URL(fileURLWithPath: "/Notes", isDirectory: true)
-        let note = { (name: String) in NoteLibrary.isNote(directory.appending(path: name)) }
-
-        #expect(note("2026-10-17 0930 Standup.md"))
-        #expect(note("Plain.MARKDOWN"))
-        #expect(!note(".DS_Store"))
-        #expect(!note(".Standup.md.swp"))
-        #expect(!note(".hidden.md"))
-        #expect(!note("notes.txt"))
-        #expect(!note("Standup.md.sb-1a2b3c"))
-    }
-
     @Test func tellsChangesThatAffectNotes() {
         let directory = URL(fileURLWithPath: "/Notes", isDirectory: true)
         let affects = { (path: String, isDirectory: Bool) in
@@ -165,12 +158,16 @@ struct NoteLibraryTests {
         }
 
         #expect(affects("/Notes/Clients/Standup.md", false))
+        #expect(affects("/Notes/Plain.MARKDOWN", false))
         #expect(affects("/Notes/Clients", true))
         #expect(affects("/Notes", true))
         #expect(!affects("/Notes/Clients/.DS_Store", false))
         #expect(!affects("/Notes/.obsidian/Settings.md", false))
         #expect(!affects("/Notes/.trash", true))
         #expect(!affects("/Notes/Clients/notes.txt", false))
+        // Editors' temporary files.
+        #expect(!affects("/Notes/.Standup.md.swp", false))
+        #expect(!affects("/Notes/Standup.md.sb-1a2b3c", false))
         // Spelled differently from `directory`: by name only.
         #expect(affects("/private/Notes/.x/Standup.md", false))
         #expect(!affects("/private/Notes/.Standup.md", false))
@@ -199,7 +196,7 @@ struct NoteLibraryTests {
         #expect(try fileNames(in: directory) == [renamed.lastPathComponent])
         let expected = MarkdownNoteRenderer.render(NoteFixtures.note(title: "Plan: Q4 launch"))
         #expect(try contents(of: renamed) == expected)
-        #expect(try NoteLibrary.loadNotes(in: directory).map(\.title) == ["Plan: Q4 launch"])
+        #expect(try loadNotes(in: directory).map(\.title) == ["Plan: Q4 launch"])
     }
 
     @Test func renameAvoidsTakenNamesAndKeepsItsOwn() async throws {
@@ -257,7 +254,7 @@ struct NoteLibraryTests {
 
         #expect(renamed.lastPathComponent == "a-b.md")
         #expect(try contents(of: renamed) == "---\ntitle: \"a/b\"\n---\n\n```\n# Ideas\n```\nText")
-        #expect(try NoteLibrary.loadNotes(in: directory).map(\.title) == ["a/b"])
+        #expect(try loadNotes(in: directory).map(\.title) == ["a/b"])
     }
 
     @Test func renameReplacesMultiLineTitleAndFillsMissingOne() throws {
@@ -290,7 +287,7 @@ struct NoteLibraryTests {
         )
 
         #expect(try contents(of: renamed) == "---\ntitle: \"C# *draft* #\"\n---\n# C# \\*draft\\* \\#\n")
-        let note = try #require(try NoteLibrary.loadNotes(in: directory).first)
+        let note = try #require(try loadNotes(in: directory).first)
         #expect(note.title == "C# *draft* #")
         #expect(note.displayBlocks().isEmpty)
 
@@ -309,10 +306,10 @@ struct NoteLibraryTests {
         )
 
         #expect(renamed.lastPathComponent == "env.md")
-        #expect(try NoteLibrary.loadNotes(in: directory).map(\.title) == [". .env"])
+        #expect(try loadNotes(in: directory).map(\.title) == [". .env"])
     }
 
-    @Test func renameLeavesNoteThatIsNotUTF8Alone() throws {
+    @Test func renameAndPinLeaveNoteThatIsNotUTF8Alone() throws {
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appending(path: "Caf\u{E9}.md", directoryHint: .notDirectory)
@@ -320,6 +317,7 @@ struct NoteLibraryTests {
         try latin1.write(to: url)
 
         #expect(throws: CocoaError.self) { try NoteLibrary.rename(noteAt: url, to: "New") }
+        #expect(throws: CocoaError.self) { try NoteLibrary.setPinned(true, noteAt: url) }
         #expect(try fileNames(in: directory) == [url.lastPathComponent])
         #expect(try Data(contentsOf: url) == latin1)
     }
@@ -332,7 +330,7 @@ struct NoteLibraryTests {
         let renamed = try NoteLibrary.rename(noteAt: url, to: " \n ")
 
         #expect(renamed.lastPathComponent.hasSuffix(" Untitled.md"))
-        #expect(try NoteLibrary.loadNotes(in: directory).map(\.title) == ["Untitled"])
+        #expect(try loadNotes(in: directory).map(\.title) == ["Untitled"])
     }
 
     // MARK: Pinning
@@ -345,14 +343,14 @@ struct NoteLibraryTests {
 
         try NoteLibrary.setPinned(true, noteAt: url)
         #expect(try contents(of: url).contains("tags: [mixdown]\npinned: true\n---\n"))
-        #expect(try NoteLibrary.loadNotes(in: directory).map(\.isPinned) == [true])
+        #expect(try loadNotes(in: directory).map(\.isPinned) == [true])
 
         try NoteLibrary.setPinned(true, noteAt: url)
         #expect(try contents(of: url).components(separatedBy: "pinned:").count == 2)
 
         try NoteLibrary.setPinned(false, noteAt: url)
         #expect(try contents(of: url) == original)
-        #expect(try NoteLibrary.loadNotes(in: directory).map(\.isPinned) == [false])
+        #expect(try loadNotes(in: directory).map(\.isPinned) == [false])
     }
 
     @Test func pinReplacesExistingFieldAndKeepsTheRest() throws {
@@ -376,22 +374,11 @@ struct NoteLibraryTests {
 
         try NoteLibrary.setPinned(true, noteAt: url)
         #expect(try contents(of: url) == "---\npinned: true\n---\n\n# Ideas\n\nSome text\n")
-        let note = try #require(try NoteLibrary.loadNotes(in: directory).first)
+        let note = try #require(try loadNotes(in: directory).first)
         #expect(note.isPinned && note.title == "Ideas")
 
         try NoteLibrary.setPinned(false, noteAt: url)
         #expect(try contents(of: url) == "# Ideas\n\nSome text\n")
-    }
-
-    @Test func pinLeavesNoteThatIsNotUTF8Alone() throws {
-        let directory = try makeDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let url = directory.appending(path: "Caf\u{E9}.md", directoryHint: .notDirectory)
-        let latin1 = Data("# Caf".utf8) + Data([0xE9, 0x0A])
-        try latin1.write(to: url)
-
-        #expect(throws: CocoaError.self) { try NoteLibrary.setPinned(true, noteAt: url) }
-        #expect(try Data(contentsOf: url) == latin1)
     }
 
     // MARK: Restoring

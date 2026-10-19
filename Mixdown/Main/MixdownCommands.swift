@@ -154,12 +154,6 @@ private struct RecordingMenuItems: View {
 
         Divider()
 
-        DevicePicker(
-            devices: coordinator.devices,
-            selectedIDs: Set(coordinator.selectedDevices.map(\.id)),
-            followsDefaultMicrophone: environment.followsDefaultMicrophone,
-            onSelectMicrophone: environment.selectMicrophone,
-            onSetSystemAudio: environment.setRecordsSystemAudio
-        )
+        DevicePicker(environment: environment)
     }
 }

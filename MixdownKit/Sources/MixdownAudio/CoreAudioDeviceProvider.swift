@@ -109,7 +109,7 @@ private final class DeviceListWatcher: @unchecked Sendable {
         queue.async { [weak self] in self?.refresh(afterServiceRestart: afterServiceRestart) }
     }
 
-    private func refresh(afterServiceRestart: Bool = false) {
+    private func refresh(afterServiceRestart: Bool) {
         guard !isStopped else { return }
         if afterServiceRestart {
             removeDeviceListeners()

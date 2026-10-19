@@ -7,7 +7,9 @@ import MixdownCore
 /// note has one, then `## Transcript`. Sections are added in `bodySections(for:)`.
 public enum MarkdownNoteRenderer {
     /// Shown instead of transcript paragraphs when nothing was recognized.
-    public static let emptyTranscriptPlaceholder = "_No speech detected._"
+    static let emptyTranscriptPlaceholder = "_No speech detected._"
+    /// Shown under a fixed summary section the summary has nothing for.
+    static let emptySectionPlaceholder = "_None._"
 
     public static func render(_ note: Note) -> String {
         let title = singleLine(note.title)
@@ -58,9 +60,6 @@ public enum MarkdownNoteRenderer {
     static func section(_ heading: String, body: String) -> String {
         "## \(heading)\n\n\(body)"
     }
-
-    /// Shown under a fixed summary section the summary has nothing for.
-    public static let emptySectionPlaceholder = "_None._"
 
     /// Templates with fixed sections get `###` TL;DR, Decisions, Action Items and Open Questions,
     /// each shown even when empty, so every note of a kind reads the same. The `general` template

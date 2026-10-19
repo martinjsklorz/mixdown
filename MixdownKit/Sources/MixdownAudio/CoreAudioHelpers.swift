@@ -102,11 +102,16 @@ enum CoreAudioHAL {
 
     /// Whether the device is still connected. A device ID outlives its device and reports `false`.
     static func isAlive(_ deviceID: AudioDeviceID) -> Bool {
-        var address = propertyAddress(kAudioDevicePropertyDeviceIsAlive)
-        var alive: UInt32 = 0
-        var size = UInt32(MemoryLayout<UInt32>.size)
-        let status = AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &alive)
-        return status == noErr && alive != 0
+        boolProperty(kAudioDevicePropertyDeviceIsAlive, of: deviceID)
+    }
+
+    /// The PID of a HAL process object, or `nil` if it can't be read (e.g. the process exited).
+    static func processID(of objectID: AudioObjectID) -> pid_t? {
+        var address = propertyAddress(kAudioProcessPropertyPID)
+        var pid: pid_t = 0
+        var size = UInt32(MemoryLayout<pid_t>.size)
+        guard AudioObjectGetPropertyData(objectID, &address, 0, nil, &size, &pid) == noErr else { return nil }
+        return pid
     }
 
     /// The format IO procs receive from the device's first input stream, or `nil` if it has none.
@@ -168,6 +173,15 @@ enum CoreAudioHAL {
         try allDeviceIDs().first { self.uid(of: $0) == uid }
     }
 
+    /// A `UInt32` flag property; `false` if it's zero or can't be read.
+    static func boolProperty(_ selector: AudioObjectPropertySelector, of objectID: AudioObjectID) -> Bool {
+        var address = propertyAddress(selector)
+        var value: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        let status = AudioObjectGetPropertyData(objectID, &address, 0, nil, &size, &value)
+        return status == noErr && value != 0
+    }
+
     static func stringProperty(_ selector: AudioObjectPropertySelector, of objectID: AudioObjectID) -> String? {
         var address = propertyAddress(selector)
         var value: Unmanaged<CFString>?
@@ -178,6 +192,12 @@ enum CoreAudioHAL {
         guard status == noErr, let value else { return nil }
         // CFString properties are returned at +1; the caller owns the reference.
         return value.takeRetainedValue() as String
+    }
+
+    /// Logs a failed teardown call, which there's nothing else to do about.
+    static func logFailure(_ status: OSStatus, _ call: String) {
+        guard status != noErr else { return }
+        audioLogger.error("\(call, privacy: .public) failed: \(status, privacy: .public)")
     }
 }
 

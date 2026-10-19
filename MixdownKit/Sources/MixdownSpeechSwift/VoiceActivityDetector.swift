@@ -47,7 +47,7 @@ final class VoiceActivityDetector: @unchecked Sendable {
     /// Same frames as `SileroVADModel.detectSpeech(audio:sampleRate:config:)` (512 samples, last one
     /// zero-padded), but it keeps the per-frame probabilities, checks for cancellation and reports
     /// progress as it goes, and finds regions with `SpeechRegions` so short replies survive.
-    func detect(_ samples: [Float], progress: (Double) -> Void = { _ in }) throws -> Detection {
+    func detect(_ samples: [Float], progress: (Double) -> Void) throws -> Detection {
         let frameSize = SileroVADModel.chunkSize
         model.resetState()
         defer { model.resetState() }

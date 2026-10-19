@@ -1,7 +1,7 @@
 import Foundation
 
 /// A timed span of recognized speech.
-public struct TranscriptSegment: Sendable, Codable, Equatable {
+public struct TranscriptSegment: Sendable, Equatable {
     /// Seconds from the start of the recording.
     public var start: TimeInterval
     public var end: TimeInterval
@@ -17,7 +17,7 @@ public struct TranscriptSegment: Sendable, Codable, Equatable {
     }
 }
 
-public struct Transcript: Sendable, Codable, Equatable {
+public struct Transcript: Sendable, Equatable {
     public var segments: [TranscriptSegment]
     /// ISO 639-1 code of the detected or requested language, if known.
     public var language: String?
@@ -46,12 +46,9 @@ public struct Transcript: Sendable, Codable, Equatable {
 public struct TranscriptionOptions: Sendable, Equatable {
     /// ISO 639-1 language code, or `nil` to auto-detect.
     public var language: String?
-    /// Translate the speech to English instead of transcribing it verbatim.
-    public var translateToEnglish: Bool
 
-    public init(language: String? = nil, translateToEnglish: Bool = false) {
+    public init(language: String? = nil) {
         self.language = language
-        self.translateToEnglish = translateToEnglish
     }
 }
 
@@ -71,8 +68,8 @@ public struct TranscriptionEngineInfo: Sendable, Equatable {
 /// The seam between Mixdown and a speech-to-text backend.
 ///
 /// Implementations must run entirely on-device. The rest of the app only ever talks to this
-/// protocol, so swapping the speech model for another means adding a new conforming type and
-/// changing a single line where the engine is constructed.
+/// protocol, so offering another speech model means adding a new conforming type and
+/// constructing it where the engine is chosen.
 public protocol TranscriptionEngine: Sendable {
     var info: TranscriptionEngineInfo { get }
 
