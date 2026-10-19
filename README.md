@@ -21,7 +21,8 @@ Everything happens on your Mac. Your audio never leaves it.
 - **Summaries**: Apple Intelligence adds an overview, key points and action items, and names the
   note. Templates for 1:1s, standups and client calls.
 - **Translation**: notes in another language, translated on your Mac by Apple's translation
-  models, with the summary and title in that language too.
+  models, with the summary and title in that language too. With the live model, the live text is
+  translated as it's spoken, so you can follow a call in a language you don't speak.
 - **Plain Markdown notes**: saved to a folder you choose, ready for Obsidian or any editor. Browse,
   search, pin and rename them in Mixdown.
 - **Spotlight search**: every line of every note is in Spotlight, so ⌘Space finds the exact

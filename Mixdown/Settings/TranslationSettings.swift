@@ -37,6 +37,15 @@ struct TranslationSettings: View {
 
             if let target = environment.translationLanguage {
                 languagePairRow(to: target)
+                // Shown off while it can't apply, but remembered for when it can.
+                Toggle(
+                    "Translate live text while recording",
+                    isOn: Binding(
+                        get: { environment.translatesLiveText && environment.model.isLive },
+                        set: { environment.translatesLiveText = $0 }
+                    )
+                )
+                .disabled(!environment.model.isLive)
             }
         } header: {
             Text("Translation")
@@ -173,7 +182,9 @@ struct TranslationSettings: View {
         "Adds a translation above the transcript, and writes the summary and title in that language. "
             + "Apple's translation models do it on this Mac, with Apple Intelligence where it's on. For "
             + "recordings in other languages, download those under System Settings → General → Language "
-            + "& Region → Translation Languages."
+            + "& Region → Translation Languages.\n\nWith a live model, the live text can be translated as "
+            + "it's spoken too, under each line in Record and in the Dynamic Island, so you can follow a "
+            + "call in a language you don't speak. Lines already in that language are left as they are."
     }
 
     /// "German" for `de`, "Chinese (Traditional)" for `zh-Hant`, in the user's language.

@@ -528,3 +528,31 @@ final class MockTranslator: Translator {
         return translation
     }
 }
+
+/// Translates each transcript by looking its text up in `translations`, as a live caption's line
+/// is translated on its own. Texts it has no translation for are in the target language already;
+/// those in `failures` throw their error.
+final class DictionaryTranslator: Translator {
+    let info = TranslatorInfo(id: "dictionary", displayName: "Dictionary Translator")
+    private let translations: [String: String]
+    private let failures: [String: any Error]
+    private let received = LockedValue<[Transcript]>([])
+
+    init(translations: [String: String] = [:], failures: [String: any Error] = [:]) {
+        self.translations = translations
+        self.failures = failures
+    }
+
+    var receivedTexts: [String] { received.current.map(\.text) }
+    var receivedTranscripts: [Transcript] { received.current }
+
+    func translate(_ transcript: Transcript, to target: String) async throws -> Transcript? {
+        received.update { $0.append(transcript) }
+        if let error = failures[transcript.text] { throw error }
+        guard let translation = translations[transcript.text] else { return nil }
+        return Transcript(
+            segments: transcript.segments.map { TranscriptSegment(start: $0.start, end: $0.end, text: translation) },
+            language: target
+        )
+    }
+}

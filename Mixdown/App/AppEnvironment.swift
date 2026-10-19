@@ -141,6 +141,7 @@ final class AppEnvironment {
             echoCancellation: echoCancellation
         )
         coordinator.cancelsEcho = settings.cancelsEcho
+        coordinator.translatesLiveText = settings.translatesLiveText
         return coordinator
     }
 
@@ -504,6 +505,16 @@ final class AppEnvironment {
         set {
             settings.translationLanguage = newValue
             coordinator.translationLanguage = newValue
+        }
+    }
+
+    /// Whether the live text is translated into `translationLanguage` while recording, too. Takes
+    /// effect from the next recording.
+    var translatesLiveText: Bool {
+        get { coordinator.translatesLiveText }
+        set {
+            settings.translatesLiveText = newValue
+            coordinator.translatesLiveText = newValue
         }
     }
 

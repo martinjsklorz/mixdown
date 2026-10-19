@@ -34,7 +34,8 @@ Press ⌘, or click the cog above the sidebar to open Settings. **Settings…** 
 - **Summary**: **Summarize recordings**, and the templates for **Manual recordings** and
   **Detected calls**. See [Summaries](summaries.md).
 - **Translation**: **Translate to** a language, or **None**, and whether macOS has downloaded the
-  languages to translate your recordings, with a **Download** button. See
+  languages to translate your recordings, with a **Download** button. **Translate live text while
+  recording** (on by default, with a live model) translates the live text as it's spoken. See
   [Translation](translation.md).
 
 ## Notifications
