@@ -149,6 +149,7 @@ struct AppSettings {
     }
 
     /// `nil` means auto-detect.
+    var language: String? {
         get { defaults.string(forKey: Key.language) }
         nonmutating set { defaults.set(newValue, forKey: Key.language) }
     }
