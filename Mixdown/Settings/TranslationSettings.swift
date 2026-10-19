@@ -16,6 +16,8 @@ struct TranslationSettings: View {
     /// Asks macOS to download those languages each time it's set or invalidated; it shows its own
     /// dialog for that.
     @State private var download: TranslationSession.Configuration?
+    /// The languages being downloaded, as `source>target`. macOS doesn't say how far along it is.
+    @State private var downloading: String?
 
     var body: some View {
         Section {
@@ -48,7 +50,7 @@ struct TranslationSettings: View {
                 Self.name(of: $0).localizedStandardCompare(Self.name(of: $1)) == .orderedAscending
             }
         }
-        .task(id: "\(sourceLanguage)>\(environment.translationLanguage ?? "")") {
+        .task(id: pair) {
             // Not the previous languages' status while checking.
             status = nil
             await refreshStatus()
@@ -60,8 +62,12 @@ struct TranslationSettings: View {
         // Off the main actor: the session isn't Sendable, so it can't be sent from there to
         // `prepareTranslation()`, which runs concurrently.
         .translationTask(download) { @concurrent session in
-            try? await session.prepareTranslation()
-            await refreshStatus()
+            let pair = await startDownload()
+            // May return while macOS is still downloading, so this waits for it.
+            if (try? await session.prepareTranslation()) != nil {
+                await waitForDownload(pair)
+            }
+            await finishDownload(pair)
         }
     }
 
@@ -76,6 +82,11 @@ struct TranslationSettings: View {
         environment.language ?? Locale.current.language.minimalIdentifier
     }
 
+    /// Which languages are shown, as `source>target`.
+    private var pair: String {
+        "\(sourceLanguage)>\(environment.translationLanguage ?? "")"
+    }
+
     /// "English → German", and whether those are downloaded, with a button to download them.
     @ViewBuilder
     private func languagePairRow(to target: String) -> some View {
@@ -86,6 +97,13 @@ struct TranslationSettings: View {
         } else {
             LabeledContent("\(Self.name(of: source)) → \(Self.name(of: target))") {
                 switch status {
+                case .supported where downloading == pair:
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Downloading…")
+                            .foregroundStyle(.secondary)
+                    }
                 case .installed:
                     Label("Downloaded", systemImage: "checkmark.circle.fill")
                         .symbolRenderingMode(.multicolor)
@@ -119,6 +137,27 @@ struct TranslationSettings: View {
         } else {
             download = configuration
         }
+    }
+
+    private func startDownload() -> String {
+        downloading = pair
+        return pair
+    }
+
+    /// Checks every second until the languages are downloaded, for up to ten minutes, or until
+    /// others are picked.
+    private func waitForDownload(_ pair: String) async {
+        for _ in 0..<600 {
+            guard pair == self.pair else { return }
+            await refreshStatus()
+            if status == .installed { return }
+            do { try await Task.sleep(for: .seconds(1)) } catch { return }
+        }
+    }
+
+    private func finishDownload(_ pair: String) async {
+        if downloading == pair { downloading = nil }
+        await refreshStatus()
     }
 
     private func refreshStatus() async {
