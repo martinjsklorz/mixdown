@@ -7,6 +7,8 @@ import SwiftUI
 /// while the menu is open. Recording shows its start time instead.
 struct RecordingStatusView: View {
     let phase: RecordingCoordinator.Phase
+    /// When the recording started. The phase's start moves later with every pause.
+    let recordingStartedAt: Date?
     let engineName: String
     let isModelDownloaded: Bool
     let notesFolder: NotesFolderStore.Status
@@ -27,7 +29,9 @@ struct RecordingStatusView: View {
         case .startingCapture:
             Text("Starting to record…")
         case .recording(let startedAt):
-            Text("Recording since \(startedAt.formatted(date: .omitted, time: .shortened))")
+            Text("Recording since \((recordingStartedAt ?? startedAt).formatted(date: .omitted, time: .shortened))")
+        case .paused(let recorded):
+            Text("Paused · \(MenuBarLabel.elapsedText(Int(recorded))) recorded")
         case .transcribing(let progress):
             Text("Transcribing… \(ProgressText.detail(progress: progress, remaining: timeRemaining))")
         case .summarizing:

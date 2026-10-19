@@ -16,7 +16,8 @@ struct RecordingCoordinatorTests {
         summarizer: MockSummarizer? = nil,
         preferredDeviceIDs: [String] = [],
         playbackMonitor: MockPlaybackMonitor? = nil,
-        now: @escaping @Sendable () -> Date = { Fixtures.startDate }
+        now: @escaping @Sendable () -> Date = { Fixtures.startDate },
+        hostClock: @escaping @Sendable () -> TimeInterval = { 0 }
     ) -> RecordingCoordinator {
         let coordinator = RecordingCoordinator(
             deviceProvider: deviceProvider ?? MockDeviceProvider(devices: devices, updates: updates),
@@ -26,7 +27,8 @@ struct RecordingCoordinatorTests {
             summarizer: summarizer,
             preferredDeviceIDs: preferredDeviceIDs,
             playbackMonitor: playbackMonitor,
-            now: now
+            now: now,
+            hostClock: hostClock
         )
         coordinator.deviceSwitchDelay = .zero
         return coordinator
@@ -909,6 +911,251 @@ struct RecordingCoordinatorTests {
         // Not a note of the microphone that says system audio couldn't be transcribed.
         #expect(coordinator.phase == .idle)
         #expect(await writer.notes.isEmpty)
+    }
+
+    // MARK: - Pausing
+
+    @Test func pauseStopsTheInputsAndResumeStartsThemAgain() async throws {
+        // A minute passes while paused, by the host clock.
+        let clock = LockedValue<TimeInterval>(101)
+        let first = MockCapture(chunks: [Fixtures.chunk(seconds: 1, hostTime: 100)])
+        let second = MockCapture(chunks: [Fixtures.chunk(seconds: 1, hostTime: 161)])
+        let engine = MockEngine()
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            queuedCaptures: [Fixtures.builtInMic.id: [first, second]],
+            engine: engine,
+            writer: writer,
+            hostClock: { clock.current }
+        )
+        await coordinator.monitorDevices()
+        await coordinator.startRecording()
+        #expect(coordinator.canPauseRecording)
+
+        await coordinator.pauseRecording()
+        #expect(coordinator.phase == .paused(recorded: 0))
+        #expect(coordinator.isPaused)
+        #expect(coordinator.isRecording)
+        #expect(coordinator.canStopRecording)
+        #expect(!coordinator.canPauseRecording)
+        #expect(first.stopCount == 1)
+        #expect(coordinator.inputLevels.isEmpty)
+        #expect(coordinator.recordingStartedAt == Fixtures.startDate)
+
+        clock.update { $0 = 161 }
+        await coordinator.resumeRecording()
+        #expect(coordinator.phase == .recording(startedAt: Fixtures.startDate))
+        #expect(!coordinator.isPaused)
+        #expect(second.startCount == 1)
+
+        await coordinator.stopRecording()
+        #expect(coordinator.phase == .idle)
+        #expect(second.stopCount == 1)
+        #expect(coordinator.recordingStartedAt == nil)
+        // The minute paused isn't filled with silence.
+        #expect(await engine.receivedSampleCounts == [32_000])
+        let note = try #require(await writer.notes.first)
+        #expect(note.duration == 2)
+        #expect(note.sources == [Fixtures.builtInMic])
+        #expect(engine.recordingsInProgress.current == 0)
+    }
+
+    @Test func pausedTimeIsLeftOutOfTheRecordedTime() async {
+        let date = LockedValue(Fixtures.startDate)
+        let coordinator = makeCoordinator(
+            capture: MockCapture(chunks: [Fixtures.chunk(seconds: 1)]),
+            now: { date.current }
+        )
+        await coordinator.monitorDevices()
+        await coordinator.startRecording()
+
+        date.update { $0 = Fixtures.startDate.addingTimeInterval(5) }
+        await coordinator.pauseRecording()
+        #expect(coordinator.phase == .paused(recorded: 5))
+
+        date.update { $0 = Fixtures.startDate.addingTimeInterval(65) }
+        await coordinator.resumeRecording()
+        #expect(coordinator.phase == .recording(startedAt: Fixtures.startDate.addingTimeInterval(60)))
+        #expect(coordinator.recordingStartedAt == Fixtures.startDate)
+    }
+
+    @Test func pausingKeepsInputsLinedUp() async throws {
+        // System audio starts a second after the microphone; both pause at 102 and resume at 200.
+        let clock = LockedValue<TimeInterval>(102)
+        let microphone = [
+            MockCapture(chunks: [Fixtures.chunk(seconds: 2, hostTime: 100)]),
+            MockCapture(chunks: [Fixtures.chunk(seconds: 1, hostTime: 200)]),
+        ]
+        let systemAudio = [
+            MockCapture(chunks: [Fixtures.chunk(seconds: 1, hostTime: 101)]),
+            MockCapture(chunks: [Fixtures.chunk(seconds: 1, hostTime: 200)]),
+        ]
+        let engine = MockEngine(transcriptsBySampleCount: [
+            48_000: Transcript(segments: [TranscriptSegment(start: 2.5, end: 3, text: "After the break.")]),
+            32_000: Transcript(segments: [TranscriptSegment(start: 1, end: 1.5, text: "Welcome back.")]),
+        ])
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            queuedCaptures: [Fixtures.builtInMic.id: microphone, AudioInputDevice.systemAudioID: systemAudio],
+            engine: engine,
+            writer: writer,
+            preferredDeviceIDs: [Fixtures.builtInMic.id, AudioInputDevice.systemAudioID],
+            hostClock: { clock.current }
+        )
+        await coordinator.monitorDevices()
+        await coordinator.startRecording()
+        await coordinator.pauseRecording()
+        clock.update { $0 = 200 }
+        await coordinator.resumeRecording()
+        await coordinator.stopRecording()
+
+        #expect(await engine.receivedSampleCounts.sorted() == [32_000, 48_000])
+        let note = try #require(await writer.notes.first)
+        #expect(note.duration == 3)
+        #expect(
+            note.transcript.segments == [
+                TranscriptSegment(start: 2, end: 2.5, text: "Welcome back.", speaker: "Others"),
+                TranscriptSegment(start: 2.5, end: 3, text: "After the break.", speaker: "Me"),
+            ]
+        )
+    }
+
+    @Test func stopWhilePausedSavesTheNote() async throws {
+        let capture = MockCapture(chunks: [Fixtures.chunk(seconds: 1)])
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(capture: capture, writer: writer)
+        await coordinator.monitorDevices()
+        await coordinator.startRecording()
+        await coordinator.pauseRecording()
+
+        await coordinator.toggleRecording()
+        #expect(coordinator.phase == .idle)
+        #expect(capture.stopCount == 1)
+        #expect(try #require(await writer.notes.first).duration == 1)
+    }
+
+    @Test func inputsChosenWhilePausedRecordOnResume() async throws {
+        let builtIn = MockCapture(chunks: [Fixtures.chunk(seconds: 1)])
+        let usb = MockCapture(chunks: [Fixtures.chunk(seconds: 1)])
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            captures: [Fixtures.builtInMic.id: builtIn, Fixtures.usbMic.id: usb],
+            writer: writer
+        )
+        await coordinator.monitorDevices()
+        await coordinator.startRecording()
+        await coordinator.pauseRecording()
+
+        #expect(coordinator.selectDevices([Fixtures.usbMic]))
+        #expect(coordinator.selectedDevices == [Fixtures.usbMic])
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(usb.startCount == 0)
+        #expect(coordinator.isPaused)
+
+        await coordinator.resumeRecording()
+        #expect(usb.startCount == 1)
+        #expect(builtIn.startCount == 1)
+        await coordinator.stopRecording()
+        #expect(try #require(await writer.notes.first).sources == [Fixtures.builtInMic, Fixtures.usbMic])
+    }
+
+    @Test func deviceChangesWhilePausedStartNothing() async throws {
+        let provider = LiveDeviceProvider(devices: Fixtures.devices)
+        let capture = MockCapture(chunks: [Fixtures.chunk(seconds: 1)])
+        let coordinator = makeCoordinator(deviceProvider: provider, capture: capture)
+        let monitor = Task { await coordinator.monitorDevices() }
+        defer { monitor.cancel() }
+        try await waitUntil { !coordinator.devices.isEmpty }
+        await coordinator.startRecording()
+        await coordinator.pauseRecording()
+
+        // The USB microphone becomes the default, which the recording follows once resumed.
+        provider.send([Fixtures.usbMicAsDefault, Fixtures.builtInMicNotDefault, .systemAudio])
+        try await waitUntil { coordinator.selectedDevices == [Fixtures.usbMicAsDefault] }
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(capture.startCount == 1)
+        #expect(coordinator.isPaused)
+    }
+
+    @Test func noInputStartingOnResumeEndsTheRecording() async throws {
+        let error = AudioCaptureError.deviceUnavailable("Couldn't start “MacBook Pro Microphone”")
+        let writer = InMemoryNoteWriter()
+        // No other microphone to fall back to.
+        let coordinator = makeCoordinator(
+            devices: [Fixtures.builtInMic, .systemAudio],
+            queuedCaptures: [
+                Fixtures.builtInMic.id: [
+                    MockCapture(chunks: [Fixtures.chunk(seconds: 1)]),
+                    MockCapture(startError: error),
+                ]
+            ],
+            writer: writer
+        )
+        await coordinator.monitorDevices()
+        await coordinator.startRecording()
+        await coordinator.pauseRecording()
+        await coordinator.resumeRecording()
+
+        try await waitUntil { !coordinator.isRecording }
+        #expect(coordinator.phase == .failed(message: RecordingCoordinator.interruptedMessage(for: error)))
+        #expect(try #require(await writer.notes.first).duration == 1)
+    }
+
+    @Test func pauseAndResumeAreIgnoredOutsideTheirPhase() async {
+        let capture = MockCapture(chunks: [Fixtures.chunk(seconds: 1)])
+        let coordinator = makeCoordinator(capture: capture)
+        await coordinator.monitorDevices()
+
+        await coordinator.pauseRecording()
+        #expect(coordinator.phase == .idle)
+
+        await coordinator.startRecording()
+        await coordinator.resumeRecording()
+        #expect(coordinator.phase == .recording(startedAt: Fixtures.startDate))
+        #expect(capture.startCount == 1)
+
+        await coordinator.togglePause()
+        await coordinator.pauseRecording()
+        #expect(coordinator.isPaused)
+        #expect(capture.stopCount == 1)
+    }
+
+    @Test func liveTextCarriesOnAfterAPause() async throws {
+        let clock = LockedValue<TimeInterval>(101)
+        let live = MockLiveSession(updatesBySampleCount: [
+            16_000: LiveTranscriptUpdate(words: [LiveWord(text: "Before.", start: 0.25, end: 0.75)]),
+            8_000: LiveTranscriptUpdate(words: [LiveWord(text: "After.", start: 0.25, end: 0.5)]),
+        ])
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            queuedCaptures: [
+                Fixtures.builtInMic.id: [
+                    MockCapture(chunks: [Fixtures.chunk(seconds: 1, hostTime: 100)]),
+                    MockCapture(chunks: [Fixtures.chunk(seconds: 0.5, hostTime: 300)]),
+                ]
+            ],
+            engine: MockEngine(liveSession: live),
+            writer: writer,
+            hostClock: { clock.current }
+        )
+        await coordinator.monitorDevices()
+        await coordinator.startRecording()
+        try await waitUntil { coordinator.liveTranscript.lines.count == 1 }
+        await coordinator.pauseRecording()
+        clock.update { $0 = 300 }
+        await coordinator.resumeRecording()
+        // Half a second after the words before the pause, so on the same line.
+        try await waitUntil { coordinator.liveTranscript.lines.map(\.text) == ["Before. After."] }
+        await coordinator.stopRecording()
+
+        let note = try #require(await writer.notes.first)
+        #expect(
+            note.transcript.segments == [
+                TranscriptSegment(start: 0.25, end: 0.75, text: "Before."),
+                TranscriptSegment(start: 1.25, end: 1.5, text: "After."),
+            ]
+        )
+        #expect(note.duration == 1.5)
     }
 
     // MARK: - Switching inputs

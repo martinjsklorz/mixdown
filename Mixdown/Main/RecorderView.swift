@@ -1,8 +1,9 @@
 import MixdownCore
 import SwiftUI
 
-/// The Record section: one big button to start or stop, the state Mixdown is in, and a summary
-/// of what it records with. The inputs themselves are chosen in the Recording menu or Settings.
+/// The Record section: one big button to start or stop, with one beside it to pause while
+/// recording, the state Mixdown is in, and a summary of what it records with. The inputs
+/// themselves are chosen in the Recording menu or Settings.
 /// While recording with the live model, the text recognized so far replaces the summary.
 struct RecorderView: View {
     @Environment(AppEnvironment.self) private var environment
@@ -86,11 +87,17 @@ struct RecorderView: View {
             case .recording(let startedAt):
                 Text(startedAt, style: .timer)
                     .font(.system(size: 48, weight: .light).monospacedDigit())
-                RecordButton(isRecording: true) {
-                    Task { await coordinator.stopRecording() }
-                }
+                recordingControls(for: coordinator)
                 caption("Recording · click to stop")
                 InputLevelsView(coordinator: coordinator)
+                summaryTemplatePicker(for: coordinator)
+
+            case .paused(let recorded):
+                Text(MenuBarLabel.elapsedText(Int(recorded)))
+                    .font(.system(size: 48, weight: .light).monospacedDigit())
+                    .foregroundStyle(.secondary)
+                recordingControls(for: coordinator)
+                caption("Paused · nothing is recorded until you resume")
                 summaryTemplatePicker(for: coordinator)
 
             // The live model only finishes its last fraction of a second, too quick to track.
@@ -140,6 +147,21 @@ struct RecorderView: View {
         }
         .multilineTextAlignment(.center)
         .animation(.default, value: coordinator.isRecording)
+    }
+
+    /// Stop in the middle, as when starting, with Pause or Resume beside it.
+    private func recordingControls(for coordinator: RecordingCoordinator) -> some View {
+        HStack(spacing: 20) {
+            // Balances the pause button, so Stop stays where Record was.
+            Color.clear
+                .frame(width: PauseButton.size, height: PauseButton.size)
+            RecordButton(isRecording: true) {
+                Task { await coordinator.stopRecording() }
+            }
+            PauseButton(isPaused: coordinator.isPaused) {
+                Task { await coordinator.togglePause() }
+            }
+        }
     }
 
     /// The template this recording's summary gets, preselected from Settings → Transcription and
@@ -337,5 +359,37 @@ private struct RecordButton: View {
         .animation(.snappy, value: isRecording)
         .accessibilityLabel(isRecording ? "Stop Recording" : "Start Recording")
         .help(isRecording ? "Stop Recording" : "Start Recording")
+    }
+}
+
+/// A smaller round button beside Stop: a pause sign while recording, and a red dot to record
+/// again while paused.
+private struct PauseButton: View {
+    static let size: CGFloat = 44
+
+    let isPaused: Bool
+    let action: @MainActor () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                Circle()
+                    .strokeBorder(.secondary.opacity(0.4), lineWidth: 3)
+                if isPaused {
+                    Circle()
+                        .fill(.red)
+                        .frame(width: 18, height: 18)
+                } else {
+                    Image(systemName: "pause.fill")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: Self.size, height: Self.size)
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(isPaused ? "Resume Recording" : "Pause Recording")
+        .help(isPaused ? "Resume Recording (⇧⌘P)" : "Pause Recording (⇧⌘P)")
     }
 }
