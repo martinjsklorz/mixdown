@@ -57,7 +57,9 @@ struct TranslationSettings: View {
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
             Task { await refreshStatus() }
         }
-        .translationTask(download) { session in
+        // Off the main actor: the session isn't Sendable, so it can't be sent from there to
+        // `prepareTranslation()`, which runs concurrently.
+        .translationTask(download) { @concurrent session in
             try? await session.prepareTranslation()
             await refreshStatus()
         }
