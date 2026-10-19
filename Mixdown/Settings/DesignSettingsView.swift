@@ -48,6 +48,15 @@ struct DesignSettingsView: View {
                             set: { shows in environment.setIslandLayout(changedLayout { $0.showsLevels = shows }) }
                         )
                     )
+                    // Shown off while it can't apply, but remembered for when it can.
+                    Toggle(
+                        "Show live text",
+                        isOn: Binding(
+                            get: { environment.islandLayout.showsLiveText && environment.model.isLive },
+                            set: { shows in environment.setIslandLayout(changedLayout { $0.showsLiveText = shows }) }
+                        )
+                    )
+                    .disabled(!environment.model.isLive)
                 }
                 .disabled(!environment.showsRecordingInDynamicIsland)
             } header: {
@@ -58,7 +67,9 @@ struct DesignSettingsView: View {
                         + "camera notch instead of the time in the menu bar. The levels go on the other side "
                         + "from the time. Without a notch, the island appears at the top center of the "
                         + "screen, and the menu bar keeps the time too, as it does with another display "
-                        + "connected. Click the island to open Record."
+                        + "connected. Click the island to open Record.\n\nLive text scrolls the latest "
+                        + "words by in one line under the notch. It needs a live model, chosen in "
+                        + "Transcription settings."
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)

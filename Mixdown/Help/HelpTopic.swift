@@ -167,8 +167,10 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             bar. See [Troubleshooting](mixdown-help:troubleshooting).
 
             With the live model (the default), Record shows the words as you speak, and the note is \
-            ready moments after you stop. With an offline model, Mixdown transcribes the recording \
-            when you stop and shows its progress on Record and in the menu bar. Then the note opens.
+            ready moments after you stop. Turn on **Settings → Design → Show live text** to see the \
+            latest words scroll by in one line under the notch too. With an offline model, Mixdown \
+            transcribes the recording when you stop and shows its progress on Record and in the \
+            menu bar. Then the note opens.
             """
         case .calls:
             """

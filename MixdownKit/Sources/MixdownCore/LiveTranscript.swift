@@ -66,7 +66,43 @@ public struct LiveTranscript: Sendable, Equatable {
         sources = speakers.map { Source(speaker: $0) }
     }
 
+    /// One of the latest words, or the name of the speaker saying the words after it. See
+    /// `recentWords(_:)`.
+    public struct RecentWord: Sendable, Equatable, Identifiable {
+        public struct ID: Sendable, Hashable {
+            let line: Int
+            /// The word's index in its line; -1 for the line's speaker.
+            let word: Int
+        }
+
+        /// Stable while the line grows, so a view can tell new words from ones it already shows.
+        public let id: ID
+        public let text: String
+        public let isSpeaker: Bool
+    }
+
     public var isEmpty: Bool { lines.isEmpty }
+
+    /// The last `count` words, oldest first, as a single line of text would show them: each line's
+    /// speaker named before its first word where the speaker changes.
+    public func recentWords(_ count: Int) -> [RecentWord] {
+        var recent: [RecentWord] = []
+        var remaining = count
+        for index in lines.indices.reversed() where remaining > 0 {
+            let line = lines[index]
+            let first = max(line.words.count - remaining, 0)
+            remaining -= line.words.count - first
+            var items = line.words.indices[first...].map { word in
+                RecentWord(id: .init(line: line.id, word: word), text: line.words[word], isSpeaker: false)
+            }
+            // Only with its first word, which it comes right before.
+            if first == 0, let speaker = line.speaker, index == 0 || lines[index - 1].speaker != speaker {
+                items.insert(RecentWord(id: .init(line: line.id, word: -1), text: speaker, isSpeaker: true), at: 0)
+            }
+            recent.insert(contentsOf: items, at: 0)
+        }
+        return recent
+    }
 
     /// Adds an unlabeled input, such as system audio turned on mid-recording. Its index follows
     /// the others'.
