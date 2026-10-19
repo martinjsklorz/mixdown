@@ -1,6 +1,7 @@
 import Foundation
-@testable import MixdownCore
 import Testing
+
+@testable import MixdownCore
 
 struct ChunkedSummarizerTests {
     /// Records each step and answers with a summary naming it, e.g. `transcript 1`.
@@ -272,7 +273,11 @@ struct ChunkedSummarizerTests {
         }
 
         #expect(summary == NoteSummary(overview: "combine 1"))
-        #expect(recorder.steps.map(\.text) == ["S1: One.", "S2: Two.", "Part 1 of 2:\ntranscript 1\n\nPart 2 of 2:\ntranscript 2"])
+        #expect(
+            recorder.steps.map(\.text) == [
+                "S1: One.", "S2: Two.", "Part 1 of 2:\ntranscript 1\n\nPart 2 of 2:\ntranscript 2",
+            ]
+        )
     }
 
     @Test func singlePieceTooLongToSplitThrows() async throws {

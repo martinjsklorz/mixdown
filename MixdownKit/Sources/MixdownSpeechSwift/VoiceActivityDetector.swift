@@ -23,7 +23,10 @@ final class VoiceActivityDetector: @unchecked Sendable {
 
     static let repositoryID = SileroVADModel.defaultCoreMLModelId
 
-    static func load(cacheBase: URL, progress: @escaping @Sendable (Double) -> Void) async throws -> VoiceActivityDetector {
+    static func load(
+        cacheBase: URL,
+        progress: @escaping @Sendable (Double) -> Void
+    ) async throws -> VoiceActivityDetector {
         let directory = try ModelCache.directory(for: repositoryID, base: cacheBase)
         let model = try await ModelCache.loadPreferringCache(
             repositoryID,

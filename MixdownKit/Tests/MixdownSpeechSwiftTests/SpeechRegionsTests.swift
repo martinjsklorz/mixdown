@@ -1,5 +1,6 @@
-@testable import MixdownSpeechSwift
 import Testing
+
+@testable import MixdownSpeechSwift
 
 struct SpeechRegionsTests {
     private let frame = 0.032

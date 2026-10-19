@@ -1,5 +1,6 @@
-@testable import MixdownSpeechSwift
 import Testing
+
+@testable import MixdownSpeechSwift
 
 struct RecognitionProgressTests {
     private let share = RecognitionProgress.detectionShare

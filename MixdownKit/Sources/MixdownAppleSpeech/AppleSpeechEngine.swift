@@ -184,12 +184,14 @@ private enum AppleSpeech {
         // before transcribing, with progress; this covers it going in between.
         try await install(language: language, progress: nil)
 
-        guard let format = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: AudioChunk.sampleRate,
-            channels: 1,
-            interleaved: false
-        ) else {
+        guard
+            let format = AVAudioFormat(
+                commonFormat: .pcmFormatFloat32,
+                sampleRate: AudioChunk.sampleRate,
+                channels: 1,
+                interleaved: false
+            )
+        else {
             throw TranscriptionError.failed("Couldn't create the 16 kHz audio format")
         }
         let converter = try await makeConverter(from: format, for: transcriber)
@@ -390,7 +392,11 @@ private final class AudioFormatConverter: AnalyzerInputConverting {
     }
 
     /// Converts `buffer`, or with `nil` ends the stream so the converter hands over what it held back.
-    private func run(_ converter: AVAudioConverter, on buffer: AVAudioPCMBuffer?, frames: AVAudioFrameCount) throws
+    private func run(
+        _ converter: AVAudioConverter,
+        on buffer: AVAudioPCMBuffer?,
+        frames: AVAudioFrameCount
+    ) throws
         -> [AnalyzerInput]
     {
         let ratio = outputFormat.sampleRate / inputFormat.sampleRate

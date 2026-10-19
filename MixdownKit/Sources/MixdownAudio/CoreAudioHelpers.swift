@@ -62,7 +62,7 @@ enum CoreAudioHAL {
         var address = propertyAddress(kAudioDevicePropertyStreamConfiguration, scope: kAudioObjectPropertyScopeInput)
         var size: UInt32 = 0
         guard AudioObjectGetPropertyDataSize(deviceID, &address, 0, nil, &size) == noErr,
-              size >= UInt32(MemoryLayout<AudioBufferList>.size)
+            size >= UInt32(MemoryLayout<AudioBufferList>.size)
         else { return false }
 
         let raw = UnsafeMutableRawPointer.allocate(
@@ -121,7 +121,7 @@ enum CoreAudioHAL {
         guard AudioObjectGetPropertyDataSize(deviceID, &address, 0, nil, &size) == noErr else { return nil }
         var streams = [AudioStreamID](repeating: 0, count: Int(size) / MemoryLayout<AudioStreamID>.stride)
         guard !streams.isEmpty,
-              AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &streams) == noErr
+            AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &streams) == noErr
         else {
             audioLogger.error("Device \(deviceID, privacy: .public) has no input streams")
             return nil
@@ -144,7 +144,8 @@ enum CoreAudioHAL {
         // order doesn't matter.
         let discreteLayout = kAudioChannelLayoutTag_DiscreteInOrder | description.mChannelsPerFrame
         if let layout = AVAudioChannelLayout(layoutTag: discreteLayout),
-           let format = AVAudioFormat(streamDescription: &description, channelLayout: layout) {
+            let format = AVAudioFormat(streamDescription: &description, channelLayout: layout)
+        {
             return format
         }
         audioLogger.error(

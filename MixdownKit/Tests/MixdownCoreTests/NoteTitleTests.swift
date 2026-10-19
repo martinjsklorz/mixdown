@@ -1,6 +1,7 @@
 import Foundation
-@testable import MixdownCore
 import Testing
+
+@testable import MixdownCore
 
 struct NoteTitleTests {
     private let date = Fixtures.startDate

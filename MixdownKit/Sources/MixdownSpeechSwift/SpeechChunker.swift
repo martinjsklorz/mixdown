@@ -42,7 +42,8 @@ enum SpeechChunker {
         // Speech budget per piece, leaving room for padding on both sides. Never zero, so splitting terminates.
         let budget = max(configuration.maxWindowDuration - 2 * padding, 1)
 
-        let sanitized = regions
+        let sanitized =
+            regions
             .map { TimeSpan(start: max(0, $0.start), end: min(audioDuration, $0.end)) }
             .filter { $0.end > $0.start }
             .sorted { $0.start < $1.start }

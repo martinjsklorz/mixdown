@@ -65,7 +65,7 @@ enum SystemModelSummary {
         var summary = try await summarizer.summarize(transcript) { text, kind in
             do {
                 return try await respond(to: text, kind: kind, template: template, model: model, language: language)
-            } catch where isContextOverflow(error) {
+            } catch let error where isContextOverflow(error) {
                 logger.info("A piece of \(text.count) characters overflowed the context")
                 throw SummarizationError.tooLong
             }

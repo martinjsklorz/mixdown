@@ -837,7 +837,7 @@ public final class RecordingCoordinator {
                     if kind == .systemAudio { echoReference?.write(chunk) }
                     // Starts once system audio records too and a canceller is ready.
                     if kind == .microphone, echoRemover == nil, let echoReference, echoReference.state.isActive,
-                       let canceller = echoCancellation?.takeCanceller()
+                        let canceller = echoCancellation?.takeCanceller()
                     {
                         let start = timeline.startHostTime.map {
                             $0 + timeline.duration - Double(added.count) / AudioChunk.sampleRate
@@ -1321,7 +1321,11 @@ public final class RecordingCoordinator {
                 let progress = progressHandler(track: index, sessionID: session.id)
                 group.addTask {
                     do {
-                        let transcript = try await engine.transcribe(track.samples, options: options, progress: progress)
+                        let transcript = try await engine.transcribe(
+                            track.samples,
+                            options: options,
+                            progress: progress
+                        )
                         // Engines needn't report progress (e.g. for a source without speech), but the
                         // bar mustn't wait on a source that's done.
                         progress(1)
@@ -1609,7 +1613,8 @@ public final class RecordingCoordinator {
                 return
             }
             // A microphone replacing another continues its track.
-            let lane = session.lanes.first { $0.kind == device.kind && $0.current == nil }
+            let lane =
+                session.lanes.first { $0.kind == device.kind && $0.current == nil }
                 ?? addLane(kind: device.kind, to: session)
             attach(started, to: lane, in: session)
             logger.info("Now recording from \(device.name, privacy: .public)")

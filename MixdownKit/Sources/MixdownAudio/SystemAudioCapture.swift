@@ -122,7 +122,7 @@ final class SystemAudioCapture: AudioCapturing, @unchecked Sendable {
     private func consume(_ bufferList: UnsafePointer<AudioBufferList>, at time: AudioTimeStamp, format: AVAudioFormat) {
         // No copy needed: the resampler copies while downmixing, before the IO block returns.
         guard let buffer = AVAudioPCMBuffer(pcmFormat: format, bufferListNoCopy: bufferList, deallocator: nil),
-              let chunk = resampler.process(buffer, hostTime: HostClock.captureTime(of: time, buffer: buffer))
+            let chunk = resampler.process(buffer, hostTime: HostClock.captureTime(of: time, buffer: buffer))
         else { return }
         let continuation = state.withLockUnchecked { $0.continuation }
         continuation?.yield(chunk)
@@ -189,7 +189,7 @@ private final class ProcessTap: @unchecked Sendable {
             kAudioAggregateDeviceSubDeviceListKey: [[String: Any]](),
             kAudioAggregateDeviceTapListKey: [
                 [kAudioSubTapUIDKey: description.uuid.uuidString, kAudioSubTapDriftCompensationKey: true]
-                    as [String: Any],
+                    as [String: Any]
             ],
         ]
         try CoreAudioHAL.check(
@@ -273,7 +273,7 @@ private final class ProcessTap: @unchecked Sendable {
         var streamDescription = AudioStreamBasicDescription()
         var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
         guard AudioObjectGetPropertyData(tapID, &address, 0, nil, &size, &streamDescription) == noErr,
-              let format = AVAudioFormat(streamDescription: &streamDescription)
+            let format = AVAudioFormat(streamDescription: &streamDescription)
         else { return nil }
         audioLogger.warning("System audio device format unreadable, using the tap's \(format, privacy: .public)")
         return format
