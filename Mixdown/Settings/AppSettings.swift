@@ -47,6 +47,9 @@ struct AppSettings {
         static let islandTimeSide = "islandTimeSide"
         /// Whether the Dynamic Island shows the input levels. Absent means yes.
         static let islandShowsLevels = "islandShowsLevels"
+        /// Whether the Dynamic Island shows the latest words under the notch while a live model
+        /// transcribes. Absent means no.
+        static let islandShowsLiveText = "islandShowsLiveText"
         /// Whether to show the setup assistant at launch. Absent means yes, unless a notes folder
         /// was chosen before the assistant existed.
         static let needsSetup = "needsSetup"
@@ -179,12 +182,14 @@ struct AppSettings {
             DynamicIsland.Layout(
                 timeSide: defaults.string(forKey: Key.islandTimeSide).flatMap(DynamicIsland.Side.init(rawValue:))
                     ?? .left,
-                showsLevels: defaults.object(forKey: Key.islandShowsLevels) as? Bool ?? true
+                showsLevels: defaults.object(forKey: Key.islandShowsLevels) as? Bool ?? true,
+                showsLiveText: defaults.bool(forKey: Key.islandShowsLiveText)
             )
         }
         nonmutating set {
             defaults.set(newValue.timeSide.rawValue, forKey: Key.islandTimeSide)
             defaults.set(newValue.showsLevels, forKey: Key.islandShowsLevels)
+            defaults.set(newValue.showsLiveText, forKey: Key.islandShowsLiveText)
         }
     }
 }
