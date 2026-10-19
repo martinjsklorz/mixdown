@@ -15,6 +15,11 @@ struct NoteDetailView: View {
             LazyVStack(alignment: .leading, spacing: 0) {
                 NoteMetadataView(note: note)
                     .padding(.bottom, 16)
+                // In place of the note's `## Talk Time` table, which `displayBlocks()` leaves out.
+                if let timeline = note.talkTimeline {
+                    TalkTimelineView(timeline: timeline)
+                        .padding(.bottom, 16)
+                }
                 Divider()
                     .padding(.bottom, 20)
 

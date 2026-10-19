@@ -2,7 +2,8 @@ import MixdownCore
 import SwiftUI
 
 /// The Dynamic Island's content: the recording time on one side of the notch and, unless turned off,
-/// one waveform for all inputs on the other, on black that runs into the notch. If turned on, the
+/// one waveform for all inputs on the other, on black that runs into the notch. Next to the time, a
+/// ring shows how the talking is shared while a call's both sides are recorded. If turned on, the
 /// latest words scroll by in a line under all three.
 struct DynamicIslandView: View {
     /// A wing's margin at the island's outer edge.
@@ -89,7 +90,7 @@ struct DynamicIslandView: View {
         // Square at the bottom with the live text under it.
         let roundsBottom = !layout.showsLiveText
         if side == layout.timeSide {
-            ElapsedWing(environment: environment, side: side)
+            ElapsedWing(environment: environment, side: side, showsTalkShare: layout.showsTalkShare)
                 .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { width in
                     timeWingWidth = width
                     timeWingWidthChanged(width)
@@ -168,38 +169,91 @@ extension View {
     }
 }
 
-/// A pulsing red dot and the time recorded so far; a pause sign instead while paused.
+/// A pulsing red dot and the time recorded so far; a pause sign instead while paused. After them,
+/// the talk share ring, if it's shown and both sides are recorded.
 private struct ElapsedWing: View {
     let environment: AppEnvironment
     let side: DynamicIsland.Side
+    let showsTalkShare: Bool
 
     var body: some View {
         let elapsed = environment.recordingElapsed ?? 0
         let isPaused = environment.coordinator.isPaused
         let state = isPaused ? "Recording paused" : "Recording"
         HStack(spacing: 5) {
-            Group {
-                if isPaused {
-                    Image(systemName: "pause.fill")
-                        .foregroundStyle(.white.opacity(0.75))
-                } else {
-                    Image(systemName: "circle.fill")
-                        .foregroundStyle(.red)
-                        .symbolEffect(.pulse)
+            HStack(spacing: 5) {
+                Group {
+                    if isPaused {
+                        Image(systemName: "pause.fill")
+                            .foregroundStyle(.white.opacity(0.75))
+                    } else {
+                        Image(systemName: "circle.fill")
+                            .foregroundStyle(.red)
+                            .symbolEffect(.pulse)
+                    }
                 }
+                .font(.system(size: 8))
+                Text(MenuBarLabel.elapsedText(elapsed))
+                    .font(.system(size: 13, weight: .semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .fixedSize()
             }
-            .font(.system(size: 8))
-            Text(MenuBarLabel.elapsedText(elapsed))
-                .font(.system(size: 13, weight: .semibold))
-                .monospacedDigit()
-                .foregroundStyle(.white)
-                .lineLimit(1)
-                .fixedSize()
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(state), \(Duration.seconds(elapsed).formatted(.units(width: .wide)))")
+            if showsTalkShare {
+                // Takes no room while there's no talk share to show.
+                TalkShareRing(coordinator: environment.coordinator)
+            }
         }
         .fixedSize()
         .wingPadding(side)
+        .accessibilityElement(children: .contain)
+    }
+}
+
+/// How the talking has been shared so far: the user's part as a white arc from the top, clockwise,
+/// on the others' grey. A dim ring until anyone talks; nothing unless both sides are recorded.
+/// A view of its own, so only the ring is redrawn as the talk time changes.
+private struct TalkShareRing: View {
+    private static let diameter: CGFloat = 12
+    private static let lineWidth: CGFloat = 2.5
+
+    let coordinator: RecordingCoordinator
+
+    var body: some View {
+        if let talkTime = coordinator.talkTime {
+            ring(talkTime)
+                .padding(.leading, 3)
+        }
+    }
+
+    private func ring(_ talkTime: TalkTime) -> some View {
+        let share = talkTime.microphoneShare
+        let description = Self.description(of: talkTime, labels: coordinator.sourceLabels)
+        return ZStack {
+            Circle()
+                .stroke(.white.opacity(share == nil ? 0.2 : 0.35), lineWidth: Self.lineWidth)
+            Circle()
+                .trim(from: 0, to: share ?? 0)
+                .stroke(.white.opacity(0.9), style: StrokeStyle(lineWidth: Self.lineWidth, lineCap: .butt))
+                .rotationEffect(.degrees(-90))
+        }
+        .frame(width: Self.diameter, height: Self.diameter)
+        .animation(.easeOut(duration: 0.4), value: share)
+        .help(description ?? "Talk share: nobody has talked yet")
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(state), \(Duration.seconds(elapsed).formatted(.units(width: .wide)))")
+        .accessibilityLabel("Talk share")
+        .accessibilityValue(description ?? "Nobody has talked yet")
+    }
+
+    /// E.g. "Me 42 %, Others 58 %".
+    private static func description(of talkTime: TalkTime, labels: SourceLabels) -> String? {
+        talkTime.percentages.map { percentages in
+            "\(labels.label(for: .microphone)) \(percentages.microphone) %, "
+                + "\(labels.label(for: .systemAudio)) \(percentages.systemAudio) %"
+        }
     }
 }
 

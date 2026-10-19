@@ -54,6 +54,9 @@ struct AppSettings {
         /// Whether the Dynamic Island shows the latest words under the notch while a live model
         /// transcribes. Absent means no.
         static let islandShowsLiveText = "islandShowsLiveText"
+        /// Whether the Dynamic Island shows how the talking is shared while recording both a
+        /// microphone and system audio. Absent means yes.
+        static let islandShowsTalkShare = "islandShowsTalkShare"
         /// Whether to show the setup assistant at launch. Absent means yes, unless a notes folder
         /// was chosen before the assistant existed.
         static let needsSetup = "needsSetup"
@@ -198,13 +201,15 @@ struct AppSettings {
                 timeSide: defaults.string(forKey: Key.islandTimeSide).flatMap(DynamicIsland.Side.init(rawValue:))
                     ?? .left,
                 showsLevels: defaults.object(forKey: Key.islandShowsLevels) as? Bool ?? true,
-                showsLiveText: defaults.bool(forKey: Key.islandShowsLiveText)
+                showsLiveText: defaults.bool(forKey: Key.islandShowsLiveText),
+                showsTalkShare: defaults.object(forKey: Key.islandShowsTalkShare) as? Bool ?? true
             )
         }
         nonmutating set {
             defaults.set(newValue.timeSide.rawValue, forKey: Key.islandTimeSide)
             defaults.set(newValue.showsLevels, forKey: Key.islandShowsLevels)
             defaults.set(newValue.showsLiveText, forKey: Key.islandShowsLiveText)
+            defaults.set(newValue.showsTalkShare, forKey: Key.islandShowsTalkShare)
         }
     }
 }

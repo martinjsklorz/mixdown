@@ -4,13 +4,17 @@ import MixdownCore
 /// Renders a `Note` as Markdown with YAML frontmatter.
 ///
 /// Layout: frontmatter, `# Title`, then one `##` section per body part: `## Summary` if the
-/// note has one, `## Translation` if it has one, then `## Transcript`. Sections are added in
-/// `bodySections(for:)`.
+/// note has one, `## Translation` if it has one, `## Transcript`, then `## Talk Time` if the note
+/// has a talk timeline. Sections are added in `bodySections(for:)`.
 public enum MarkdownNoteRenderer {
     /// Shown instead of transcript paragraphs when nothing was recognized.
     static let emptyTranscriptPlaceholder = "_No speech detected._"
     /// Shown under a fixed summary section the summary has nothing for.
     static let emptySectionPlaceholder = "_None._"
+    /// The heading of the talk timeline's section, which the app shows as a chart instead.
+    public static let talkTimeHeading = "Talk Time"
+    /// The talk timeline's bars are this many blocks long for a minute of talking.
+    static let talkBarLength = 10
 
     public static func render(_ note: Note) -> String {
         let title = singleLine(note.title)
@@ -47,6 +51,15 @@ public enum MarkdownNoteRenderer {
         if !speakers.isEmpty {
             lines.append("speakers: [\(speakers.map(yamlQuoted).joined(separator: ", "))]")
         }
+        if let timeline = note.talkTimeline {
+            let labels = [timeline.microphoneLabel, timeline.systemAudioLabel].map { yamlQuoted(singleLine($0)) }
+            let seconds = { (minutes: [TimeInterval]) in
+                minutes.map { String(wholeSeconds($0)) }.joined(separator: ", ")
+            }
+            lines.append("talk_labels: [\(labels.joined(separator: ", "))]")
+            lines.append("talk_microphone: [\(seconds(timeline.microphone))]")
+            lines.append("talk_system_audio: [\(seconds(timeline.systemAudio))]")
+        }
         lines.append("tags: [mixdown]")
         lines.append("---")
         return lines.joined(separator: "\n")
@@ -62,6 +75,9 @@ public enum MarkdownNoteRenderer {
             sections.append(section("Translation", body: transcriptBody(translation)))
         }
         sections.append(section("Transcript", body: transcriptBody(note.transcript)))
+        if let timeline = note.talkTimeline {
+            sections.append(section(talkTimeHeading, body: talkTimeBody(timeline)))
+        }
         return sections
     }
 
@@ -111,6 +127,44 @@ public enum MarkdownNoteRenderer {
             return "**[\(timestamp(segment.start))]** \(text)"
         }
         return paragraphs.isEmpty ? emptyTranscriptPlaceholder : paragraphs.joined(separator: "\n\n")
+    }
+
+    /// Each side's share of the talking, then a table of how long each talked in every minute,
+    /// with a bar of `█` per tenth of the minute.
+    static func talkTimeBody(_ timeline: TalkTimeline) -> String {
+        let microphone = escapedMarkdown(singleLine(timeline.microphoneLabel))
+        let systemAudio = escapedMarkdown(singleLine(timeline.systemAudioLabel))
+        let total = timeline.total
+        var blocks: [String] = []
+        if let percentages = total.percentages {
+            blocks.append(
+                "**\(microphone)** \(percentages.microphone) % (\(minutesAndSeconds(total.microphone))) · "
+                    + "**\(systemAudio)** \(percentages.systemAudio) % (\(minutesAndSeconds(total.systemAudio)))"
+            )
+        }
+        // Pipes would end a table cell.
+        let cell = { (text: String) in text.replacingOccurrences(of: "|", with: "\\|") }
+        var rows = ["| Minute | \(cell(microphone)) | \(cell(systemAudio)) |", "| --- | --- | --- |"]
+        for (index, (mine, theirs)) in zip(timeline.microphone, timeline.systemAudio).enumerated() {
+            let start = timestamp(Double(index) * TalkTimeline.interval)
+            rows.append("| \(start) | \(talkBar(mine)) | \(talkBar(theirs)) |")
+        }
+        blocks.append(rows.joined(separator: "\n"))
+        return blocks.joined(separator: "\n\n")
+    }
+
+    /// E.g. `███ 21 s`; `–` for no talking.
+    private static func talkBar(_ seconds: TimeInterval) -> String {
+        let whole = wholeSeconds(seconds)
+        guard whole > 0 else { return "–" }
+        let blocks = max(Int((seconds / TalkTimeline.interval * Double(talkBarLength)).rounded()), 1)
+        return String(repeating: "█", count: min(blocks, talkBarLength)) + " \(whole) s"
+    }
+
+    /// E.g. `4 min 05 s`, or `35 s` under a minute.
+    static func minutesAndSeconds(_ seconds: TimeInterval) -> String {
+        let total = wholeSeconds(seconds)
+        return total < 60 ? "\(total) s" : "\(total / 60) min \(pad(total % 60)) s"
     }
 
     // MARK: - Formatting helpers

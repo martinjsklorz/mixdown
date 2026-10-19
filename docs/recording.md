@@ -53,7 +53,9 @@ To record both sides of a call, see [Recording calls](calls.md).
 With **Settings → Design → Show recording in the Dynamic Island** on (the default), the elapsed
 time and the input levels appear in an island around the camera notch instead of the time in the
 menu bar. Choose which side the time goes on, and whether the levels show, in the same place; the
-levels go on the other side from the time. Click the island to open Record.
+levels go on the other side from the time. Click the island to open Record. While you record
+both a microphone and system audio, a ring next to the time shows how the talking is shared (see
+[Recording calls](calls.md#talk-time)).
 
 Without a notch, the island appears at the top center of the screen and the menu bar keeps the
 time too, as it does with another display connected. With the setting off, the time shows in the
