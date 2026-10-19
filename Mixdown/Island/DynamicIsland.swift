@@ -43,6 +43,8 @@ final class DynamicIsland {
 
     private let environment: AppEnvironment
     private let openRecorder: () -> Void
+    /// Told whether the island is the only place the time needs to be; see `showsTimeAlone`.
+    private let showsTimeAloneChanged: (Bool) -> Void
     /// Created on first `show()`, as windows shouldn't be made before the app has launched.
     private var panel: IslandPanel?
     private(set) var isShown = false
@@ -51,9 +53,14 @@ final class DynamicIsland {
     /// The time's wing as wide as the view last measured it, which grows with the time.
     private var timeWingWidth: CGFloat = 56
 
-    init(environment: AppEnvironment, openRecorder: @escaping () -> Void) {
+    init(
+        environment: AppEnvironment,
+        openRecorder: @escaping () -> Void,
+        showsTimeAloneChanged: @escaping (Bool) -> Void
+    ) {
         self.environment = environment
         self.openRecorder = openRecorder
+        self.showsTimeAloneChanged = showsTimeAloneChanged
     }
 
     /// Shows the island laid out as `layout`, or lays it out again if it's already showing.
@@ -68,6 +75,7 @@ final class DynamicIsland {
         let panel = panel ?? makePanel()
         // Still on screen if shown again while collapsing, where the wings grow back out from there.
         if !panel.isVisible || layoutChanged { place(panel) }
+        showsTimeAloneChanged(Self.showsTimeAlone)
         panel.orderFrontRegardless()
         // On the next turn of the run loop, after the view has been drawn collapsed.
         Task { @MainActor [weak self] in
@@ -80,6 +88,7 @@ final class DynamicIsland {
     func hide() {
         guard isShown, let panel else { return }
         isShown = false
+        showsTimeAloneChanged(false)
         withAnimation(Self.collapseAnimation) {
             presence.isExpanded = false
         } completion: {
@@ -106,6 +115,7 @@ final class DynamicIsland {
             MainActor.assumeIsolated {
                 guard let self, self.isShown, let panel = self.panel else { return }
                 self.place(panel)
+                self.showsTimeAloneChanged(Self.showsTimeAlone)
             }
         }
         return panel
@@ -114,6 +124,15 @@ final class DynamicIsland {
     /// The screen that has a notch, else the main screen.
     private static var screen: NSScreen? {
         NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.screens.first
+    }
+
+    /// Whether the island is enough to show the time, so the menu bar can leave it out: it's over
+    /// the notch of the only screen, where it shows even over full-screen apps. With another
+    /// display, the island stays on the notch while the user may be looking at the other one; and
+    /// without a notch, a full-screen app hides it. The menu bar shows the time too then.
+    private static var showsTimeAlone: Bool {
+        guard NSScreen.screens.count == 1, let screen = NSScreen.screens.first else { return false }
+        return notch(on: screen).width > 0
     }
 
     /// Gives `panel` a view laid out for the notch and `layout`, and sizes it around the notch.

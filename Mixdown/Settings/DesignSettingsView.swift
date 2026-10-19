@@ -57,7 +57,8 @@ struct DesignSettingsView: View {
                     "While recording, the time and input levels appear in a Dynamic Island around the "
                         + "camera notch instead of the time in the menu bar. The levels go on the other side "
                         + "from the time. Without a notch, the island appears at the top center of the "
-                        + "screen. Click it to open Record."
+                        + "screen, and the menu bar keeps the time too, as it does with another display "
+                        + "connected. Click the island to open Record."
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)
