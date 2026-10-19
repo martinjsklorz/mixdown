@@ -1,5 +1,6 @@
 import AppKit
 import KeyboardShortcuts
+import MixdownAppleTranslation
 import MixdownAudio
 import MixdownCore
 import MixdownFoundationModels
@@ -16,6 +17,8 @@ final class AppEnvironment {
     private(set) var model: TranscriptionModel
     /// Makes the summaries; `coordinator` only has it while summaries are on.
     let summarizer: any Summarizer
+    /// Translates transcripts, into the coordinator's `translationLanguage` when there is one.
+    let translator: any Translator
     let notesFolder: NotesFolderStore
     let noteTrash: NoteTrash
     private let noteReady: NoteReady
@@ -62,11 +65,14 @@ final class AppEnvironment {
         // This is the ONE place the summarizer is chosen. To use a different backend, construct
         // any other `Summarizer` here; nothing else changes.
         let summarizer: any Summarizer = AppleIntelligenceSummarizer()
+        // Likewise the ONE place the translator is chosen.
+        let translator: any Translator = AppleTranslator()
         let noteTrash = NoteTrash()
         let noteReady = NoteReady(navigation: navigation)
         self.settings = settings
         self.model = model
         self.summarizer = summarizer
+        self.translator = translator
         self.notesFolder = notesFolder
         self.noteTrash = noteTrash
         self.noteReady = noteReady
@@ -74,6 +80,7 @@ final class AppEnvironment {
         self.coordinator = Self.makeCoordinator(
             model: model,
             summarizer: settings.summarizesNotes ? summarizer : nil,
+            translator: translator,
             notesDirectory: notesFolder.directory,
             settings: settings
         )
@@ -102,6 +109,7 @@ final class AppEnvironment {
     private static func makeCoordinator(
         model: TranscriptionModel,
         summarizer: (any Summarizer)?,
+        translator: any Translator,
         notesDirectory: URL?,
         pendingNotes: [Note] = [],
         settings: AppSettings
@@ -117,6 +125,8 @@ final class AppEnvironment {
             summarizer: summarizer,
             summaryTemplate: settings.summaryTemplate,
             callSummaryTemplate: settings.callSummaryTemplate,
+            translator: translator,
+            translationLanguage: settings.translationLanguage,
             options: TranscriptionOptions(language: settings.language),
             sourceLabels: settings.sourceLabels,
             preferredDeviceIDs: settings.selectedDeviceIDs,
@@ -358,9 +368,9 @@ final class AppEnvironment {
     // MARK: Global shortcut
 
     /// Starts or stops recording on the global shortcut, from any app. While busy downloading,
-    /// transcribing or summarizing, it beeps, as recording can start once that's done. When
-    /// recording can't start for something the user has to do (no notes folder, model or input),
-    /// it opens Record instead, which says what.
+    /// transcribing, translating or summarizing, it beeps, as recording can start once that's done.
+    /// When recording can't start for something the user has to do (no notes folder, model or
+    /// input), it opens Record instead, which says what.
     private func listenForRecordingShortcut() {
         KeyboardShortcuts.onKeyUp(for: .toggleRecording) { [weak self] in
             guard let self else { return }
@@ -422,6 +432,7 @@ final class AppEnvironment {
         coordinator = Self.makeCoordinator(
             model: model,
             summarizer: coordinator.summarizer,
+            translator: translator,
             notesDirectory: notesFolder.directory,
             pendingNotes: coordinator.takePendingNotes(),
             settings: settings
@@ -457,6 +468,18 @@ final class AppEnvironment {
         set {
             settings.callSummaryTemplate = newValue
             coordinator.callSummaryTemplate = newValue
+        }
+    }
+
+    // MARK: Translation
+
+    /// The BCP 47 identifier of the language notes are translated into, or `nil` for none. Takes
+    /// effect from the next note.
+    var translationLanguage: String? {
+        get { coordinator.translationLanguage }
+        set {
+            settings.translationLanguage = newValue
+            coordinator.translationLanguage = newValue
         }
     }
 

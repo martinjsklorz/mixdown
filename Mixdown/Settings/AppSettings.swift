@@ -32,6 +32,8 @@ struct AppSettings {
         static let summaryTemplate = "summaryTemplate"
         /// A `SummaryTemplate` raw value for recordings started for a call. Absent means `.general`.
         static let callSummaryTemplate = "callSummaryTemplate"
+        /// BCP 47 identifier of the language notes are translated into; absent means no translation.
+        static let translationLanguage = "translationLanguage"
         /// Whether Mixdown plays audio cues at all. Absent means yes.
         static let playsSounds = "playsSounds"
         /// Whether to post notifications when calls start and end. Absent means yes.
@@ -137,8 +139,13 @@ struct AppSettings {
         return name.isEmpty ? nil : name
     }
 
+    /// `nil` means notes aren't translated.
+    var translationLanguage: String? {
+        get { defaults.string(forKey: Key.translationLanguage) }
+        nonmutating set { defaults.set(newValue, forKey: Key.translationLanguage) }
+    }
+
     /// `nil` means auto-detect.
-    var language: String? {
         get { defaults.string(forKey: Key.language) }
         nonmutating set { defaults.set(newValue, forKey: Key.language) }
     }

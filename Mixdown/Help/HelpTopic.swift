@@ -299,6 +299,19 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
 
             Turn summaries off under **Settings → Transcription → Summarize recordings**. That \
             section also says why summaries aren't available on this Mac if they aren't.
+
+            ## Translation
+
+            To get notes in another language, pick it under **Settings → Transcription → \
+            Translate to**. Each note then has a translation above the original transcript, and \
+            its summary and title are in that language. Recordings already in that language are \
+            left as they are.
+
+            Apple's translation models translate on your Mac, with Apple Intelligence where it's \
+            on. macOS downloads each language once: click **Download** next to the languages in \
+            Settings, or download others under System Settings → General → Language & Region → \
+            Translation Languages. If they're missing, the note is saved without a translation and \
+            Mixdown says which to download.
             """
         case .notifications:
             """

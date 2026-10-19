@@ -215,6 +215,23 @@ detected calls (recordings started from the call notification or automatically):
 That template is preselected for each recording. To use another one for this recording only, pick
 it under **Record** while recording or transcribing, until the summary starts.
 
+## Translation
+
+To get notes in another language, pick it under **Settings → Transcription → Translate to**. Each
+note then gets a `## Translation` section above the original transcript, with the same times and
+speakers, and `translation_language` in its frontmatter. The summary and title are written from
+the translation, so they're in that language too. Recordings already in that language are left as
+they are.
+
+Translation uses Apple's on-device translation models (the Translation framework), with Apple
+Intelligence's more fluent translations on macOS 26.4 and later where it's turned on. None of the
+speech models translate, so this is the model that was already on every Mac. macOS downloads each
+language once and shares it with other apps: Settings shows whether the languages from your
+transcription language (or your Mac's, for Automatic) are downloaded, with a **Download** button.
+Download others under System Settings → General → Language & Region → Translation Languages. If a
+recording's languages are missing, the note is saved without a translation and Mixdown says which
+to download.
+
 ## Notes
 
 Notes are saved to a folder you choose the first time you open Mixdown, for example a new
@@ -303,16 +320,17 @@ window lives in the `MixdownKit` package:
 
 | Module | What it does |
 | ------ | ------------ |
-| `MixdownCore` | Domain types and protocols, plus `RecordingCoordinator`, which runs a recording from start to saved note: captures, live or offline transcription, merging tracks, summary, writing. No dependencies beyond Foundation. |
+| `MixdownCore` | Domain types and protocols, plus `RecordingCoordinator`, which runs a recording from start to saved note: captures, live or offline transcription, merging tracks, translation, summary, writing. No dependencies beyond Foundation. |
 | `MixdownAudio` | Core Audio: microphone capture (HAL IO proc), system audio (process tap), the device list, and which apps use a microphone (for call detection). |
 | `MixdownSpeechSwift` | Nemotron, Qwen3-ASR and MOSS via [speech-swift](https://github.com/soniqo/speech-swift) (MLX). |
 | `MixdownAppleSpeech` | Apple's on-device model via `SpeechAnalyzer`. |
 | `MixdownFoundationModels` | Summaries and titles via Apple Intelligence. |
+| `MixdownAppleTranslation` | Translating transcripts with Apple's on-device models via the Translation framework. |
 | `MixdownNotes` | Rendering notes to Markdown, writing them, and reading the notes folder back. |
 
-The speech engines sit behind one protocol (`TranscriptionEngine`), and so does the summarizer
-(`Summarizer`). Speech models from any engine are listed in `Mixdown/App/TranscriptionModel.swift`;
-`Mixdown/App/AppEnvironment.swift` wires everything together.
+The speech engines sit behind one protocol (`TranscriptionEngine`), and so do the summarizer
+(`Summarizer`) and the translator (`Translator`). Speech models from any engine are listed in
+`Mixdown/App/TranscriptionModel.swift`; `Mixdown/App/AppEnvironment.swift` wires everything together.
 
 ## License
 

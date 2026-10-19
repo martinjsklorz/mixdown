@@ -9,6 +9,9 @@ public struct Note: Sendable, Equatable {
     public var sources: [AudioInputDevice]
     public var engine: TranscriptionEngineInfo
     public var transcript: Transcript
+    /// The transcript in another language, with its `language` set to that one. `nil` when
+    /// translation is off, failed or the recording was in that language already.
+    public var translation: Transcript?
     /// `nil` when summaries are off, unavailable or failed.
     public var summary: NoteSummary?
     /// Whether the user started the recording or Mixdown started it for a call by itself.
@@ -21,6 +24,7 @@ public struct Note: Sendable, Equatable {
         sources: [AudioInputDevice],
         engine: TranscriptionEngineInfo,
         transcript: Transcript,
+        translation: Transcript? = nil,
         summary: NoteSummary? = nil,
         trigger: RecordingTrigger = .manual
     ) {
@@ -30,6 +34,7 @@ public struct Note: Sendable, Equatable {
         self.sources = sources
         self.engine = engine
         self.transcript = transcript
+        self.translation = translation
         self.summary = summary
         self.trigger = trigger
     }

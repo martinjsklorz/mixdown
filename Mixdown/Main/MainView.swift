@@ -428,7 +428,7 @@ private enum SidebarControl {
 }
 
 /// What the recorder is doing, next to the Record icon: the time while recording, progress
-/// while downloading, transcribing or summarizing.
+/// while downloading, transcribing, translating or summarizing.
 private struct RecorderStatusBadge: View {
     let coordinator: RecordingCoordinator
 
@@ -446,7 +446,7 @@ private struct RecorderStatusBadge: View {
             Text(progress.formatted(.percent.precision(.fractionLength(0))))
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
-        case .startingCapture, .summarizing:
+        case .startingCapture, .translating, .summarizing:
             ProgressView()
                 .controlSize(.small)
         case .failed:
