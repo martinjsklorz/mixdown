@@ -5,6 +5,7 @@
 | ⌘R | Start or stop recording |
 | ⇧⌘P | Pause or resume recording |
 | ⌃⌥⌘R | Start or stop recording from any app (change it under **Settings → General**) |
+| ⌃⌥⌘M | Mark a moment while recording, from any app (change it under **Settings → General**) |
 | ⌘1 | Show Record |
 | ⌘2 | Show Notes |
 | ⌘F | Search recordings |

@@ -58,12 +58,14 @@ struct GeneralSettingsView: View {
                 if environment.isRecordingShortcutEnabled {
                     KeyboardShortcuts.Recorder("Shortcut", name: .toggleRecording)
                 }
+                KeyboardShortcuts.Recorder("Mark moment while recording", name: .markMoment)
             } header: {
-                Text("Global Shortcut")
+                Text("Global Shortcuts")
             } footer: {
                 Text(
-                    "Works while Mixdown is in the background. If recording can't start yet, Mixdown "
-                        + "opens to show why."
+                    "Work while Mixdown is in the background. If recording can't start yet, Mixdown "
+                        + "opens to show why. Marking a moment opens a field under the notch for a "
+                        + "note on it; clear the shortcut to turn it off."
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)

@@ -21,6 +21,7 @@ struct MenuBarContent: View {
                 Task { await coordinator.togglePause() }
             }
             .keyboardShortcut("p", modifiers: [.command, .shift])
+            Button("Mark Moment") { environment.markMoment() }
         }
 
         RecordingStatusView(

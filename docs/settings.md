@@ -8,8 +8,10 @@ Press ⌘, or click the cog above the sidebar to open Settings. **Settings…** 
   it, and **Try Again** looks for it again when it can't be reached. See
   [Notes](notes.md#the-notes-folder).
 - **Ask before deleting a note**: on by default.
-- **Global Shortcut → Start and stop recording from any app**: on by default, with ⌃⌥⌘R. Click
+- **Global Shortcuts → Start and stop recording from any app**: on by default, with ⌃⌥⌘R. Click
   the shortcut and press new keys to change it.
+- **Global Shortcuts → Mark moment while recording**: ⌃⌥⌘M. Clear it to turn it off. See
+  [Recording](recording.md#mark-a-moment).
 - **Startup → Launch Mixdown at login**. If macOS needs your approval, allow Mixdown in System
   Settings › General › Login Items.
 

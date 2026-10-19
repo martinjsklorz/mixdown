@@ -70,6 +70,9 @@ public final class RecordingCoordinator {
     public private(set) var showsLiveTranscript = false
     /// What the inputs said so far while `showsLiveTranscript`, else empty.
     public private(set) var liveTranscript = LiveTranscript(speakers: [])
+    /// Moments marked in the recording in progress, in the order they were marked, until its note
+    /// is made. See `markMoment()`.
+    public private(set) var moments: [Moment] = []
     /// Saves finished notes. `nil` while there's no folder to save to; recording waits for one.
     /// Setting it saves `pendingNotes`.
     public var noteWriter: (any NoteWriting)? {
@@ -751,6 +754,7 @@ public final class RecordingCoordinator {
         recordingStartedAt = session.startedAt
         recordingSummaryTemplate = summaryTemplate
         isRecordingSummaryTemplateChosen = false
+        moments = []
         if engine.transcribesLive {
             liveTranscript = LiveTranscript(speakers: [])
             showsLiveTranscript = true
@@ -1005,6 +1009,7 @@ public final class RecordingCoordinator {
         let liveError = await finishLiveTranscription(of: session)
         await finish(session, lanes: lanes, interruption: interruption ?? liveError)
         recordingSummaryTemplate = nil
+        moments = []
         releaseEngine()
     }
 
@@ -1104,7 +1109,10 @@ public final class RecordingCoordinator {
                 transcript: transcript,
                 translation: translation,
                 summary: summary,
-                trigger: session.trigger
+                trigger: session.trigger,
+                // Described up to now, as the user may have still been typing when it stopped.
+                moments: moments.map { Moment(id: $0.id, time: min($0.time, duration), text: $0.text) }
+                    .sorted { $0.time < $1.time }
             )
             // Kept until it's saved: the folder can go away while recording or transcribing, e.g.
             // when its drive is disconnected or goes to sleep.
@@ -1456,6 +1464,29 @@ public final class RecordingCoordinator {
         guard recordingSummaryTemplate != nil else { return }
         recordingSummaryTemplate = template
         isRecordingSummaryTemplateChosen = true
+    }
+
+    /// Marks the point the recording in progress has reached, paused or not, for its note.
+    /// Returns the moment, to describe with `describeMoment(_:as:)`, or `nil` when not recording.
+    @discardableResult
+    public func markMoment() -> Moment? {
+        let time: TimeInterval
+        switch phase {
+        case .recording(let startedAt): time = max(now().timeIntervalSince(startedAt), 0)
+        case .paused(let recorded): time = recorded
+        default: return nil
+        }
+        let moment = Moment(time: time)
+        moments.append(moment)
+        logger.info("Moment marked at \(time, format: .fixed(precision: 1)) s")
+        return moment
+    }
+
+    /// Sets what the user wrote about a moment of the recording in progress, or of the one being
+    /// transcribed, until its note is made. Ignored after that.
+    public func describeMoment(_ id: Moment.ID, as text: String) {
+        guard let index = moments.firstIndex(where: { $0.id == id }) else { return }
+        moments[index].text = text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     public func toggleRecording() async {

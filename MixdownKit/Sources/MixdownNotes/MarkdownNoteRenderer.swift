@@ -4,13 +4,18 @@ import MixdownCore
 /// Renders a `Note` as Markdown with YAML frontmatter.
 ///
 /// Layout: frontmatter, `# Title`, then one `##` section per body part: `## Summary` if the
-/// note has one, `## Translation` if it has one, then `## Transcript`. Sections are added in
+/// note has one, `## Translation` if it has one, then `## Transcript`. Marked moments go last in
+/// the summary, or in a `## Moments` section of their own without one. Sections are added in
 /// `bodySections(for:)`.
 public enum MarkdownNoteRenderer {
     /// Shown instead of transcript paragraphs when nothing was recognized.
     static let emptyTranscriptPlaceholder = "_No speech detected._"
     /// Shown under a fixed summary section the summary has nothing for.
     static let emptySectionPlaceholder = "_None._"
+    /// Shown for a moment with neither a note nor speech around it.
+    static let emptyMomentPlaceholder = "_Marked._"
+    /// The most words of the transcript shown with a moment.
+    static let momentExcerptWordCount = 20
 
     public static func render(_ note: Note) -> String {
         let title = singleLine(note.title)
@@ -55,8 +60,13 @@ public enum MarkdownNoteRenderer {
     /// Body sections in display order.
     static func bodySections(for note: Note) -> [String] {
         var sections: [String] = []
+        // Quoting the same language as the summary.
+        let moments = momentsBody(note.moments, transcript: note.translation ?? note.transcript)
         if let summary = note.summary.flatMap(summaryBody) {
-            sections.append(section("Summary", body: summary))
+            let body = [summary, moments.map { "### Moments\n\n" + $0 }].compactMap { $0 }
+            sections.append(section("Summary", body: body.joined(separator: "\n\n")))
+        } else if let moments {
+            sections.append(section("Moments", body: moments))
         }
         if let translation = note.translation {
             sections.append(section("Translation", body: transcriptBody(translation)))
@@ -99,6 +109,35 @@ public enum MarkdownNoteRenderer {
             }
         }
         return blocks.isEmpty ? nil : blocks.joined(separator: "\n\n")
+    }
+
+    /// One list item per moment: its time like the transcript's, what the user wrote, then what
+    /// was being said, quoted from `transcript`. `nil` without moments.
+    static func momentsBody(_ moments: [Moment], transcript: Transcript) -> String? {
+        guard !moments.isEmpty else { return nil }
+        return moments.map { moment in
+            var parts = [escapedMarkdown(singleLine(moment.text))]
+            if let segment = transcript.segment(at: moment.time) {
+                let words = escapedMarkdown(excerpt(of: segment, at: moment.time))
+                let speaker = segment.speaker.map { escapedMarkdown(singleLine($0)) } ?? ""
+                parts.append(speaker.isEmpty ? "_“\(words)”_" : "_\(speaker): “\(words)”_")
+            }
+            let text = parts.filter { !$0.isEmpty }.joined(separator: " — ")
+            return "- **[\(timestamp(moment.time))]** " + (text.isEmpty ? emptyMomentPlaceholder : text)
+        }
+        .joined(separator: "\n")
+    }
+
+    /// The last `momentExcerptWordCount` words of `segment` said by `time`, reckoning they were
+    /// said at an even pace, with `…` where words are left out.
+    static func excerpt(of segment: TranscriptSegment, at time: TimeInterval) -> String {
+        let words = singleLine(segment.text).split(separator: " ")
+        let length = segment.end - segment.start
+        let fraction = length > 0 ? min(max((time - segment.start) / length, 0), 1) : 1
+        let end = min(max(Int((Double(words.count) * fraction).rounded(.up)), momentExcerptWordCount), words.count)
+        let start = max(end - momentExcerptWordCount, 0)
+        return (start > 0 ? "…" : "") + words[start..<end].joined(separator: " ")
+            + (end < words.count ? "…" : "")
     }
 
     static func transcriptBody(_ transcript: Transcript) -> String {

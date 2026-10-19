@@ -6,7 +6,7 @@
 - Choose **Recording → Start Recording** (⌘R).
 - Choose **Start Recording** from Mixdown's icon in the menu bar.
 - From any other app, press ⌃⌥⌘R. Change that shortcut or turn it off under
-  **Settings → General → Global Shortcut**. If recording can't start yet, Mixdown opens to show
+  **Settings → General → Global Shortcuts**. If recording can't start yet, Mixdown opens to show
   why.
 
 Do the same again to stop. Recording carries on if you close the window.
@@ -16,6 +16,25 @@ Do the same again to stop. Recording carries on if you close the window.
 Click the pause button beside Stop, or choose **Recording → Pause Recording** (⇧⌘P), also in the
 menu bar. While paused, Mixdown records nothing, and macOS no longer shows the microphone in use.
 Resume the same way to carry on in the same note; the paused time is left out of it.
+
+## Mark a moment
+
+To find something again later, press ⌃⌥⌘M in any app while recording, click the bookmark button
+beside Stop, or choose **Recording → Mark Moment**, also in the menu bar. A field drops down under
+the notch (or the Dynamic Island, while it shows) with the recording's time:
+
+- Type a few words and press **Return** to keep them.
+- Press **Escape** to keep the mark without words.
+- Do nothing for 5 seconds, or click elsewhere, and it closes; what you typed so far is kept.
+
+The field takes the keyboard without switching to Mixdown, so the app you were in gets it back
+when the field closes. Marking again while it's open starts a new moment. Change the shortcut, or
+clear it to turn it off, under **Settings → General → Global Shortcuts**; Mixdown only takes those
+keys while recording.
+
+The note lists the moments under **Moments** at the end of its summary, or in a section of their
+own without one. Each has its time, matching the transcript's, your words, and what was being said
+then. See [Notes](notes.md#moments).
 
 ## Inputs
 

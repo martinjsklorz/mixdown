@@ -1,8 +1,9 @@
+import KeyboardShortcuts
 import MixdownCore
 import SwiftUI
 
-/// The Record section: one big button to start or stop, with one beside it to pause while
-/// recording, the state Mixdown is in, and a summary of what it records with. The inputs
+/// The Record section: one big button to start or stop, with ones beside it to mark a moment and
+/// to pause while recording, the state Mixdown is in, and a summary of what it records with. The inputs
 /// themselves are chosen in the Recording menu or Settings.
 /// While recording with the live model, the text recognized so far replaces the summary.
 struct RecorderView: View {
@@ -143,12 +144,11 @@ struct RecorderView: View {
         .animation(.default, value: coordinator.isRecording)
     }
 
-    /// Stop in the middle, as when starting, with Pause or Resume beside it.
+    /// Stop in the middle, as when starting, with Mark Moment on one side and Pause or Resume on
+    /// the other.
     private func recordingControls(for coordinator: RecordingCoordinator) -> some View {
         HStack(spacing: 20) {
-            // Balances the pause button, so Stop stays where Record was.
-            Color.clear
-                .frame(width: PauseButton.size, height: PauseButton.size)
+            MomentButton(momentCount: coordinator.moments.count) { environment.markMoment() }
             stopButton(for: coordinator)
             PauseButton(isPaused: coordinator.isPaused) {
                 Task { await coordinator.togglePause() }
@@ -395,5 +395,44 @@ private struct PauseButton: View {
         .buttonStyle(.plain)
         .accessibilityLabel(isPaused ? "Resume Recording" : "Pause Recording")
         .help(isPaused ? "Resume Recording (⇧⌘P)" : "Pause Recording (⇧⌘P)")
+    }
+}
+
+/// A round button on the other side of Stop from Pause, to mark a moment. Shows how many are
+/// marked so far.
+private struct MomentButton: View {
+    let momentCount: Int
+    let action: @MainActor () -> Void
+
+    var body: some View {
+        let shortcut = KeyboardShortcuts.getShortcut(for: .markMoment).map { " (\($0.description))" } ?? ""
+
+        Button(action: action) {
+            ZStack {
+                Circle()
+                    .strokeBorder(.secondary.opacity(0.4), lineWidth: 3)
+                Image(systemName: momentCount > 0 ? "bookmark.fill" : "bookmark")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(width: PauseButton.size, height: PauseButton.size)
+            .contentShape(Circle())
+            .overlay(alignment: .topTrailing) {
+                if momentCount > 0 {
+                    Text(momentCount, format: .number)
+                        .font(.caption2.weight(.semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 4)
+                        .frame(minWidth: 16, minHeight: 16)
+                        .background(.orange, in: Capsule())
+                        .offset(x: 4, y: -4)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Mark Moment")
+        .accessibilityValue(momentCount == 1 ? "1 moment marked" : "\(momentCount) moments marked")
+        .help("Mark Moment\(shortcut)")
     }
 }

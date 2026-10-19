@@ -16,6 +16,8 @@ public struct Note: Sendable, Equatable {
     public var summary: NoteSummary?
     /// Whether the user started the recording or Mixdown started it for a call by itself.
     public var trigger: RecordingTrigger
+    /// Points the user marked while recording, in order of time.
+    public var moments: [Moment]
 
     public init(
         title: String,
@@ -26,7 +28,8 @@ public struct Note: Sendable, Equatable {
         transcript: Transcript,
         translation: Transcript? = nil,
         summary: NoteSummary? = nil,
-        trigger: RecordingTrigger = .manual
+        trigger: RecordingTrigger = .manual,
+        moments: [Moment] = []
     ) {
         self.title = title
         self.createdAt = createdAt
@@ -37,6 +40,7 @@ public struct Note: Sendable, Equatable {
         self.translation = translation
         self.summary = summary
         self.trigger = trigger
+        self.moments = moments
     }
 }
 
