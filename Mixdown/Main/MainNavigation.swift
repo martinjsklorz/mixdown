@@ -12,6 +12,12 @@ final class MainNavigation {
         case notes
     }
 
+    /// A block of a note, by its index in `NoteDocument.displayBlocks()`.
+    struct NoteBlock: Equatable {
+        var noteID: URL
+        var index: Int
+    }
+
     enum SettingsTab: String, CaseIterable, Identifiable {
         case general = "General"
         case recording = "Recording"
@@ -38,6 +44,12 @@ final class MainNavigation {
     /// A note to select once the main window has loaded the notes folder, e.g. one opened from
     /// its notification. The window clears it when it takes it.
     var noteToShow: URL?
+    /// The line of `noteToShow` to scroll to, by its number in `NoteSearchIndex.lines(of:)`: the
+    /// one picked in Spotlight. Taken with it.
+    private var noteLineToShow: Int?
+    /// A block of a note for its view to scroll to and highlight. The view clears it when it
+    /// takes it.
+    var blockToShow: NoteBlock?
     var settingsTab: SettingsTab = .general
     /// Whether the main window shows the setup assistant. Set at launch until it's been through
     /// once, and by Help › Setup Assistant….
@@ -60,17 +72,22 @@ final class MainNavigation {
     }
 
     /// Selects the note at `url` and brings the main window forward, opening it if it's closed.
-    func showNote(at url: URL) {
+    /// With a `line` (see `noteLineToShow`), scrolls to it.
+    func showNote(at url: URL, line: Int? = nil) {
+        noteLineToShow = line
         noteToShow = url
         destination = .notes
         NSApp.activate()
         openWindow?(id: MainView.windowID)
     }
 
-    /// Takes `noteToShow`, clearing it.
-    func takeNoteToShow() -> URL? {
-        defer { noteToShow = nil }
-        return noteToShow
+    /// Takes `noteToShow` and its line, clearing them.
+    func takeNoteToShow() -> (url: URL, line: Int?)? {
+        defer {
+            noteToShow = nil
+            noteLineToShow = nil
+        }
+        return noteToShow.map { ($0, noteLineToShow) }
     }
 
     /// Brings the main window forward with the setup assistant over it.

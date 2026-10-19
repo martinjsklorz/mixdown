@@ -7,6 +7,9 @@ languages are handled by macOS.
 With a live model the audio isn't kept at all. With an offline model it's kept in memory until
 the recording is transcribed. Only the note is saved, to the folder you chose.
 
+Notes are also added to Spotlight's index on your Mac, so you can search them there. Turn that off
+under **Settings → General → Show notes in Spotlight**.
+
 ## Permissions
 
 The first time, macOS asks for permission:
