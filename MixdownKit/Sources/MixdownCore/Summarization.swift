@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// The shape of a summary, chosen per kind of recording.
 public enum SummaryTemplate: String, Sendable, Codable, CaseIterable, Identifiable {
@@ -136,11 +137,14 @@ public protocol Summarizer: Sendable {
 public enum SummarizationError: LocalizedError, Sendable, Equatable {
     case unavailable(String)
     case failed(String)
+    /// The text handed to a model didn't fit its context window.
+    case tooLong
 
     public var errorDescription: String? {
         switch self {
         case .unavailable(let reason): "Summaries aren't available: \(reason)"
         case .failed(let reason): "Summarizing failed: \(reason)"
+        case .tooLong: "Summarizing failed: part of the recording is too long for the model."
         }
     }
 }
@@ -149,6 +153,9 @@ public enum SummarizationError: LocalizedError, Sendable, Equatable {
 /// transcript on its own, then those summaries together, until one summary is left.
 ///
 /// Knows nothing about the model. A backend supplies the size of a piece and runs each step.
+///
+/// A piece whose step fails is left out, so the summary covers the rest of the recording. Only
+/// when every piece of a pass fails does the summary fail.
 public struct ChunkedSummarizer: Sendable {
     public enum Step: Sendable, Equatable {
         /// The text is consecutive lines of the transcript, `Speaker: text` where known.
@@ -157,40 +164,95 @@ public struct ChunkedSummarizer: Sendable {
         case combine
     }
 
+    private static let logger = Logger(subsystem: "app.mixdown", category: "summary")
+
     /// Most estimated tokens (see `estimatedTokens(in:)`) of text handed to one step.
     public var maxTokens: Int
+    /// Pieces aren't split smaller than this when a step finds them too long; they're left out
+    /// instead.
+    public var minTokens: Int
     /// Combining passes before giving up, in case summaries don't get shorter.
     public var maxCombinePasses: Int
 
-    public init(maxTokens: Int, maxCombinePasses: Int = 4) {
+    public init(maxTokens: Int, minTokens: Int = 1, maxCombinePasses: Int = 4) {
         self.maxTokens = max(maxTokens, 1)
-        self.maxCombinePasses = maxCombinePasses
+        self.minTokens = max(minTokens, 1)
+        self.maxCombinePasses = max(maxCombinePasses, 0)
     }
 
     /// - Parameter step: Summarizes one piece of text of the given kind; called one at a time.
+    ///   Throws `SummarizationError.tooLong` if the text doesn't fit the model, and the piece is
+    ///   summarized in smaller pieces instead.
     public func summarize(
         _ transcript: Transcript,
         step: (_ text: String, _ kind: Step) async throws -> NoteSummary
     ) async throws -> NoteSummary {
-        var pieces = Self.chunks(of: Self.lines(of: transcript), maxTokens: maxTokens, separator: "\n")
+        var separator = "\n"
+        var pieces = Self.groups(of: Self.lines(of: transcript), maxTokens: maxTokens, separator: separator)
         var kind = Step.transcript
-        for _ in 0...maxCombinePasses {
-            guard pieces.count > 1 else {
-                guard let piece = pieces.first else { return NoteSummary() }
-                return try await step(piece, kind)
-            }
-            var parts: [String] = []
-            for (index, piece) in pieces.enumerated() {
-                try Task.checkCancellation()
-                let text = try await step(piece, kind).plainText
-                if !text.isEmpty {
-                    parts.append("Part \(index + 1) of \(pieces.count):\n\(text)")
+        for _ in 0...max(maxCombinePasses, 0) {
+            if pieces.count == 1 {
+                do {
+                    return try await step(pieces[0].joined(separator: separator), kind)
+                } catch SummarizationError.tooLong {
+                    guard let smaller = halves(of: pieces[0], separator: separator) else {
+                        throw SummarizationError.tooLong
+                    }
+                    pieces = smaller
                 }
             }
-            pieces = Self.chunks(of: parts, maxTokens: maxTokens, separator: "\n\n")
+            guard !pieces.isEmpty else { return NoteSummary() }
+            let texts = try await summaries(of: pieces, kind: kind, separator: separator, step: step)
+            let parts = texts.enumerated().compactMap { index, text in
+                text.isEmpty ? nil : "Part \(index + 1) of \(texts.count):\n\(text)"
+            }
+            separator = "\n\n"
+            pieces = Self.groups(of: parts, maxTokens: maxTokens, separator: separator)
             kind = .combine
         }
         throw SummarizationError.failed("The recording is too long to summarize.")
+    }
+
+    /// The summary of each piece as plain text, in order. A piece that's too long for `step` is
+    /// summarized in smaller pieces, each with an entry of its own. A piece that fails gets an
+    /// empty entry; if all of them fail, the first error is thrown.
+    private func summaries(
+        of pieces: [[String]],
+        kind: Step,
+        separator: String,
+        step: (_ text: String, _ kind: Step) async throws -> NoteSummary
+    ) async throws -> [String] {
+        var queue = ArraySlice(pieces)
+        var texts: [String] = []
+        var firstError: (any Error)?
+        var anySucceeded = false
+        while let piece = queue.popFirst() {
+            try Task.checkCancellation()
+            do {
+                texts.append(try await step(piece.joined(separator: separator), kind).plainText)
+                anySucceeded = true
+            } catch {
+                if error is CancellationError || Task.isCancelled { throw error }
+                if case SummarizationError.tooLong = error, let smaller = halves(of: piece, separator: separator) {
+                    Self.logger.info("A piece was too long, summarizing it in \(smaller.count) pieces")
+                    queue = ArraySlice(smaller) + queue
+                    continue
+                }
+                Self.logger.error("Leaving a piece out of the summary: \(error, privacy: .public)")
+                firstError = firstError ?? error
+                texts.append("")
+            }
+        }
+        if !anySucceeded, let firstError { throw firstError }
+        return texts
+    }
+
+    /// `piece` in pieces of about half its size, or nil if those would be smaller than `minTokens`.
+    private func halves(of piece: [String], separator: String) -> [[String]]? {
+        let half = (Self.estimatedTokens(in: piece.joined(separator: separator)) + 1) / 2
+        guard half >= minTokens else { return nil }
+        let smaller = Self.groups(of: piece, maxTokens: half, separator: separator)
+        return smaller.count > 1 ? smaller : nil
     }
 
     // MARK: - Pieces
@@ -214,15 +276,24 @@ public struct ChunkedSummarizer: Sendable {
     /// Joins `items` into as few pieces as fit `maxTokens` each, in order. An item that doesn't
     /// fit on its own is split, at spaces where possible.
     static func chunks(of items: [String], maxTokens: Int, separator: String) -> [String] {
-        var pieces: [String] = []
-        var current = ""
+        groups(of: items, maxTokens: maxTokens, separator: separator).map { $0.joined(separator: separator) }
+    }
+
+    /// Like `chunks(of:maxTokens:separator:)`, but keeps the items of each piece apart, so it can
+    /// be split again between them.
+    static func groups(of items: [String], maxTokens: Int, separator: String) -> [[String]] {
+        var pieces: [[String]] = []
+        var current: [String] = []
+        var currentText = ""
         for item in items.flatMap({ split($0, maxTokens: maxTokens) }) {
-            let candidate = current.isEmpty ? item : current + separator + item
-            if estimatedTokens(in: candidate) <= maxTokens {
-                current = candidate
+            let candidate = current.isEmpty ? item : currentText + separator + item
+            if current.isEmpty || estimatedTokens(in: candidate) <= maxTokens {
+                current.append(item)
+                currentText = candidate
             } else {
                 pieces.append(current)
-                current = item
+                current = [item]
+                currentText = item
             }
         }
         if !current.isEmpty { pieces.append(current) }
@@ -240,7 +311,7 @@ public struct ChunkedSummarizer: Sendable {
             var end = rest.startIndex
             var lastSpace: Substring.Index?
             for index in rest.indices {
-                cost += thirds(rest[index])
+                cost += rest[index].utf8.count
                 guard cost <= budget else { break }
                 if rest[index] == " " { lastSpace = index }
                 end = rest.index(after: index)
@@ -256,19 +327,12 @@ public struct ChunkedSummarizer: Sendable {
     }
 
     /// A deliberately high guess at how many tokens a model needs for `text`: a third of a token
-    /// per character, or a whole one for Chinese, Japanese and Korean, which tokenize densely.
+    /// per UTF-8 byte. That's a third per ASCII letter; two thirds per letter of Cyrillic, Greek,
+    /// Hebrew or Arabic; and a whole token per Chinese, Japanese, Korean, Thai or Indic letter or
+    /// vowel sign. Tokenizers fall back to bytes for text they've seen little of, so scripts
+    /// further from English take more tokens.
     public static func estimatedTokens(in text: some StringProtocol) -> Int {
-        let total = text.reduce(0) { $0 + thirds($1) }
-        return (total + 2) / 3
-    }
-
-    /// The estimated cost of `character` in thirds of a token.
-    private static func thirds(_ character: Character) -> Int {
-        guard let scalar = character.unicodeScalars.first else { return 1 }
-        switch scalar.value {
-        case 0x1100...0x11FF, 0x3040...0x30FF, 0x3130...0x318F, 0xAC00...0xD7AF: return 3
-        default: return scalar.properties.isIdeographic ? 3 : 1
-        }
+        (text.utf8.count + 2) / 3
     }
 
     private static func singleLine(_ text: String) -> String {

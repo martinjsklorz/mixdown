@@ -62,6 +62,15 @@ struct ChunkedSummarizerTests {
         #expect(ChunkedSummarizer.estimatedTokens(in: "회의") == 2)
     }
 
+    @Test func estimatesOtherScriptsDenserThanLatin() {
+        // Two thirds of a token per Cyrillic letter, a whole one per Thai or Devanagari scalar,
+        // even where several make one character.
+        #expect(ChunkedSummarizer.estimatedTokens(in: "привет") == 4)
+        #expect(ChunkedSummarizer.estimatedTokens(in: "สวัสดี") == 6)
+        #expect(ChunkedSummarizer.estimatedTokens(in: "नमस्ते") == 6)
+        #expect(ChunkedSummarizer.split("привет мир", maxTokens: 4) == ["привет", "мир"])
+    }
+
     @Test func chunksPackLinesInOrderWithinTheLimit() {
         // 9 characters each, so 3 tokens; two lines plus a newline are 7.
         let lines = ["aaaaaaaaa", "bbbbbbbbb", "ccccccccc"]
@@ -156,6 +165,128 @@ struct ChunkedSummarizerTests {
             }
         }
         #expect(steps.current < 50)
+    }
+
+    @Test func negativeCombinePassesStillSummarize() async throws {
+        let recorder = StepRecorder()
+        let summary = try await ChunkedSummarizer(maxTokens: 1000, maxCombinePasses: -1).summarize(
+            transcript(["Hello."]),
+            step: { recorder.step($0, $1) }
+        )
+        #expect(summary == NoteSummary(overview: "transcript 1"))
+    }
+
+    // MARK: - Failures
+
+    private struct StepFailure: Error {}
+
+    @Test func failedPieceIsLeftOut() async throws {
+        let combined = LockedValue<[String]>([])
+
+        let summary = try await ChunkedSummarizer(maxTokens: 30).summarize(transcript(longTurns)) { text, kind in
+            if kind == .combine {
+                combined.update { $0.append(text) }
+                return NoteSummary(overview: "All")
+            }
+            if text.hasPrefix("S2") { throw StepFailure() }
+            return NoteSummary(overview: String(text.prefix(2)))
+        }
+
+        #expect(summary == NoteSummary(overview: "All"))
+        #expect(combined.current == ["Part 1 of 3:\nS1\n\nPart 3 of 3:\nS3"])
+    }
+
+    @Test func allPiecesFailingThrows() async throws {
+        await #expect(throws: StepFailure.self) {
+            try await ChunkedSummarizer(maxTokens: 30).summarize(transcript(longTurns)) { _, _ in
+                throw StepFailure()
+            }
+        }
+    }
+
+    @Test func cancellationIsNotTakenForAFailedPiece() async throws {
+        let steps = LockedValue(0)
+
+        await #expect(throws: CancellationError.self) {
+            try await ChunkedSummarizer(maxTokens: 30).summarize(transcript(longTurns)) { text, _ in
+                steps.update { $0 += 1 }
+                if text.hasPrefix("S2") { throw CancellationError() }
+                return NoteSummary(overview: "Part")
+            }
+        }
+        #expect(steps.current == 2)
+    }
+
+    /// Six turns of 11 tokens each, which pack two to a piece of at most 25 tokens.
+    private let shortTurns = (1...6).map { "Line \($0) " + String(repeating: "x", count: 20) }
+
+    @Test func tooLongPieceIsSplitWithoutRedoingTheOthers() async throws {
+        let recorder = StepRecorder()
+
+        let summary = try await ChunkedSummarizer(maxTokens: 25).summarize(transcript(shortTurns)) { text, kind in
+            // The piece with S3 and S4 only fits one turn at a time.
+            if kind == .transcript, text.contains("S3:"), text.contains("\n") {
+                throw SummarizationError.tooLong
+            }
+            return recorder.step(text, kind)
+        }
+
+        // Two parts fit in a piece, so the four are combined in two, then those two in one.
+        #expect(summary == NoteSummary(overview: "combine 3"))
+        let turns = shortTurns.enumerated().map { "S\($0 + 1): \($1)" }
+        #expect(
+            recorder.steps.filter { $0.kind == .transcript }.map(\.text) == [
+                turns[0] + "\n" + turns[1], turns[2], turns[3], turns[4] + "\n" + turns[5],
+            ]
+        )
+        #expect(
+            recorder.steps.filter { $0.kind == .combine }.prefix(2).map(\.text) == [
+                "Part 1 of 4:\ntranscript 1\n\nPart 2 of 4:\ntranscript 2",
+                "Part 3 of 4:\ntranscript 3\n\nPart 4 of 4:\ntranscript 4",
+            ]
+        )
+    }
+
+    @Test func pieceTooLongAtTheMinimumIsLeftOut() async throws {
+        let combined = LockedValue<[String]>([])
+
+        let summary = try await ChunkedSummarizer(maxTokens: 25, minTokens: 20).summarize(transcript(shortTurns)) {
+            text,
+            kind in
+            if kind == .combine {
+                combined.update { $0.append(text) }
+                return NoteSummary(overview: "All")
+            }
+            if text.contains("S3:") { throw SummarizationError.tooLong }
+            return NoteSummary(overview: String(text.prefix(2)))
+        }
+
+        #expect(summary == NoteSummary(overview: "All"))
+        #expect(combined.current == ["Part 1 of 3:\nS1\n\nPart 3 of 3:\nS5"])
+    }
+
+    @Test func singlePieceTooLongIsSummarizedInHalves() async throws {
+        let recorder = StepRecorder()
+
+        let summary = try await ChunkedSummarizer(maxTokens: 1000).summarize(transcript(["One.", "Two."])) {
+            text,
+            kind in
+            if kind == .transcript, text.contains("\n") { throw SummarizationError.tooLong }
+            return recorder.step(text, kind)
+        }
+
+        #expect(summary == NoteSummary(overview: "combine 1"))
+        #expect(recorder.steps.map(\.text) == ["S1: One.", "S2: Two.", "Part 1 of 2:\ntranscript 1\n\nPart 2 of 2:\ntranscript 2"])
+    }
+
+    @Test func singlePieceTooLongToSplitThrows() async throws {
+        await #expect(throws: SummarizationError.tooLong) {
+            try await ChunkedSummarizer(maxTokens: 1000, minTokens: 100).summarize(transcript(["One.", "Two."])) {
+                _,
+                _ in
+                throw SummarizationError.tooLong
+            }
+        }
     }
 
     // MARK: - Summary text

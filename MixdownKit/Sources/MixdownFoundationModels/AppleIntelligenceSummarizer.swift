@@ -29,7 +29,8 @@ enum SystemModelSummary {
     /// Tokens of the context window kept free for the instructions, the response schema and the
     /// response.
     static let reservedTokens = 1100
-    /// Pieces aren't made smaller than this when the context overflows; the summary fails instead.
+    /// Pieces aren't made smaller than this when the context overflows; they're left out of the
+    /// summary instead.
     static let minimumPieceTokens = 400
 
     static var availability: SummarizerAvailability {
@@ -54,23 +55,23 @@ enum SystemModelSummary {
         let model = SystemLanguageModel.default
         if case .unavailable(let reason) = availability { throw SummarizationError.unavailable(reason) }
 
-        // `estimatedTokens` guesses high, but the model's tokenizer can still disagree. On an
-        // overflow, start over with smaller pieces.
-        var maxTokens = max(model.contextSize - reservedTokens, minimumPieceTokens)
+        // `estimatedTokens` guesses high, but the model's tokenizer can still disagree. A piece
+        // that overflows the context is split again by `ChunkedSummarizer`.
+        let summarizer = ChunkedSummarizer(
+            maxTokens: max(model.contextSize - reservedTokens, minimumPieceTokens),
+            minTokens: minimumPieceTokens
+        )
         let language = languageCode(of: transcript)
-        while true {
+        var summary = try await summarizer.summarize(transcript) { text, kind in
             do {
-                let summarizer = ChunkedSummarizer(maxTokens: maxTokens)
-                var summary = try await summarizer.summarize(transcript) { text, kind in
-                    try await respond(to: text, kind: kind, template: template, model: model, language: language)
-                }
-                summary.language = language
-                return summary
-            } catch let error where isContextOverflow(error) && maxTokens / 2 >= minimumPieceTokens {
-                maxTokens /= 2
-                logger.info("Context overflowed, retrying with pieces of \(maxTokens) tokens")
+                return try await respond(to: text, kind: kind, template: template, model: model, language: language)
+            } catch where isContextOverflow(error) {
+                logger.info("A piece of \(text.count) characters overflowed the context")
+                throw SummarizationError.tooLong
             }
         }
+        summary.language = language
+        return summary
     }
 
     /// One model call, in a fresh session so earlier pieces don't take up the context.
