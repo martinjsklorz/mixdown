@@ -226,6 +226,13 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
 
             Right-clicking also offers **Open in Default App**.
 
+            ## Searching in Spotlight
+
+            Your notes are in Spotlight (⌘Space), down to the line: searching for "release \
+            timeline" shows the transcript line or action item that mentions it, with the note's \
+            title and the time it was said. Click a result to open the note at that line. Turn it \
+            off under **Settings → General → Show notes in Spotlight**.
+
             ## The notes folder
 
             Each note is a Markdown file in the folder you chose. Open it with **File → Open Notes \
