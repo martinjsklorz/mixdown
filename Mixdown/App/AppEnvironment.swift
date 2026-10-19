@@ -110,6 +110,7 @@ final class AppEnvironment {
         model: TranscriptionModel,
         summarizer: (any Summarizer)?,
         notesDirectory: URL?,
+        pendingNotes: [Note] = [],
         settings: AppSettings
     ) -> RecordingCoordinator {
         RecordingCoordinator(
@@ -119,6 +120,7 @@ final class AppEnvironment {
             // To add a backend, give it a case there; nothing else here changes.
             engine: model.makeEngine(),
             noteWriter: notesDirectory.map { MarkdownNoteWriter(directory: $0) },
+            pendingNotes: pendingNotes,
             summarizer: summarizer,
             summaryTemplate: settings.summaryTemplate,
             callSummaryTemplate: settings.callSummaryTemplate,
@@ -388,9 +390,9 @@ final class AppEnvironment {
         coordinator.options.language = language
     }
 
-    /// Whether the coordinator can be replaced: nothing is recording, starting, downloading or
-    /// transcribing.
-    var canChangeModel: Bool { coordinator.isIdle }
+    /// Whether the coordinator can be replaced: nothing is recording, starting, downloading,
+    /// transcribing or saving.
+    var canChangeModel: Bool { coordinator.isIdle && !coordinator.isSavingPendingNotes }
 
     /// Switches models by rebuilding the coordinator. Ignored unless `canChangeModel`; the
     /// settings UI disables the picker in that case.
@@ -402,6 +404,7 @@ final class AppEnvironment {
             model: model,
             summarizer: coordinator.summarizer,
             notesDirectory: notesFolder.directory,
+            pendingNotes: coordinator.takePendingNotes(),
             settings: settings
         )
         startMonitoringDevices()

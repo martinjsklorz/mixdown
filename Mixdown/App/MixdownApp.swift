@@ -25,7 +25,7 @@ struct MixdownApp: App {
             MainView()
                 .environment(environment)
                 .environment(navigation)
-                .capturesOpenWindow(for: appDelegate, navigation: navigation)
+                .capturesOpenWindow(for: appDelegate, navigation: navigation, environment: environment)
         }
         .defaultSize(width: 960, height: 620)
         .defaultPosition(.center)
@@ -40,7 +40,7 @@ struct MixdownApp: App {
             MenuBarContent()
                 .environment(environment)
                 .environment(navigation)
-                .capturesOpenWindow(for: appDelegate, navigation: navigation)
+                .capturesOpenWindow(for: appDelegate, navigation: navigation, environment: environment)
         } label: {
             // Reads the environment itself: read here, the elapsed time ticking every second
             // would rebuild every scene.
