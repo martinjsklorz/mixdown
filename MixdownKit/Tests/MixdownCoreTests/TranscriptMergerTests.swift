@@ -138,7 +138,14 @@ struct TranscriptMergerTests {
     }
 
     @Test func contractionsCountAsOneWord() {
-        #expect(TranscriptMerger.normalizedWords("It’s fine, let's go.") == ["its", "fine", "lets", "go"])
+        #expect(TranscriptMerger.words(in: "It’s fine, let's go.").map(\.text) == ["its", "fine", "lets", "go"])
+    }
+
+    @Test func scriptsWithoutSpacesCountEachCharacter() {
+        let words = TranscriptMerger.words(in: "Mixdown 很好用。わかった")
+        #expect(words.map(\.text) == ["mixdown", "很", "好", "用", "わ", "か", "っ", "た"])
+        let kana = 1.0 / 3
+        #expect(words.map(\.weight) == [1, 0.5, 0.5, 0.5, kana, kana, kana, kana])
     }
 
     @Test func echoNeedsWordsInTheSameOrder() {
@@ -147,12 +154,69 @@ struct TranscriptMergerTests {
         #expect(!TranscriptMerger.isEcho(reply, of: reference))
     }
 
-    @Test func echoNeedsMostOfBothSegmentsToOverlap() {
+    @Test func echoOnlyComparesWhatWasSaidAtTheSameTime() {
         let reference = [TranscriptSegment(start: 0, end: 6, text: "Let's look at the release plan.")]
         let late = TranscriptSegment(start: 4, end: 7, text: "let's look at the release plan")
         let lagging = TranscriptSegment(start: 0.4, end: 6.3, text: "let's look at the release plan")
         #expect(!TranscriptMerger.isEcho(late, of: reference))
         #expect(TranscriptMerger.isEcho(lagging, of: reference))
+    }
+
+    @Test func dropsEchoTheEnginesCutUpDifferently() {
+        let merged = TranscriptMerger.merge([
+            source(
+                Fixtures.builtInMic,
+                "Me",
+                [
+                    TranscriptSegment(start: 0.3, end: 4.3, text: "we moved the launch to friday because"),
+                    TranscriptSegment(start: 4.3, end: 8.5, text: "the design review found two problems with the"),
+                    TranscriptSegment(start: 8.5, end: 12.3, text: "onboarding flow that we have to fix first"),
+                    TranscriptSegment(start: 12.5, end: 13.5, text: "Friday works for me."),
+                ]
+            ),
+            source(
+                .systemAudio,
+                "Others",
+                [
+                    TranscriptSegment(
+                        start: 0,
+                        end: 12,
+                        text: "We moved the launch to Friday because the design review found two problems "
+                            + "with the onboarding flow that we have to fix first."
+                    )
+                ]
+            ),
+        ])
+        #expect(merged.segments.map(\.speaker) == ["Others", "Me"])
+        #expect(merged.segments.last?.text == "Friday works for me.")
+    }
+
+    @Test func dropsEchoThatDriftsUnderASecond() {
+        let reference = [TranscriptSegment(start: 0, end: 1.5, text: "Can everyone see my screen?")]
+        let drifted = TranscriptSegment(start: 0.9, end: 2.4, text: "can everyone see my screen")
+        let later = TranscriptSegment(start: 2.6, end: 4.1, text: "Can everyone see my screen?")
+        #expect(TranscriptMerger.isEcho(drifted, of: reference))
+        #expect(!TranscriptMerger.isEcho(later, of: reference))
+    }
+
+    @Test(arguments: [
+        "我们下周五发布测试版。",
+        "来週の金曜日にベータ版をリリースします。",
+        "เราจะปล่อยเวอร์ชันเบต้าวันศุกร์หน้า",
+    ])
+    func dropsEchoInScriptsWithoutSpaces(_ text: String) {
+        let reference = [TranscriptSegment(start: 0, end: 3, text: text)]
+        #expect(TranscriptMerger.isEcho(TranscriptSegment(start: 0.2, end: 3.2, text: text), of: reference))
+    }
+
+    @Test(arguments: [
+        ("好的，没问题，我们周五见。", "好的，没问题"),
+        ("はい、わかりました。では金曜日に。", "はい、わかりました"),
+        ("ได้ครับ ไม่มีปัญหา", "ไม่มีปัญหา"),
+    ])
+    func keepsShortRepliesInScriptsWithoutSpaces(_ others: String, _ reply: String) {
+        let reference = [TranscriptSegment(start: 0, end: 2, text: others)]
+        #expect(!TranscriptMerger.isEcho(TranscriptSegment(start: 0, end: 1, text: reply), of: reference))
     }
 
     @Test func labelsFallBackAndDisambiguateMicrophones() {
