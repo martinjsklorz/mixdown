@@ -29,6 +29,17 @@ The buttons above a note, right-clicking it in the sidebar, and the File and Edi
 Right-clicking also offers **Open in Default App**. **File → Open Notes Folder** (⇧⌘O) and
 **Reveal Last Note in Finder** take you to the files.
 
+## Searching in Spotlight
+
+Your notes are in Spotlight (⌘Space), so you can find them without opening Mixdown. Every line of
+a note is a result of its own, like a transcript line or an action item, so searching for "release
+timeline" shows the line that mentions it, with the note's title and the time it was said. Click a
+result to open the note in Mixdown, scrolled to that line.
+
+Notes you edit, rename or delete in another app are updated in Spotlight too, even while Mixdown's
+window is closed. Turn it off under **Settings → General → Show notes in Spotlight**, which takes
+the notes out of Spotlight again. The index stays on your Mac.
+
 ## The notes folder
 
 Each note is a Markdown file in a folder you choose the first time you open Mixdown, for example a
@@ -102,6 +113,7 @@ The team went through the release timeline for the weekly sync.
 | `language` | The recording's language; left out when the model doesn't report one |
 | `speakers` | The speaker labels used in the transcript |
 | `translation_language` | The language of the `## Translation` section, when the note was translated (see [Translation](translation.md)) |
+| `talk_labels`, `talk_microphone`, `talk_system_audio` | For calls: the two sides' names, then the seconds each talked in every minute (see [Recording calls](calls.md#talk-time)) |
 | `pinned` | `true` when the note is pinned |
 | `tags` | Always includes `mixdown` |
 
@@ -115,6 +127,16 @@ speakers: ["Me", "Others"]
 **[00:00:00] Me:** Morning, everyone.
 
 **[00:00:03] Others:** Let's look at the release plan.
+…
+
+## Talk Time
+
+**Me** 38 % (4 min 46 s) · **Others** 62 % (7 min 50 s)
+
+| Minute | Me | Others |
+| --- | --- | --- |
+| 00:00:00 | ███ 18 s | ██████ 37 s |
+…
 ```
 
 ### Moments

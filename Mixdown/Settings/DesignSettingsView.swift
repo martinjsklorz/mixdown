@@ -57,6 +57,13 @@ struct DesignSettingsView: View {
                         )
                     )
                     .disabled(!environment.model.isLive)
+                    Toggle(
+                        "Show talk share",
+                        isOn: Binding(
+                            get: { environment.islandLayout.showsTalkShare },
+                            set: { shows in environment.setIslandLayout(changedLayout { $0.showsTalkShare = shows }) }
+                        )
+                    )
                 }
                 .disabled(!environment.showsRecordingInDynamicIsland)
             } header: {
@@ -68,8 +75,10 @@ struct DesignSettingsView: View {
                         + "from the time. Without a notch, the island appears at the top center of the "
                         + "screen, and the menu bar keeps the time too, as it does with another display "
                         + "connected. Click the island to open Record.\n\nLive text scrolls the latest "
-                        + "words by in one line under the notch. It needs a live model, chosen in "
-                        + "Transcription settings."
+                        + "words by in one line under the notch, translated if the live text is. It needs a "
+                        + "live model, chosen in Transcription settings.\n\nWhile you record both a microphone and system audio, "
+                        + "a ring next to the time shows how much of the talking was yours, in white, "
+                        + "and the others', in grey."
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)

@@ -18,6 +18,9 @@ public struct Note: Sendable, Equatable {
     public var trigger: RecordingTrigger
     /// Points the user marked while recording, in order of time.
     public var moments: [Moment]
+    /// How long the user and the others talked, minute by minute. `nil` unless both microphone and
+    /// system audio were recorded and someone talked.
+    public var talkTimeline: TalkTimeline?
 
     public init(
         title: String,
@@ -29,7 +32,8 @@ public struct Note: Sendable, Equatable {
         translation: Transcript? = nil,
         summary: NoteSummary? = nil,
         trigger: RecordingTrigger = .manual,
-        moments: [Moment] = []
+        moments: [Moment] = [],
+        talkTimeline: TalkTimeline? = nil
     ) {
         self.title = title
         self.createdAt = createdAt
@@ -41,6 +45,7 @@ public struct Note: Sendable, Equatable {
         self.summary = summary
         self.trigger = trigger
         self.moments = moments
+        self.talkTimeline = talkTimeline
     }
 }
 

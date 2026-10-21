@@ -26,6 +26,9 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
     public var folder: String?
     /// Whether the note is listed above the others, from the frontmatter's `pinned: true`.
     public var isPinned: Bool
+    /// How long each side talked, minute by minute, from the frontmatter's `talk_microphone` and
+    /// `talk_system_audio` lists. `nil` if they're missing or unusable.
+    public var talkTimeline: TalkTimeline?
 
     public var id: URL { url }
 
@@ -51,17 +54,58 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
         self.trigger = scalars["trigger"].flatMap(RecordingTrigger.init(rawValue:))
         // YAML's `true`, `True` and `TRUE`.
         self.isPinned = scalars["pinned"]?.lowercased() == "true"
+        self.talkTimeline = Self.talkTimeline(fields: fields)
         self.snippet = Self.snippet(from: blocks)
     }
 
     /// The body's blocks without a leading `# Title` that repeats `title`, which the window
-    /// already shows. A first heading with different text is kept.
+    /// already shows. A first heading with different text is kept. With a `talkTimeline`, which
+    /// the window shows as a chart, the `## Talk Time` section is left out too.
     public func displayBlocks() -> [MarkdownBlock] {
-        let blocks = MarkdownBlock.parse(body)
-        guard case .heading(1, let text) = blocks.first, MarkdownBlock.plainText(text) == title else {
-            return blocks
+        var blocks = MarkdownBlock.parse(body)
+        if case .heading(1, let text) = blocks.first, MarkdownBlock.plainText(text) == title {
+            blocks.removeFirst()
         }
-        return Array(blocks.dropFirst())
+        if talkTimeline != nil, let section = Self.section(MarkdownNoteRenderer.talkTimeHeading, in: blocks) {
+            blocks.removeSubrange(section)
+        }
+        return blocks
+    }
+
+    /// The `##` section headed `heading`, from the heading to the next of level 2 or above.
+    private static func section(_ heading: String, in blocks: [MarkdownBlock]) -> Range<Int>? {
+        guard
+            let start = blocks.firstIndex(where: { block in
+                guard case .heading(2, let text) = block else { return false }
+                return MarkdownBlock.plainText(text) == heading
+            })
+        else { return nil }
+        let end = blocks[(start + 1)...].firstIndex { block in
+            guard case .heading(let level, _) = block else { return false }
+            return level <= 2
+        }
+        return start..<(end ?? blocks.endIndex)
+    }
+
+    private static func talkTimeline(fields: [String: String]) -> TalkTimeline? {
+        let seconds = { (key: String) -> [TimeInterval]? in
+            guard let items = fields[key].flatMap(Self.yamlFlowSequence), !items.isEmpty else { return nil }
+            let values = items.compactMap(TimeInterval.init)
+            // `nan` fails the range check too.
+            guard values.count == items.count, values.allSatisfy({ (0...TalkTimeline.interval).contains($0) })
+            else { return nil }
+            return values
+        }
+        guard let microphone = seconds("talk_microphone"), let systemAudio = seconds("talk_system_audio") else {
+            return nil
+        }
+        let labels = fields["talk_labels"].flatMap(Self.yamlFlowSequence) ?? []
+        return TalkTimeline(
+            microphoneLabel: labels.count == 2 ? labels[0] : SourceLabels.defaultMicrophone,
+            systemAudioLabel: labels.count == 2 ? labels[1] : SourceLabels.defaultSystemAudio,
+            microphone: microphone,
+            systemAudio: systemAudio
+        )
     }
 
     private static func title(fields: [String: String], blocks: [MarkdownBlock], url: URL) -> String {
@@ -91,18 +135,9 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
     /// separated by a blank line, list items by a line break.
     public var transcriptText: String {
         let blocks = MarkdownBlock.parse(body)
-        var section = blocks[...]
-        if let heading = blocks.firstIndex(where: { block in
-            guard case .heading(2, let text) = block else { return false }
-            return MarkdownBlock.plainText(text) == "Transcript"
-        }) {
-            let rest = blocks[(heading + 1)...]
-            let end = rest.firstIndex { block in
-                guard case .heading(let level, _) = block else { return false }
-                return level <= 2
-            }
-            section = rest[..<(end ?? rest.endIndex)]
-        }
+        // Without its heading.
+        let section =
+            Self.section("Transcript", in: blocks).map { blocks[($0.lowerBound + 1)..<$0.upperBound] } ?? blocks[...]
 
         var text = ""
         var previous: MarkdownBlock?

@@ -12,7 +12,8 @@ Everything happens on your Mac. Your audio never leaves it.
 
 - **Record anything**: your microphone, system audio, or both. Pause and resume in the same note.
 - **Both sides of a call**: lines from your microphone and from the call are labeled **Me** and
-  **Others**, with echo filtered out.
+  **Others**, with echo filtered out. A ring in the Dynamic Island shows who's doing the talking,
+  and the note gets a minute-by-minute talk timeline.
 - **Call detection**: notices calls in Zoom, Teams, FaceTime, Slack, browsers and more, and offers
   to record them, or records them automatically.
 - **On-device speech models**: a live model that shows the text as you speak, more accurate
@@ -20,9 +21,12 @@ Everything happens on your Mac. Your audio never leaves it.
 - **Summaries**: Apple Intelligence adds an overview, key points and action items, and names the
   note. Templates for 1:1s, standups and client calls.
 - **Translation**: notes in another language, translated on your Mac by Apple's translation
-  models, with the summary and title in that language too.
+  models, with the summary and title in that language too. With the live model, the live text is
+  translated as it's spoken, so you can follow a call in a language you don't speak.
 - **Plain Markdown notes**: saved to a folder you choose, ready for Obsidian or any editor. Browse,
   search, pin and rename them in Mixdown.
+- **Spotlight search**: every line of every note is in Spotlight, so ⌘Space finds the exact
+  transcript line or action item without opening Mixdown.
 - **Always at hand**: a global shortcut (⌃⌥⌘R), the menu bar, and a Dynamic Island around the
   camera notch while recording.
 

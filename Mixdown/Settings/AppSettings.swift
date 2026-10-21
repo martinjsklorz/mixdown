@@ -20,6 +20,8 @@ struct AppSettings {
         static let suppressesTrashConfirmation = "suppressesTrashConfirmation"
         /// Whether Mixdown posts notifications at all. Absent means yes.
         static let showsNotifications = "showsNotifications"
+        /// Whether notes are added to Spotlight. Absent means yes.
+        static let indexesNotesInSpotlight = "indexesNotesInSpotlight"
         /// Whether the sidebar's pinned notes are folded away. Absent means no. Read with
         /// `@AppStorage`.
         static let collapsesPinnedNotes = "collapsesPinnedNotes"
@@ -34,6 +36,9 @@ struct AppSettings {
         static let callSummaryTemplate = "callSummaryTemplate"
         /// BCP 47 identifier of the language notes are translated into; absent means no translation.
         static let translationLanguage = "translationLanguage"
+        /// Whether the live text is translated into that language while recording, too. Absent
+        /// means yes.
+        static let translatesLiveText = "translatesLiveText"
         /// Whether Mixdown plays audio cues at all. Absent means yes.
         static let playsSounds = "playsSounds"
         /// Whether to post notifications when calls start and end. Absent means yes.
@@ -54,6 +59,9 @@ struct AppSettings {
         /// Whether the Dynamic Island shows the latest words under the notch while a live model
         /// transcribes. Absent means no.
         static let islandShowsLiveText = "islandShowsLiveText"
+        /// Whether the Dynamic Island shows how the talking is shared while recording both a
+        /// microphone and system audio. Absent means yes.
+        static let islandShowsTalkShare = "islandShowsTalkShare"
         /// Whether to show the setup assistant at launch. Absent means yes, unless a notes folder
         /// was chosen before the assistant existed.
         static let needsSetup = "needsSetup"
@@ -113,6 +121,11 @@ struct AppSettings {
         nonmutating set { defaults.set(newValue, forKey: Key.showsNotifications) }
     }
 
+    var indexesNotesInSpotlight: Bool {
+        get { defaults.object(forKey: Key.indexesNotesInSpotlight) as? Bool ?? true }
+        nonmutating set { defaults.set(newValue, forKey: Key.indexesNotesInSpotlight) }
+    }
+
     var isRecordingShortcutEnabled: Bool {
         get { defaults.object(forKey: Key.recordingShortcutEnabled) as? Bool ?? true }
         nonmutating set { defaults.set(newValue, forKey: Key.recordingShortcutEnabled) }
@@ -153,6 +166,11 @@ struct AppSettings {
     var translationLanguage: String? {
         get { defaults.string(forKey: Key.translationLanguage) }
         nonmutating set { defaults.set(newValue, forKey: Key.translationLanguage) }
+    }
+
+    var translatesLiveText: Bool {
+        get { defaults.object(forKey: Key.translatesLiveText) as? Bool ?? true }
+        nonmutating set { defaults.set(newValue, forKey: Key.translatesLiveText) }
     }
 
     /// `nil` means auto-detect.
@@ -198,13 +216,15 @@ struct AppSettings {
                 timeSide: defaults.string(forKey: Key.islandTimeSide).flatMap(DynamicIsland.Side.init(rawValue:))
                     ?? .left,
                 showsLevels: defaults.object(forKey: Key.islandShowsLevels) as? Bool ?? true,
-                showsLiveText: defaults.bool(forKey: Key.islandShowsLiveText)
+                showsLiveText: defaults.bool(forKey: Key.islandShowsLiveText),
+                showsTalkShare: defaults.object(forKey: Key.islandShowsTalkShare) as? Bool ?? true
             )
         }
         nonmutating set {
             defaults.set(newValue.timeSide.rawValue, forKey: Key.islandTimeSide)
             defaults.set(newValue.showsLevels, forKey: Key.islandShowsLevels)
             defaults.set(newValue.showsLiveText, forKey: Key.islandShowsLiveText)
+            defaults.set(newValue.showsTalkShare, forKey: Key.islandShowsTalkShare)
         }
     }
 }

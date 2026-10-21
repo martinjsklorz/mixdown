@@ -1,9 +1,12 @@
 import AppKit
+import CoreSpotlight
+import MixdownNotes
 import SwiftUI
 
 /// Brings the main window back when the Dock icon is clicked. SwiftUI does that for a
 /// `WindowGroup`, but not for a `Window` that has been closed. Also adds help topics to the Help
-/// menu's search, and asks before quitting with notes that haven't been saved.
+/// menu's search, opens notes picked in Spotlight, and asks before quitting with notes that
+/// haven't been saved.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Set by `capturesOpenWindow(for:navigation:environment:)`, which also gives it SwiftUI's
@@ -11,6 +14,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     fileprivate weak var navigation: MainNavigation?
     fileprivate weak var environment: AppEnvironment?
     private var helpSearch: HelpSearch?
+    /// A note picked in Spotlight before `navigation` was set, at launch.
+    private var pendingSpotlightItem: (url: URL, line: Int?)?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Before the first window appears, so it doesn't flash in the system's appearance.
@@ -44,6 +49,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return alert.runModal() == .alertFirstButtonReturn ? .terminateCancel : .terminateNow
     }
 
+    /// Opens the note, at the line, picked in Spotlight. See `NoteSpotlight`.
+    func application(
+        _ application: NSApplication,
+        continue userActivity: NSUserActivity,
+        restorationHandler: @escaping ([any NSUserActivityRestoring]) -> Void
+    ) -> Bool {
+        guard userActivity.activityType == CSSearchableItemActionType,
+            let id = userActivity.userInfo?[CSSearchableItemActivityIdentifier] as? String,
+            let location = NoteSearchIndex.location(ofItemID: id)
+        else { return false }
+        pendingSpotlightItem = (location.noteURL, location.line)
+        showPendingSpotlightItem()
+        return true
+    }
+
+    fileprivate func showPendingSpotlightItem() {
+        guard let navigation, let item = pendingSpotlightItem else { return }
+        pendingSpotlightItem = nil
+        navigation.showNote(at: item.url, line: item.line)
+    }
+
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         // Regardless of `flag`: the menu bar extra's window can count as visible.
         navigation?.openWindow?(id: MainView.windowID)
@@ -74,6 +100,7 @@ private struct OpenWindowCapture: ViewModifier {
             navigation.openWindow = openWindow
             delegate.navigation = navigation
             delegate.environment = environment
+            delegate.showPendingSpotlightItem()
         }
     }
 }

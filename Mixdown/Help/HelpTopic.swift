@@ -194,6 +194,14 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             it still recognizes as echo. Turn this off under **Settings → Recording → Echo**. \
             Headphones still give the cleanest result.
 
+            ## Talk time
+
+            While both inputs record, a ring next to the time in the Dynamic Island shows your \
+            share of the talking in white and the others' in grey. The note ends with a **Talk \
+            Time** table of how long each side talked in every minute, shown as a chart under the \
+            note's date. Talk time goes by loudness, so music in the call counts as the others \
+            talking. Turn the ring off under **Settings → Design → Show talk share**.
+
             ## When a call starts
 
             Mixdown notices when a call app (such as Zoom, Microsoft Teams, FaceTime, Slack or \
@@ -233,6 +241,13 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             **Restore** to put the note back.
 
             Right-clicking also offers **Open in Default App**.
+
+            ## Searching in Spotlight
+
+            Your notes are in Spotlight (⌘Space), down to the line: searching for "release \
+            timeline" shows the transcript line or action item that mentions it, with the note's \
+            title and the time it was said. Click a result to open the note at that line. Turn it \
+            off under **Settings → General → Show notes in Spotlight**.
 
             ## The notes folder
 
@@ -329,6 +344,16 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             Settings, or download others under System Settings → General → Language & Region → \
             Translation Languages. If they're missing, the note is saved without a translation and \
             Mixdown says which to download.
+
+            ### Live translation
+
+            With the live model, the live text is translated as it's spoken too: each line's \
+            translation appears under it on Record, and the line under the notch shows the \
+            translation instead. It's a line or so behind, catching up as the line grows. Lines \
+            already in that language are left as they are, so in a call where only the others speak \
+            another language, only their lines are translated. Turn it off under **Settings → \
+            Transcription → Translate live text while recording**. The note's translation is made \
+            afresh from the whole transcript once you stop.
             """
         case .notifications:
             """

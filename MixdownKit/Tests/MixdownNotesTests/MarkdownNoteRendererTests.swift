@@ -20,7 +20,8 @@ enum NoteFixtures {
         translation: Transcript? = nil,
         summary: NoteSummary? = nil,
         trigger: RecordingTrigger = .manual,
-        moments: [Moment] = []
+        moments: [Moment] = [],
+        talkTimeline: TalkTimeline? = nil
     ) -> Note {
         Note(
             title: title,
@@ -32,9 +33,17 @@ enum NoteFixtures {
             translation: translation,
             summary: summary,
             trigger: trigger,
-            moments: moments
+            moments: moments,
+            talkTimeline: talkTimeline
         )
     }
+
+    static let talkTimeline = TalkTimeline(
+        microphoneLabel: "Me",
+        systemAudioLabel: "Others | Team",
+        microphone: [35.4, 0.2, 60],
+        systemAudio: [12, 50, 0]
+    )
 }
 
 struct MarkdownNoteRendererTests {
@@ -384,5 +393,40 @@ struct MarkdownNoteRendererTests {
         let document = NoteDocument(url: URL(fileURLWithPath: "/tmp/n.md"), contents: markdown, fileDate: .now)
         #expect(!document.transcriptText.contains("Hallo."))
         #expect(document.transcriptText.contains("Hello everyone."))
+    }
+
+    // MARK: - Talk time
+
+    @Test func talkTimelineGoesInFrontmatterAndItsOwnSection() {
+        let markdown = MarkdownNoteRenderer.render(NoteFixtures.note(talkTimeline: NoteFixtures.talkTimeline))
+        let lines = frontmatterLines(markdown)
+
+        #expect(lines.contains(#"talk_labels: ["Me", "Others | Team"]"#))
+        #expect(lines.contains("talk_microphone: [35, 0, 60]"))
+        #expect(lines.contains("talk_system_audio: [12, 50, 0]"))
+        #expect(
+            markdown.hasSuffix(
+                """
+                ## Talk Time
+
+                **Me** 61 % (1 min 36 s) · **Others | Team** 39 % (1 min 02 s)
+
+                | Minute | Me | Others \\| Team |
+                | --- | --- | --- |
+                | 00:00:00 | ██████ 35 s | ██ 12 s |
+                | 00:01:00 | – | ████████ 50 s |
+                | 00:02:00 | ██████████ 60 s | – |
+
+                """
+            )
+        )
+        // After the transcript.
+        #expect(markdown.range(of: "## Transcript")!.lowerBound < markdown.range(of: "## Talk Time")!.lowerBound)
+    }
+
+    @Test func noTalkTimeWithoutATimeline() {
+        let markdown = MarkdownNoteRenderer.render(NoteFixtures.note())
+        #expect(!markdown.contains("talk_"))
+        #expect(!markdown.contains("## Talk Time"))
     }
 }

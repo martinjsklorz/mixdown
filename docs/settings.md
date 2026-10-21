@@ -8,6 +8,8 @@ Press ⌘, or click the cog above the sidebar to open Settings. **Settings…** 
   it, and **Try Again** looks for it again when it can't be reached. See
   [Notes](notes.md#the-notes-folder).
 - **Ask before deleting a note**: on by default.
+- **Show notes in Spotlight**: on by default. Each line of a note shows up in Spotlight; see
+  [Searching in Spotlight](notes.md#searching-in-spotlight).
 - **Global Shortcuts → Start and stop recording from any app**: on by default, with ⌃⌥⌘R. Click
   the shortcut and press new keys to change it.
 - **Global Shortcuts → Mark moment while recording**: ⌃⌥⌘M. Clear it to turn it off. See
@@ -34,7 +36,8 @@ Press ⌘, or click the cog above the sidebar to open Settings. **Settings…** 
 - **Summary**: **Summarize recordings**, and the templates for **Manual recordings** and
   **Detected calls**. See [Summaries](summaries.md).
 - **Translation**: **Translate to** a language, or **None**, and whether macOS has downloaded the
-  languages to translate your recordings, with a **Download** button. See
+  languages to translate your recordings, with a **Download** button. **Translate live text while
+  recording** (on by default, with a live model) translates the live text as it's spoken. See
   [Translation](translation.md).
 
 ## Notifications
@@ -46,5 +49,6 @@ Press ⌘, or click the cog above the sidebar to open Settings. **Settings…** 
 ## Design
 
 - **Appearance**: Auto, Light or Dark. Auto follows System Settings.
-- **Show recording in the Dynamic Island**: on by default, with which side the time goes on and
-  **Show input levels**. See [Recording](recording.md#the-dynamic-island).
+- **Show recording in the Dynamic Island**: on by default, with which side the time goes on,
+  **Show input levels**, **Show live text** and **Show talk share**. See
+  [Recording](recording.md#the-dynamic-island) and [Recording calls](calls.md#talk-time).

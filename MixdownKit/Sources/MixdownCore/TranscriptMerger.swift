@@ -18,13 +18,17 @@ public struct SourceLabels: Sendable, Equatable {
     /// The label for `device`, falling back to the default when the configured one is blank.
     /// Microphones get their device name appended when several are recorded at once.
     public func label(for device: AudioInputDevice, among devices: [AudioInputDevice]) -> String {
-        switch device.kind {
-        case .systemAudio:
-            return Self.nonBlank(systemAudio) ?? Self.defaultSystemAudio
-        case .microphone:
-            let base = Self.nonBlank(microphone) ?? Self.defaultMicrophone
-            let microphoneCount = devices.filter { $0.kind == .microphone }.count
-            return microphoneCount > 1 ? "\(base) (\(device.name))" : base
+        let base = label(for: device.kind)
+        let microphoneCount = devices.filter { $0.kind == .microphone }.count
+        return device.kind == .microphone && microphoneCount > 1 ? "\(base) (\(device.name))" : base
+    }
+
+    /// The label for every source of `kind`, falling back to the default when the configured one
+    /// is blank.
+    public func label(for kind: AudioSourceKind) -> String {
+        switch kind {
+        case .systemAudio: Self.nonBlank(systemAudio) ?? Self.defaultSystemAudio
+        case .microphone: Self.nonBlank(microphone) ?? Self.defaultMicrophone
         }
     }
 

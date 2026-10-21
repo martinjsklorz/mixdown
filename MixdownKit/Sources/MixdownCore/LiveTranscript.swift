@@ -86,17 +86,24 @@ public struct LiveTranscript: Sendable, Equatable {
     /// The last `count` words, oldest first, as a single line of text would show them: each line's
     /// speaker named before its first word where the speaker changes.
     public func recentWords(_ count: Int) -> [RecentWord] {
+        recentWords(count) { $0.words }
+    }
+
+    /// Like `recentWords(_:)`, with each line's words as `words` gives them, such as translated;
+    /// lines it gives `nil` for are left out.
+    func recentWords(_ count: Int, words: (Line) -> [String]?) -> [RecentWord] {
+        let shown = lines.compactMap { line in words(line).flatMap { $0.isEmpty ? nil : (line, $0) } }
         var recent: [RecentWord] = []
         var remaining = count
-        for index in lines.indices.reversed() where remaining > 0 {
-            let line = lines[index]
-            let first = max(line.words.count - remaining, 0)
-            remaining -= line.words.count - first
-            var items = line.words.indices[first...].map { word in
-                RecentWord(id: .init(line: line.id, word: word), text: line.words[word], isSpeaker: false)
+        for index in shown.indices.reversed() where remaining > 0 {
+            let (line, words) = shown[index]
+            let first = max(words.count - remaining, 0)
+            remaining -= words.count - first
+            var items = words.indices[first...].map { word in
+                RecentWord(id: .init(line: line.id, word: word), text: words[word], isSpeaker: false)
             }
             // Only with its first word, which it comes right before.
-            if first == 0, let speaker = line.speaker, index == 0 || lines[index - 1].speaker != speaker {
+            if first == 0, let speaker = line.speaker, index == 0 || shown[index - 1].0.speaker != speaker {
                 items.insert(RecentWord(id: .init(line: line.id, word: -1), text: speaker, isSpeaker: true), at: 0)
             }
             recent.insert(contentsOf: items, at: 0)

@@ -33,6 +33,9 @@ final class DynamicIsland {
         /// Whether the latest words scroll by in a line under the notch. Only while the recording
         /// is transcribed live; `AppEnvironment` turns it off otherwise.
         var showsLiveText = false
+        /// Whether a ring next to the time shows how the talking is shared between the user and the
+        /// others. Only while recording both a microphone and system audio.
+        var showsTalkShare = true
     }
 
     /// Whether the wings are out. They grow out of the notch on `show(_:)` and back into it on

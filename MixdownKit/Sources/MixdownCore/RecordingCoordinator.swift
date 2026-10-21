@@ -73,6 +73,9 @@ public final class RecordingCoordinator {
     /// Moments added to the recording in progress, in the order they were added, until its note
     /// is made. See `addMoment(at:text:)`.
     public private(set) var moments: [Moment] = []
+    /// `liveTranscript` translated into `translationLanguage` as it's recognized, while
+    /// `showsLiveTranscript` and `translatesLiveText`; else `nil`.
+    public private(set) var liveCaptions: LiveCaptions?
     /// Saves finished notes. `nil` while there's no folder to save to; recording waits for one.
     /// Setting it saves `pendingNotes`.
     public var noteWriter: (any NoteWriting)? {
@@ -107,6 +110,9 @@ public final class RecordingCoordinator {
     /// The BCP 47 identifier of the language to translate notes into, e.g. `"de"`; `nil` while
     /// translation is off. Read once the recording is transcribed.
     public var translationLanguage: String?
+    /// Whether a recording transcribed live is also translated into `translationLanguage` while
+    /// it's recorded, as `liveCaptions`. Changes apply to the next recording.
+    public var translatesLiveText = true
     /// Changes apply to the next recording; the one in progress is transcribed with the options it
     /// started with.
     public var options: TranscriptionOptions {
@@ -121,6 +127,11 @@ public final class RecordingCoordinator {
     /// Each source's level while recording, by device ID. Changes about ten times a second, so
     /// only read it from views that draw meters.
     public private(set) var inputLevels: [String: InputLevel] = [:]
+
+    /// How long the user and the others have talked so far, while recording both a microphone and
+    /// system audio; `nil` otherwise. Changes about ten times a second, so only read it from views
+    /// that show it.
+    public private(set) var talkTime: TalkTime?
 
     /// Sources of the current recording that haven't made a sound since it started, once
     /// `silenceWarningDelay` has passed. A source leaves the list as soon as it's heard.
@@ -142,6 +153,10 @@ public final class RecordingCoordinator {
     /// How long to wait after a device goes away mid-recording before picking its replacement,
     /// so the system has made another device the default by then.
     var deviceSwitchDelay: Duration = .milliseconds(500)
+
+    /// How often the live text is checked for lines to translate into `liveCaptions`. A line that
+    /// keeps growing is translated again this often, not with every word.
+    var liveCaptionInterval: Duration = .milliseconds(500)
 
     public var engineInfo: TranscriptionEngineInfo { engine.info }
 
@@ -226,6 +241,8 @@ public final class RecordingCoordinator {
     /// Changes with every `noteWriter`, so a save that failed can tell it has a new one to try.
     @ObservationIgnored private var noteWriterGeneration = 0
     @ObservationIgnored private var pendingNoteRetry: Task<Void, Never>?
+    /// Translates the live text into `liveCaptions` while recording.
+    @ObservationIgnored private var liveCaptioning: Task<Void, Never>?
     /// The message of the `.failed` phase that says a note is waiting to be saved, cleared once
     /// it's saved.
     @ObservationIgnored private var unsavedNoteMessage: String?
@@ -378,6 +395,8 @@ public final class RecordingCoordinator {
     /// Everything a capture stream produced, plus the error that ended it early, if any.
     private struct CaptureResult: Sendable {
         var track: AudioTrack
+        /// When there was speech, in seconds from the track's first sample.
+        var speech: [Range<TimeInterval>] = []
         var error: (any Error)?
     }
 
@@ -385,6 +404,8 @@ public final class RecordingCoordinator {
     private struct LaneAudio: Sendable {
         var track: AudioTrack
         var parts: [DevicePart] = []
+        /// When there was speech, in seconds from the track's first sample.
+        var speech: [Range<TimeInterval>] = []
     }
 
     /// Where a device's audio begins in a lane's track, in seconds from its first sample.
@@ -403,6 +424,8 @@ public final class RecordingCoordinator {
         let parts: [DevicePart]
         /// Empty when the engine transcribes live.
         let samples: [Float]
+        /// When there was speech, in seconds from the track's first sample.
+        let speech: [Range<TimeInterval>]
         let duration: TimeInterval
         /// Seconds from the start of the recording to the track's first sample.
         let offset: TimeInterval
@@ -758,7 +781,9 @@ public final class RecordingCoordinator {
         if engine.transcribesLive {
             liveTranscript = LiveTranscript(speakers: [])
             showsLiveTranscript = true
+            startLiveCaptions(for: session)
         }
+        talkTime = nil
         for started in startedCaptures {
             attach(started, to: addLane(kind: started.device.kind, to: session), in: session)
         }
@@ -777,10 +802,12 @@ public final class RecordingCoordinator {
         reconcileSelection()
     }
 
-    /// Adds a lane to `session`, and a source for it to `liveTranscript`.
+    /// Adds a lane to `session`, and a source for it to `liveTranscript`. Starts counting
+    /// `talkTime` once the session records both kinds of input.
     private func addLane(kind: AudioSourceKind, to session: Session) -> Lane {
         let lane = session.addLane(kind: kind)
         if showsLiveTranscript { liveTranscript.addSource() }
+        if talkTime == nil, Set(session.lanes.map(\.kind)).count > 1 { talkTime = TalkTime() }
         return lane
     }
 
@@ -809,6 +836,10 @@ public final class RecordingCoordinator {
             var track = AudioTrack(keepsSamples: !transcribesLive)
             var echoRemover: EchoRemover?
             var meter = LevelMeter()
+            // Judges the audio as it's kept, so the microphones' echo doesn't count as the user
+            // talking.
+            var speechDetector = SpeechActivityDetector()
+            var unsentSpeech: TimeInterval = 0
             var unfed: [Float] = []
             defer {
                 if kind == .systemAudio { echoReference?.endWriting() }
@@ -819,6 +850,7 @@ public final class RecordingCoordinator {
             }
             func keep(_ samples: [Float]) {
                 guard !samples.isEmpty else { return }
+                unsentSpeech += speechDetector.add(samples)
                 track.append(AudioChunk(samples: samples, hostTime: timeline.startHostTime.map { $0 + track.duration }))
                 guard feed != nil else { return }
                 unfed.append(contentsOf: samples)
@@ -851,8 +883,10 @@ public final class RecordingCoordinator {
                     keep(echoRemover?.process(added) ?? added)
                     // Fire and forget, so a busy main actor never holds up capture.
                     if let level = meter.add(chunk) {
+                        let speech = unsentSpeech
+                        unsentSpeech = 0
                         Task { @MainActor [weak self] in
-                            self?.updateLevel(level, of: deviceID, sessionID: sessionID)
+                            self?.updateLevel(level, speech: speech, of: deviceID, kind: kind, sessionID: sessionID)
                         }
                     }
                 }
@@ -860,7 +894,7 @@ public final class RecordingCoordinator {
                 captureError = error
             }
             if let echoRemover { keep(echoRemover.finish()) }
-            return CaptureResult(track: track, error: captureError)
+            return CaptureResult(track: track, speech: speechDetector.spans, error: captureError)
         }
         let live = feed.map { feed in
             // A lane's captures are transcribed one after another, so its words stay in order.
@@ -1004,6 +1038,8 @@ public final class RecordingCoordinator {
         // Clearing the session first makes repeated stops and the end-of-stream handlers no-ops.
         self.session = nil
         recordingStartedAt = nil
+        liveCaptioning?.cancel()
+        liveCaptioning = nil
         resetLevels()
         let lanes = await endCaptures(of: session)
         let liveError = await finishLiveTranscription(of: session)
@@ -1033,11 +1069,14 @@ public final class RecordingCoordinator {
         for lane in session.lanes {
             var audio = LaneAudio(track: AudioTrack(keepsSamples: !engine.transcribesLive))
             for capture in lane.captures {
-                let track = await capture.consumer.value.track
+                let result = await capture.consumer.value
+                let track = result.track
                 audio.track.append(track)
                 // Counted by length, as live tracks keep no samples.
                 guard track.duration > 0 else { continue }
-                audio.parts.append(DevicePart(device: capture.device, start: audio.track.duration - track.duration))
+                let start = audio.track.duration - track.duration
+                audio.parts.append(DevicePart(device: capture.device, start: start))
+                audio.speech += result.speech.map { (start + $0.lowerBound)..<(start + $0.upperBound) }
             }
             lanes.append(audio)
         }
@@ -1050,6 +1089,7 @@ public final class RecordingCoordinator {
         defer {
             showsLiveTranscript = false
             liveTranscript = LiveTranscript(speakers: [])
+            liveCaptions = nil
         }
 
         let offsets = AudioTrack.startOffsets(of: lanes.map(\.track))
@@ -1060,6 +1100,7 @@ public final class RecordingCoordinator {
                 device: device,
                 parts: pair.1.parts,
                 samples: pair.1.track.samples,
+                speech: pair.1.speech,
                 duration: pair.1.track.duration,
                 offset: offsets[index]
             )
@@ -1112,7 +1153,8 @@ public final class RecordingCoordinator {
                 trigger: session.trigger,
                 // Described up to now, as the user may have still been typing when it stopped.
                 moments: moments.map { Moment(id: $0.id, time: min($0.time, duration), text: $0.text) }
-                    .sorted { $0.time < $1.time }
+                    .sorted { $0.time < $1.time },
+                talkTimeline: talkTimeline(of: tracks, duration: duration)
             )
             // Kept until it's saved: the folder can go away while recording or transcribing, e.g.
             // when its drive is disconnected or goes to sleep.
@@ -1290,6 +1332,26 @@ public final class RecordingCoordinator {
             Self.sources(of: transcript, track: track, among: lanes, labels: sourceLabels)
         }
         return TranscriptMerger.merge(sources)
+    }
+
+    /// When the user and the others talked, from the microphone and system audio tracks. `nil`
+    /// without both, or if nobody talked.
+    private func talkTimeline(of tracks: [RecordedTrack], duration: TimeInterval) -> TalkTimeline? {
+        let speech = { (kind: AudioSourceKind) -> [Range<TimeInterval>]? in
+            let ofKind = tracks.filter { $0.device.kind == kind }
+            guard !ofKind.isEmpty else { return nil }
+            return ofKind.flatMap { track in
+                track.speech.map { (track.offset + $0.lowerBound)..<(track.offset + $0.upperBound) }
+            }
+        }
+        guard let microphone = speech(.microphone), let systemAudio = speech(.systemAudio) else { return nil }
+        let timeline = TalkTimeline(
+            labels: sourceLabels,
+            microphone: microphone,
+            systemAudio: systemAudio,
+            duration: duration
+        )
+        return timeline.total.total > 0 ? timeline : nil
     }
 
     /// Tracks of a recording that couldn't be transcribed, and why the first of them failed.
@@ -1542,6 +1604,70 @@ public final class RecordingCoordinator {
         }
     }
 
+    // MARK: - Live captions
+
+    /// Starts translating `liveTranscript` as `session` records, if there's a language to
+    /// translate into and live text is to be translated.
+    private func startLiveCaptions(for session: Session) {
+        guard translatesLiveText, let translator, let language = translationLanguage else { return }
+        liveCaptions = LiveCaptions(language: language)
+        liveCaptioning = Task { [weak self] in
+            await self?.captionLiveText(of: session, with: translator)
+        }
+    }
+
+    /// Translates the live text's lines that changed, one at a time, until `session` ends. Waits
+    /// `liveCaptionInterval` between rounds, so lines are translated again as they grow.
+    private func captionLiveText(of session: Session, with translator: any Translator) async {
+        while self.session === session, !Task.isCancelled {
+            for line in liveCaptions?.linesToTranslate(in: liveTranscript) ?? [] {
+                await caption(line, in: session, with: translator)
+                guard self.session === session, !Task.isCancelled else { return }
+            }
+            try? await Task.sleep(for: liveCaptionInterval)
+        }
+    }
+
+    /// Translates `line` on its own into `liveCaptions`, from the recording's language or, for
+    /// automatic, whichever the line is in, so either side of a call can be in another.
+    private func caption(_ line: LiveTranscript.Line, in session: Session, with translator: any Translator) async {
+        guard let language = liveCaptions?.language else { return }
+        let text = line.text
+        let transcript = Transcript(
+            segments: [TranscriptSegment(start: line.start, end: line.end, text: text)],
+            language: session.options.language
+        )
+        let result: Result<Transcript?, any Error>
+        do {
+            result = .success(try await translator.translate(transcript, to: language))
+        } catch {
+            result = .failure(error)
+        }
+        // A new recording may have started meanwhile, with captions of its own.
+        guard self.session === session else { return }
+        switch result {
+        case .success(let translation):
+            liveCaptions?.setTranslation(translation?.text, of: text, forLine: line.id)
+        case .failure(let error) where error is CancellationError:
+            break
+        case .failure(let error):
+            logger.debug("Translating live text failed: \(error.localizedDescription, privacy: .public)")
+            // Only missing languages are worth mentioning; a line too short to tell its language
+            // from, say, isn't.
+            let isNotInstalled: Bool
+            if case .notInstalled = error as? TranscriptTranslationError {
+                isNotInstalled = true
+            } else {
+                isNotInstalled = false
+            }
+            liveCaptions?.setFailure(
+                of: text,
+                forLine: line.id,
+                problem: isNotInstalled ? error.localizedDescription : nil
+            )
+        }
+    }
+
     // MARK: - Switching inputs
 
     /// Handles a capture that ended without being stopped. A device that went away is replaced by
@@ -1652,11 +1778,20 @@ public final class RecordingCoordinator {
 
     // MARK: - Levels
 
-    private func updateLevel(_ level: InputLevel, of deviceID: String, sessionID: UUID) {
+    /// Shows `level` for the device, and adds `speech` seconds heard since its last level to
+    /// `talkTime`.
+    private func updateLevel(
+        _ level: InputLevel,
+        speech: TimeInterval,
+        of deviceID: String,
+        kind: AudioSourceKind,
+        sessionID: UUID
+    ) {
         // Levels still in flight when the recording ends or the device is switched off are dropped.
         guard let session, session.id == sessionID, session.activeDevices.contains(where: { $0.id == deviceID })
         else { return }
         inputLevels[deviceID] = level
+        if speech > 0 { talkTime?.add(speech, from: kind) }
         if !level.isSilent, heardDeviceIDs.insert(deviceID).inserted {
             silenceChecks.removeValue(forKey: deviceID)?.cancel()
             silentDevices.removeAll { $0.id == deviceID }
@@ -1705,6 +1840,7 @@ public final class RecordingCoordinator {
         heardDeviceIDs = []
         inputLevels = [:]
         silentDevices = []
+        talkTime = nil
     }
 
     /// Shown only once the note is written; the audio itself is never kept.
