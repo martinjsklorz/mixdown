@@ -111,6 +111,16 @@ public struct LiveTranscript: Sendable, Equatable {
         return recent
     }
 
+    /// The lines still being spoken at `time`, or started after it, on the recording's timeline,
+    /// as a transcript with one segment per line, labeled like the lines. A line under way at
+    /// `time` is included whole.
+    public func transcript(since time: TimeInterval, language: String? = nil) -> Transcript {
+        let segments = lines.filter { $0.end >= time }.map { line in
+            TranscriptSegment(start: line.start, end: line.end, text: line.text, speaker: line.speaker)
+        }
+        return Transcript(segments: segments, language: language)
+    }
+
     /// Adds an unlabeled input, such as system audio turned on mid-recording. Its index follows
     /// the others'.
     public mutating func addSource() {

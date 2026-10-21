@@ -9,6 +9,9 @@ longer to appear. Nothing extra is downloaded, and the transcript doesn't leave 
 recordings are summarized in parts, which are then combined. Action items are saved as Markdown
 checkboxes (`- [ ]`), so you can tick them off in editors like Obsidian.
 
+While recording with the live model, Apple Intelligence can also sum up just the last few
+minutes, for when you drifted off. See [Catch up](recording.md#catch-up).
+
 ## Titles
 
 The summary also names the note after its topic, e.g. "Release timeline". A call recorded from

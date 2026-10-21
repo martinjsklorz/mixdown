@@ -36,6 +36,34 @@ The note lists the moments under **Moments** at the end of its summary, or in a 
 own without one. Each has its time, matching the transcript's, your words, and what was being said
 then. See [Notes](notes.md#moments).
 
+## Catch up
+
+If you drifted off, press ⌃⌥⌘C in any app while recording, or choose **Recording → Catch Me Up**,
+also in the menu bar. Apple Intelligence sums up the last few minutes of the live text (5 unless
+you choose otherwise) in a few points, in a card under the notch (or the Dynamic Island, while it
+shows), for example:
+
+> **Last 5 minutes**
+>
+> - Others proposed moving the launch to March.
+> - Budget for the campaign was approved at €50,000.
+> - You were asked to send the contract by Friday.
+
+The summary is made on your Mac, like the note's, so it's free and nothing leaves the Mac. It
+takes a few seconds; longer stretches are summed up in parts first.
+
+- Click the card, or press the shortcut again, to close it.
+- Otherwise it closes once you've had time to read it, but not while the pointer is over it.
+- It never takes the keyboard, so you can keep typing in the app you're in.
+
+It needs the live speech model, as that's the one with text while you record, and Apple
+Intelligence turned on; the card says so if either is missing. When the live text is
+[translated](translation.md), the catch-up is in that language too. It doesn't go into the note.
+
+Choose how many minutes it covers (1, 2, 5, 10 or 15) under **Settings → General → Global
+Shortcuts → Catch up on the last**, where you can also change the shortcut or clear it to turn it
+off. Mixdown only takes those keys while recording.
+
 ## Inputs
 
 Pick inputs in the **Recording** menu, in the menu bar, or under **Settings → Recording**.

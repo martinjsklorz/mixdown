@@ -231,4 +231,23 @@ struct LiveTranscriptTests {
         // Without its first word, the line's speaker is left out too.
         #expect(transcript.recentWords(2).map(\.text) == ["you", "Others", "Hi"])
     }
+
+    @Test func transcriptSinceATimeHasTheLinesSpokenSinceThen() {
+        var transcript = LiveTranscript(speakers: ["Me", "Others"])
+        transcript.apply(update(["Hello", "there."]), fromSource: 0, startHostTime: nil)
+        transcript.apply(update(["Hi", "how", "are", "you?"], from: 5), fromSource: 1, startHostTime: nil)
+        transcript.apply(update(["Fine."], from: 20), fromSource: 0, startHostTime: nil)
+
+        // The second line is still under way at 7 s, so it's in whole.
+        let recent = transcript.transcript(since: 7, language: "en")
+        #expect(
+            recent.segments == [
+                TranscriptSegment(start: 5, end: 8.5, text: "Hi how are you?", speaker: "Others"),
+                TranscriptSegment(start: 20, end: 20.5, text: "Fine.", speaker: "Me"),
+            ]
+        )
+        #expect(recent.language == "en")
+        #expect(transcript.transcript(since: -60).segments.count == 3)
+        #expect(transcript.transcript(since: 21).segments.isEmpty)
+    }
 }

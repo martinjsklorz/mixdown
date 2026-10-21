@@ -960,6 +960,104 @@ struct RecordingCoordinatorTests {
         #expect(await writer.notes.isEmpty)
     }
 
+    // MARK: - Catching up
+
+    /// A live recording of one input that said "Hello everyone." at 10 s and "The budget is
+    /// approved." at 90 s, and the clock it reads the time from, at its start.
+    private func makeCatchUpCoordinator() -> (RecordingCoordinator, LockedValue<Date>) {
+        let date = LockedValue(Fixtures.startDate)
+        let live = MockLiveSession(updatesBySampleCount: [
+            16_000: LiveTranscriptUpdate(words: [
+                LiveWord(text: "Hello", start: 10, end: 10.5),
+                LiveWord(text: "everyone.", start: 10.5, end: 11),
+                LiveWord(text: "The", start: 90, end: 90.25),
+                LiveWord(text: "budget", start: 90.25, end: 90.5),
+                LiveWord(text: "is", start: 90.5, end: 90.75),
+                LiveWord(text: "approved.", start: 90.75, end: 91),
+            ])
+        ])
+        let coordinator = makeCoordinator(
+            capture: MockCapture(chunks: [Fixtures.chunk(seconds: 1)]),
+            engine: MockEngine(liveSession: live),
+            now: { date.current }
+        )
+        return (coordinator, date)
+    }
+
+    @Test func catchUpSumsUpTheLastMinutesOfLiveText() async throws {
+        let summarizer = MockSummarizer(summary: NoteSummary(keyPoints: [" The budget was approved. ", " "]))
+        let (coordinator, date) = makeCatchUpCoordinator()
+        await coordinator.monitorDevices()
+        await coordinator.startRecording()
+        try await waitUntil { coordinator.liveTranscript.lines.count == 2 }
+
+        date.update { $0 = Fixtures.startDate.addingTimeInterval(100) }
+        let catchUp = try await coordinator.catchUp(onLast: 60, with: summarizer)
+
+        #expect(catchUp == CatchUp(duration: 60, points: ["The budget was approved."]))
+        let received = try #require(summarizer.receivedCatchUps.first)
+        #expect(received.transcript.text == "The budget is approved.")
+        #expect(received.language == nil)
+        // Not a summary of the note.
+        #expect(summarizer.receivedTranscripts.isEmpty)
+
+        // Less than asked for, so far.
+        let all = try await coordinator.catchUp(onLast: 300, with: summarizer)
+        #expect(all.duration == 100)
+        #expect(summarizer.receivedCatchUps.last?.transcript.text == "Hello everyone. The budget is approved.")
+        await coordinator.stopRecording()
+    }
+
+    @Test func catchUpIsInTheLanguageTheLiveTextIsTranslatedInto() async throws {
+        let summarizer = MockSummarizer(summary: NoteSummary(keyPoints: ["Alle haben sich begrüßt."]))
+        let translator = DictionaryTranslator(translations: [:])
+        let coordinator = makeCaptioningCoordinator(translator: translator)
+        await coordinator.monitorDevices()
+        await coordinator.startRecording()
+        try await waitUntil { coordinator.liveTranscript.lines.count == 2 }
+
+        _ = try await coordinator.catchUp(onLast: 300, with: summarizer)
+        #expect(summarizer.receivedCatchUps.first?.language == "de")
+        await coordinator.stopRecording()
+    }
+
+    @Test func catchUpSaysWhyItCant() async throws {
+        let summarizer = MockSummarizer(summary: NoteSummary(keyPoints: ["Something."]))
+        let (coordinator, date) = makeCatchUpCoordinator()
+        await coordinator.monitorDevices()
+        await #expect(throws: CatchUpError.notRecording) {
+            try await coordinator.catchUp(onLast: 60, with: summarizer)
+        }
+
+        await coordinator.startRecording()
+        try await waitUntil { coordinator.liveTranscript.lines.count == 2 }
+        // Silence since 91 s.
+        date.update { $0 = Fixtures.startDate.addingTimeInterval(200) }
+        await #expect(throws: CatchUpError.nothingSaid) {
+            try await coordinator.catchUp(onLast: 60, with: summarizer)
+        }
+        // The summarizer finds nothing worth a point.
+        await #expect(throws: CatchUpError.nothingSaid) {
+            try await coordinator.catchUp(onLast: 300, with: MockSummarizer(summary: NoteSummary()))
+        }
+        let unavailable = MockSummarizer(availability: .unavailable(reason: "Turn it on."))
+        await #expect(throws: SummarizationError.unavailable("Turn it on.")) {
+            try await coordinator.catchUp(onLast: 300, with: unavailable)
+        }
+        #expect(unavailable.receivedCatchUps.isEmpty)
+        await coordinator.stopRecording()
+    }
+
+    @Test func catchUpNeedsLiveText() async throws {
+        let coordinator = makeCoordinator(capture: MockCapture(chunks: [Fixtures.chunk(seconds: 1)]))
+        await coordinator.monitorDevices()
+        await coordinator.startRecording()
+        await #expect(throws: CatchUpError.noLiveText) {
+            try await coordinator.catchUp(onLast: 60, with: MockSummarizer())
+        }
+        await coordinator.stopRecording()
+    }
+
     // MARK: - Pausing
 
     @Test func pauseStopsTheInputsAndResumeStartsThemAgain() async throws {

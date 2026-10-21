@@ -14,6 +14,9 @@ Press ⌘, or click the cog above the sidebar to open Settings. **Settings…** 
   the shortcut and press new keys to change it.
 - **Global Shortcuts → Mark moment while recording**: ⌃⌥⌘M. Clear it to turn it off. See
   [Recording](recording.md#mark-a-moment).
+- **Global Shortcuts → Catch me up while recording**: ⌃⌥⌘C. Clear it to turn it off.
+  **Catch up on the last** sets how many minutes it sums up: 1, 2, 5 (the default), 10 or 15. See
+  [Recording](recording.md#catch-up).
 - **Startup → Launch Mixdown at login**. If macOS needs your approval, allow Mixdown in System
   Settings › General › Login Items.
 

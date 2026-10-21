@@ -1555,6 +1555,32 @@ public final class RecordingCoordinator {
         return moment
     }
 
+    /// Sums up the last `duration` seconds of the live text with `summarizer`, for someone who
+    /// drifted off: in the language the live text is translated into, if it is, else the
+    /// recording's. Works paused, too, up to where it paused.
+    ///
+    /// Throws `CatchUpError` when not recording, without live text, or if nothing (worth summing
+    /// up) was said in that time, and `SummarizationError` if `summarizer` isn't available or
+    /// fails.
+    public func catchUp(onLast duration: TimeInterval, with summarizer: any Summarizer) async throws -> CatchUp {
+        guard let session, let time = momentTime else { throw CatchUpError.notRecording }
+        guard showsLiveTranscript else { throw CatchUpError.noLiveText }
+        if case .unavailable(let reason) = summarizer.availability {
+            throw SummarizationError.unavailable(reason)
+        }
+        let transcript = liveTranscript.transcript(since: time - duration, language: session.options.language)
+        guard !transcript.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw CatchUpError.nothingSaid
+        }
+        let language = liveCaptions?.language
+        logger.info("Catching up on \(transcript.segments.count) line(s) of the last \(Int(duration)) s")
+        let points = try await summarizer.catchUp(on: transcript, language: language)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !points.isEmpty else { throw CatchUpError.nothingSaid }
+        return CatchUp(duration: min(duration, time), points: points)
+    }
+
     public func toggleRecording() async {
         if canStopRecording {
             await stopRecording()

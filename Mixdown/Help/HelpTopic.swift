@@ -153,6 +153,17 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             elsewhere, or 5 seconds without typing drops it. The note lists each moment under \
             **Moments** at the end of its summary, with its time and what was being said.
 
+            ## Catch up
+
+            Drifted off? Press ⌃⌥⌘C in any app while recording, or choose **Recording → Catch Me \
+            Up**. Apple Intelligence sums up the last few minutes of the live text in a few points, \
+            in a card under the notch. It runs on your Mac, so nothing is sent anywhere and it costs \
+            nothing. Click the card or press the shortcut again to close it; otherwise it closes once \
+            you've had time to read it. It covers 5 minutes unless you choose otherwise under \
+            **Settings → General → Global Shortcuts**. It needs the live model and Apple \
+            Intelligence turned on, and is in the language the live text is translated into, if it \
+            is.
+
             ## Inputs
 
             Pick inputs in the **Recording** menu, in the menu bar, or under **Settings → \
@@ -450,6 +461,8 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             - ⇧⌘P: Pause or resume recording
             - ⌃⌥⌘R: Start or stop recording from any app (change it under **Settings → General**)
             - ⌃⌥⌘M: Mark a moment while recording, from any app (change it under **Settings → General**)
+            - ⌃⌥⌘C: Catch up on the last few minutes while recording, from any app (change it under \
+            **Settings → General**)
             - ⌘1: Show Record
             - ⌘2: Show Notes
             - ⌘3: Show Chat

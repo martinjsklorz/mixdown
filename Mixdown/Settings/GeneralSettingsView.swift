@@ -69,13 +69,26 @@ struct GeneralSettingsView: View {
                     KeyboardShortcuts.Recorder("Shortcut", name: .toggleRecording)
                 }
                 KeyboardShortcuts.Recorder("Mark moment while recording", name: .markMoment)
+                KeyboardShortcuts.Recorder("Catch me up while recording", name: .catchUp)
+                Picker(
+                    "Catch up on the last",
+                    selection: Binding(
+                        get: { environment.catchUpMinutes },
+                        set: { environment.setCatchUpMinutes($0) }
+                    )
+                ) {
+                    ForEach(AppSettings.catchUpMinuteChoices, id: \.self) { minutes in
+                        Text(minutes == 1 ? "Minute" : "\(minutes) Minutes").tag(minutes)
+                    }
+                }
             } header: {
                 Text("Global Shortcuts")
             } footer: {
                 Text(
                     "Work while Mixdown is in the background. If recording can't start yet, Mixdown "
                         + "opens to show why. Marking a moment opens a field under the notch for a "
-                        + "note on it; clear the shortcut to turn it off."
+                        + "note on it. Catching up has Apple Intelligence sum up what was just said, "
+                        + "on this Mac, with a live speech model. Clear a shortcut to turn it off."
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)

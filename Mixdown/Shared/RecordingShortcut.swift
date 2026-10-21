@@ -19,6 +19,15 @@ extension KeyboardShortcuts.Name {
     )
 }
 
+extension KeyboardShortcuts.Name {
+    /// Sums up the last few minutes of the live text under the notch, from any app, for when the
+    /// user drifted off. Only taken while recording. Changed or cleared under Settings → General.
+    static let catchUp = Self(
+        "catchUp",
+        initial: .init(.c, modifiers: [.control, .option, .command])
+    )
+}
+
 extension View {
     /// Shows the global Start/Stop Recording shortcut on a menu bar menu item while `isGlobal`, as
     /// that's the one that works with the menu closed, else ⌘R.
