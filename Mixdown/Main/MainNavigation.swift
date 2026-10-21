@@ -22,6 +22,7 @@ final class MainNavigation {
         case general = "General"
         case recording = "Recording"
         case transcription = "Transcription"
+        case translation = "Translation"
         case notifications = "Notifications"
         case design = "Design"
 
@@ -32,6 +33,7 @@ final class MainNavigation {
             case .general: "gearshape"
             case .recording: "mic"
             case .transcription: "waveform"
+            case .translation: "translate"
             case .notifications: "bell.badge"
             case .design: "paintbrush"
             }

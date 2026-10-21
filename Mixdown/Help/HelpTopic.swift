@@ -334,7 +334,7 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
 
             ## Translation
 
-            To get notes in another language, pick it under **Settings → Transcription → \
+            To get notes in another language, pick it under **Settings → Translation → \
             Translate to**. Each note then has a translation above the original transcript, and \
             its summary and title are in that language. Recordings already in that language are \
             left as they are.
@@ -352,7 +352,7 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             translation instead. It's a line or so behind, catching up as the line grows. Lines \
             already in that language are left as they are, so in a call where only the others speak \
             another language, only their lines are translated. Turn it off under **Settings → \
-            Transcription → Translate live text while recording**. The note's translation is made \
+            Translation → Translate live text while recording**. The note's translation is made \
             afresh from the whole transcript once you stop.
             """
         case .notifications:

@@ -1,6 +1,6 @@
 # Translation
 
-To get notes in another language, pick it under **Settings → Transcription → Translate to**. Each
+To get notes in another language, pick it under **Settings → Translation → Translate to**. Each
 note then gets a `## Translation` section above the original transcript, with the same times and
 speakers, and `translation_language` in its frontmatter. The summary and title are written from
 the translation, so they're in that language too. Recordings already in that language are left as
@@ -19,7 +19,7 @@ told from the line, so lines already in the target language, such as yours in a 
 the others speak another one, are left as they are. If the languages aren't downloaded, Record
 says which.
 
-Turn it off under **Settings → Transcription → Translate live text while recording**. It doesn't
+Turn it off under **Settings → Translation → Translate live text while recording**. It doesn't
 change the note: its translation is made afresh from the whole transcript once you stop.
 
 ## Translation languages

@@ -106,7 +106,7 @@ struct RecorderView: View {
                 headline(
                     "Translating…",
                     detail: "\(environment.translator.info.displayName) is translating the transcript into "
-                        + "\(TranslationSettings.name(of: environment.translationLanguage ?? ""))."
+                        + "\(TranslationSettingsView.name(of: environment.translationLanguage ?? ""))."
                 )
                 ProgressView()
                     .controlSize(.large)
