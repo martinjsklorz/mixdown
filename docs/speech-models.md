@@ -50,6 +50,25 @@ French, Spanish, Italian, Portuguese, Dutch, Polish, Japanese and Chinese. With 
 model detects the language, except Apple Speech, which uses your Mac's language. MOSS always
 detects it, so the picker is off for it.
 
+## Vocabulary
+
+Names, product names and jargon often come out wrong, like "cooper netties" for Kubernetes. Add
+them under **Settings → Vocabulary**: what to write (**Write as**) and what the model writes
+instead (**Heard as**), with commas between several ways it's heard. Every transcript is then
+corrected before it's translated and summarized, so the summary and title get the right word
+too. Matching ignores case and only replaces whole words: "mix down" doesn't change "remix
+down".
+
+To add a word from a note, select what the model got wrong and click the book button above the
+note, or choose **File → Add to Vocabulary…**. Type how it should be written, and leave **Correct
+it in existing notes** on to fix it in every note in your notes folder right away; a
+notification says how many changed. **Correct Existing Notes…** under **Settings → Vocabulary**
+does the same for every word in the vocabulary.
+
+Correcting a note changes its file in place: its title, the `# Title` heading and the text below
+it. Section headings like `## Transcript` and code blocks stay as they are, and so does the file
+name; rename the note to change it. This can't be undone.
+
 ## Speakers
 
 With MOSS, speaker numbers start over every 10 minutes, so "Speaker 1" may be someone else later

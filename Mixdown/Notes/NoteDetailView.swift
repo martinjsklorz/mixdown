@@ -32,6 +32,8 @@ struct NoteDetailView: View {
                 ) { actions.togglePinned(note) }
                 Button("Copy Transcript", systemImage: "doc.on.doc") { NoteActions.copyTranscript(of: note) }
                 Button("Rename", systemImage: "pencil") { actions.rename(note) }
+                Button("Add to Vocabulary", systemImage: "character.book.closed") { actions.addToVocabulary() }
+                    .help("Add the selected word to the vocabulary")
                 Button("Delete", systemImage: "trash") { actions.moveToTrash(note) }
             }
             ToolbarSpacer(.fixed)

@@ -11,6 +11,8 @@ struct NoteActions {
     var rename: @MainActor (NoteDocument) -> Void
     /// Asks for confirmation unless the user turned that off, then moves the note to the Trash.
     var moveToTrash: @MainActor (NoteDocument) -> Void
+    /// Asks how to write the text selected in the note, if any, and adds it to the vocabulary.
+    var addToVocabulary: @MainActor () -> Void
 
     /// Puts the note's transcript on the clipboard as plain text, and confirms with a
     /// notification.

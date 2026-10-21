@@ -39,6 +39,8 @@ struct AppSettings {
         /// Whether the live text is translated into that language while recording, too. Absent
         /// means yes.
         static let translatesLiveText = "translatesLiveText"
+        /// A `Vocabulary` as JSON. Absent means no words.
+        static let vocabulary = "vocabulary"
         /// Whether Mixdown plays audio cues at all. Absent means yes.
         static let playsSounds = "playsSounds"
         /// Whether to post notifications when calls start and end. Absent means yes.
@@ -171,6 +173,15 @@ struct AppSettings {
     var translatesLiveText: Bool {
         get { defaults.object(forKey: Key.translatesLiveText) as? Bool ?? true }
         nonmutating set { defaults.set(newValue, forKey: Key.translatesLiveText) }
+    }
+
+    /// Words to correct in transcripts. Empty if none were added, or what's stored can't be read.
+    var vocabulary: Vocabulary {
+        get {
+            defaults.data(forKey: Key.vocabulary).flatMap { try? JSONDecoder().decode(Vocabulary.self, from: $0) }
+                ?? Vocabulary()
+        }
+        nonmutating set { defaults.set(try? JSONEncoder().encode(newValue), forKey: Key.vocabulary) }
     }
 
     /// `nil` means auto-detect.

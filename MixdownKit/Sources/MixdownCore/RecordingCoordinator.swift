@@ -120,6 +120,9 @@ public final class RecordingCoordinator {
     }
     /// Speaker names for multi-source recordings.
     public var sourceLabels: SourceLabels
+    /// Words to correct in each transcript, before it's translated and summarized. Read once the
+    /// recording is transcribed.
+    public var vocabulary = Vocabulary()
     /// Whether to take the echo of the system audio out of the microphones while both record, if
     /// there's an `echoCancellation`. Changes apply to the next recording.
     public var cancelsEcho = true
@@ -1117,7 +1120,7 @@ public final class RecordingCoordinator {
         phase = .transcribing(progress: 0)
         do {
             try await prepareModelIfMissing()
-            let transcript: Transcript
+            var transcript: Transcript
             var trackFailure: TrackFailure?
             if engine.transcribesLive {
                 transcript = transcriptFromLiveText(tracks, language: session.options.language)
@@ -1131,6 +1134,7 @@ public final class RecordingCoordinator {
             } else {
                 (transcript, trackFailure) = try await transcribeSeparately(tracks, session: session)
             }
+            transcript = vocabulary.apply(to: transcript)
             let (translation, translationError) = await translate(transcript)
             let template = recordingSummaryTemplate ?? (session.isCall ? callSummaryTemplate : summaryTemplate)
             // The template can't change once the summary is under way.

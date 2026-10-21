@@ -18,11 +18,18 @@ struct MainView: View {
     @State private var columnVisibility = NavigationSplitViewVisibility.automatic
     @State private var noteToRename: NoteDocument?
     @State private var noteToTrash: NoteDocument?
+    /// What to fill in as heard when adding to the vocabulary, while its sheet is open.
+    @State private var vocabularyDraft: VocabularyDraft?
     @AppStorage(AppSettings.Key.suppressesTrashConfirmation) private var suppressesTrashConfirmation = false
     @AppStorage(AppSettings.Key.showsNotifications) private var showsNotifications = true
     @AppStorage(AppSettings.Key.collapsesPinnedNotes) private var collapsesPinnedNotes = false
     @State private var titleDraft = ""
     @State private var failure: Failure?
+
+    private struct VocabularyDraft: Identifiable {
+        let id = UUID()
+        var soundsLike: String
+    }
 
     /// An action on a note that didn't work, for an alert.
     private struct Failure {
@@ -111,6 +118,10 @@ struct MainView: View {
             Button("OK") {}
         } message: { failure in
             Text(failure.message)
+        }
+        .sheet(item: $vocabularyDraft) { draft in
+            AddToVocabularySheet(soundsLike: draft.soundsLike)
+                .environment(environment)
         }
         .sheet(
             isPresented: Binding(
@@ -274,6 +285,9 @@ struct MainView: View {
                 } else {
                     noteToTrash = note
                 }
+            },
+            addToVocabulary: {
+                vocabularyDraft = VocabularyDraft(soundsLike: SelectedText.current() ?? "")
             }
         )
     }

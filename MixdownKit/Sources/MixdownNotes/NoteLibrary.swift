@@ -1,4 +1,5 @@
 import Foundation
+import MixdownCore
 
 /// Reads the notes in a folder for browsing.
 public enum NoteLibrary {
@@ -138,15 +139,70 @@ public enum NoteLibrary {
         try rewrite(noteAt: url) { NoteDocument.pinned($0, isPinned) }
     }
 
+    /// Applies `vocabulary` to every note in `directory` and its subfolders, as listed by
+    /// `loadNotes(in:cache:)`. See `NoteDocument.corrected(_:by:)` for what changes; file names
+    /// stay as they are. A note that can't be read or written is skipped, and the others are
+    /// still corrected.
+    public static func applyVocabulary(
+        _ vocabulary: Vocabulary,
+        toNotesIn directory: URL
+    ) throws
+        -> VocabularyChanges
+    {
+        let correction = NoteDocument.VocabularyCorrection(vocabulary)
+        var changes = VocabularyChanges()
+        guard !correction.isEmpty else { return changes }
+        var cache = Cache()
+        for note in try loadNotes(in: directory, cache: &cache) {
+            do {
+                if try rewriteIfChanged(noteAt: note.url, { NoteDocument.corrected($0, by: correction) }) {
+                    changes.correctedNotes.append(note.url)
+                }
+            } catch {
+                changes.failures.append(.init(url: note.url, message: error.localizedDescription))
+            }
+        }
+        return changes
+    }
+
+    /// What `applyVocabulary(_:toNotesIn:)` did.
+    public struct VocabularyChanges: Sendable, Equatable {
+        public struct Failure: Sendable, Equatable {
+            public var url: URL
+            public var message: String
+        }
+
+        /// The notes that had words replaced.
+        public var correctedNotes: [URL] = []
+        /// The notes that couldn't be read or written.
+        public var failures: [Failure] = []
+    }
+
+    /// Like `rewrite(noteAt:_:)`, but leaves the file alone when `transform` returns `nil`.
+    /// Returns whether it was rewritten.
+    private static func rewriteIfChanged(noteAt url: URL, _ transform: (String) -> String?) throws -> Bool {
+        guard let contents = transform(try contents(ofNoteAt: url)) else { return false }
+        try replaceContents(ofNoteAt: url, with: contents)
+        return true
+    }
+
     /// Replaces the contents of the note at `url` with what `transform` makes of them.
     private static func rewrite(noteAt url: URL, _ transform: (String) -> String) throws {
-        let fileManager = FileManager.default
+        try replaceContents(ofNoteAt: url, with: transform(try contents(ofNoteAt: url)))
+    }
+
+    private static func contents(ofNoteAt url: URL) throws -> String {
         guard let contents = String(data: try Data(contentsOf: url), encoding: .utf8) else {
             throw CocoaError(.fileReadInapplicableStringEncoding, userInfo: [NSURLErrorKey: url])
         }
+        return contents
+    }
+
+    private static func replaceContents(ofNoteAt url: URL, with contents: String) throws {
+        let fileManager = FileManager.default
         let temporaryURL = MarkdownNoteWriter.temporaryURL(in: url.deletingLastPathComponent())
         defer { try? fileManager.removeItem(at: temporaryURL) }
-        try Data(transform(contents).utf8).write(to: temporaryURL)
+        try Data(contents.utf8).write(to: temporaryURL)
         // Swaps the contents in atomically while keeping the file's creation date, which dates
         // notes without a `created` field.
         _ = try fileManager.replaceItemAt(url, withItemAt: temporaryURL)
