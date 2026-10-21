@@ -142,6 +142,9 @@ private struct RecordingMenuItems: View {
         Button("Mark Moment") { environment.markMoment() }
             .globalKeyboardShortcut(.markMoment)
             .disabled(!coordinator.isRecording)
+        Button("Catch Me Up") { environment.catchUp() }
+            .globalKeyboardShortcut(.catchUp)
+            .disabled(!coordinator.isRecording)
 
         if case .preparingModel = coordinator.phase {
             Button("Cancel Download") { coordinator.cancelPreparation() }

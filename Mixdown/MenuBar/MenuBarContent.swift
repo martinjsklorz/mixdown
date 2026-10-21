@@ -24,6 +24,8 @@ struct MenuBarContent: View {
             .keyboardShortcut("p", modifiers: [.command, .shift])
             Button("Mark Moment") { environment.markMoment() }
                 .globalKeyboardShortcut(.markMoment)
+            Button("Catch Me Up") { environment.catchUp() }
+                .globalKeyboardShortcut(.catchUp)
         }
 
         RecordingStatusView(

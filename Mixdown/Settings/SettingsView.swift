@@ -30,7 +30,7 @@ struct SettingsView: View {
     /// Tall enough for each tab without scrolling, including the warnings General can show.
     private func height(for tab: MainNavigation.SettingsTab) -> CGFloat {
         switch tab {
-        case .general: 540
+        case .general: 620
         case .recording: 540
         case .transcription: 790
         case .notifications: 460

@@ -28,6 +28,8 @@ struct AppSettings {
         /// Whether the global recording shortcut is on. Absent means yes. The shortcut itself is
         /// stored by KeyboardShortcuts.
         static let recordingShortcutEnabled = "recordingShortcutEnabled"
+        /// How many of the last minutes of a recording Catch Me Up sums up. Absent means 5.
+        static let catchUpMinutes = "catchUpMinutes"
         /// Whether notes get a summary. Absent means yes.
         static let summarizesNotes = "summarizesNotes"
         /// A `SummaryTemplate` raw value for recordings started by hand. Absent means `.general`.
@@ -130,6 +132,19 @@ struct AppSettings {
         get { defaults.object(forKey: Key.recordingShortcutEnabled) as? Bool ?? true }
         nonmutating set { defaults.set(newValue, forKey: Key.recordingShortcutEnabled) }
     }
+
+    /// One of `catchUpMinuteChoices`.
+    var catchUpMinutes: Int {
+        get {
+            let minutes = defaults.integer(forKey: Key.catchUpMinutes)
+            return Self.catchUpMinuteChoices.contains(minutes) ? minutes : 5
+        }
+        nonmutating set { defaults.set(newValue, forKey: Key.catchUpMinutes) }
+    }
+
+    /// What Settings offers for `catchUpMinutes`. About ten minutes of talking fill the on-device
+    /// model's context, so more is caught up on in parts, which takes longer.
+    static let catchUpMinuteChoices = [1, 2, 5, 10, 15]
 
     var summarizesNotes: Bool {
         get { defaults.object(forKey: Key.summarizesNotes) as? Bool ?? true }
