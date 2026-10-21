@@ -3,9 +3,9 @@ import MixdownAppleTranslation
 import SwiftUI
 import Translation
 
-/// The Translation section of Settings → Transcription: which language notes are translated into,
-/// and whether macOS has the languages to translate the usual recordings.
-struct TranslationSettings: View {
+/// Which language notes are translated into, and whether macOS has the languages to translate the
+/// usual recordings.
+struct TranslationSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
     /// BCP 47 identifiers of the languages Apple's models translate between, by name. Empty until
     /// macOS has said.
@@ -20,40 +20,41 @@ struct TranslationSettings: View {
     @State private var downloading: String?
 
     var body: some View {
-        Section {
-            Picker(
-                "Translate to",
-                selection: Binding(
-                    get: { environment.translationLanguage },
-                    set: { environment.translationLanguage = $0 }
-                )
-            ) {
-                Text("Off").tag(String?.none)
-                Divider()
-                ForEach(choices, id: \.self) { identifier in
-                    Text(Self.name(of: identifier)).tag(Optional(identifier))
-                }
-            }
-
-            if let target = environment.translationLanguage {
-                languagePairRow(to: target)
-                // Shown off while it can't apply, but remembered for when it can.
-                Toggle(
-                    "Translate live text while recording",
-                    isOn: Binding(
-                        get: { environment.translatesLiveText && environment.model.isLive },
-                        set: { environment.translatesLiveText = $0 }
+        Form {
+            Section {
+                Picker(
+                    "Translate to",
+                    selection: Binding(
+                        get: { environment.translationLanguage },
+                        set: { environment.translationLanguage = $0 }
                     )
-                )
-                .disabled(!environment.model.isLive)
+                ) {
+                    Text("Off").tag(String?.none)
+                    Divider()
+                    ForEach(choices, id: \.self) { identifier in
+                        Text(Self.name(of: identifier)).tag(Optional(identifier))
+                    }
+                }
+
+                if let target = environment.translationLanguage {
+                    languagePairRow(to: target)
+                    // Shown off while it can't apply, but remembered for when it can.
+                    Toggle(
+                        "Translate live text while recording",
+                        isOn: Binding(
+                            get: { environment.translatesLiveText && environment.model.isLive },
+                            set: { environment.translatesLiveText = $0 }
+                        )
+                    )
+                    .disabled(!environment.model.isLive)
+                }
+            } footer: {
+                Text(footer)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-        } header: {
-            Text("Translation")
-        } footer: {
-            Text(footer)
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
+        .formStyle(.grouped)
         .task {
             languages = await AppleTranslator.supportedLanguages().sorted {
                 Self.name(of: $0).localizedStandardCompare(Self.name(of: $1)) == .orderedAscending

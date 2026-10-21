@@ -87,8 +87,6 @@ struct TranscriptionSettingsView: View {
                 .foregroundStyle(.secondary)
             }
 
-            TranslationSettings()
-
             Section {
                 Toggle(
                     "Summarize recordings",

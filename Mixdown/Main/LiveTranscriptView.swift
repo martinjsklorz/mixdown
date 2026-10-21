@@ -72,7 +72,7 @@ struct LiveTranscriptView: View {
     private func footer(translatedInto language: String?) -> String {
         guard let language else { return "This text becomes your note when you stop." }
         return "This text becomes your note when you stop. It's translated into "
-            + "\(TranslationSettings.name(of: language)) as it's spoken."
+            + "\(TranslationSettingsView.name(of: language)) as it's spoken."
     }
 }
 

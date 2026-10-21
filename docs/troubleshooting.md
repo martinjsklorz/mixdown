@@ -50,7 +50,7 @@ just the transcript.
 ## No translation
 
 macOS hasn't downloaded the languages for that recording; Mixdown says which ones. Download them
-from **Settings → Transcription → Translation**, or under System Settings → General → Language &
+from **Settings → Translation**, or under System Settings → General → Language &
 Region → Translation Languages. See [Translation](translation.md).
 
 ## Logs

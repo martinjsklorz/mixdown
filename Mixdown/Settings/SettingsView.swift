@@ -17,6 +17,9 @@ struct SettingsView: View {
             TranscriptionSettingsView()
                 .tabItem { tabLabel(.transcription) }
                 .tag(MainNavigation.SettingsTab.transcription)
+            TranslationSettingsView()
+                .tabItem { tabLabel(.translation) }
+                .tag(MainNavigation.SettingsTab.translation)
             VocabularySettingsView()
                 .tabItem { tabLabel(.vocabulary) }
                 .tag(MainNavigation.SettingsTab.vocabulary)
@@ -35,7 +38,8 @@ struct SettingsView: View {
         switch tab {
         case .general: 620
         case .recording: 540
-        case .transcription: 790
+        case .transcription: 600
+        case .translation: 360
         case .vocabulary: 520
         case .notifications: 460
         case .design: 420
