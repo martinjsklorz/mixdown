@@ -4,6 +4,7 @@ import MixdownAppleTranslation
 import MixdownAudio
 import MixdownCore
 import MixdownFoundationModels
+import MixdownNaturalLanguage
 import MixdownNotes
 import MixdownSpeechSwift
 import Observation
@@ -22,6 +23,8 @@ final class AppEnvironment {
     let translator: any Translator
     let notesFolder: NotesFolderStore
     let noteTrash: NoteTrash
+    /// Chat across the notes, kept while the main window is closed.
+    let noteChat: NoteChat
     private let noteReady: NoteReady
     private let noteSpotlight = NoteSpotlight()
     /// Created at launch, as it handles buttons on notifications from an earlier run.
@@ -82,6 +85,8 @@ final class AppEnvironment {
         let translator: any Translator = AppleTranslator()
         let noteTrash = NoteTrash()
         let noteReady = NoteReady(navigation: navigation)
+        // Likewise the ONE place Chat's model and embeddings are chosen.
+        self.noteChat = NoteChat(answerer: AppleIntelligenceAnswerer(), embedder: NaturalLanguageEmbedder())
         self.settings = settings
         self.model = model
         self.summarizer = summarizer

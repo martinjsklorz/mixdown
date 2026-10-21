@@ -20,6 +20,8 @@ enum NoteFixtures {
         translation: Transcript? = nil,
         summary: NoteSummary? = nil,
         trigger: RecordingTrigger = .manual,
+        isCall: Bool? = nil,
+        template: SummaryTemplate? = nil,
         moments: [Moment] = [],
         talkTimeline: TalkTimeline? = nil
     ) -> Note {
@@ -33,6 +35,8 @@ enum NoteFixtures {
             translation: translation,
             summary: summary,
             trigger: trigger,
+            isCall: isCall,
+            template: template,
             moments: moments,
             talkTimeline: talkTimeline
         )
@@ -51,6 +55,19 @@ struct MarkdownNoteRendererTests {
         let lines = markdown.components(separatedBy: "\n")
         guard lines.first == "---", let end = lines.dropFirst().firstIndex(of: "---") else { return [] }
         return Array(lines[1..<end])
+    }
+
+    @Test func frontmatterSaysWhatKindOfRecordingItIs() {
+        let call = frontmatterLines(MarkdownNoteRenderer.render(NoteFixtures.note(isCall: true, template: .oneOnOne)))
+        #expect(call.contains("call: true"))
+        #expect(call.contains("template: oneOnOne"))
+
+        let memo = frontmatterLines(MarkdownNoteRenderer.render(NoteFixtures.note(template: .general)))
+        #expect(!memo.contains { $0.hasPrefix("call:") || $0.hasPrefix("template:") })
+        // Mixdown only records by itself for calls.
+        #expect(
+            frontmatterLines(MarkdownNoteRenderer.render(NoteFixtures.note(trigger: .automatic))).contains("call: true")
+        )
     }
 
     @Test func frontmatterContainsMetadata() throws {

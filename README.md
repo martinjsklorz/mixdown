@@ -27,6 +27,10 @@ Everything happens on your Mac. Your audio never leaves it.
   translated as it's spoken, so you can follow a call in a language you don't speak.
 - **Plain Markdown notes**: saved to a folder you choose, ready for Obsidian or any editor. Browse,
   search, pin and rename them in Mixdown.
+- **Chat across notes**: ask "What did we decide about the release?" and Apple Intelligence
+  answers on your Mac from your notes, citing the lines it's from; click one to open the note at
+  that line and time. Questions like "How many 1:1s did I have in September?" are counted exactly
+  by Mixdown, not guessed by the model.
 - **Spotlight search**: every line of every note is in Spotlight, so ⌘Space finds the exact
   transcript line or action item without opening Mixdown.
 - **Always at hand**: a global shortcut (⌃⌥⌘R), the menu bar, and a Dynamic Island around the
@@ -44,7 +48,7 @@ recording. The note opens a few seconds later.
 
 The [docs](docs/README.md) cover every feature in detail: [recording](docs/recording.md),
 [calls](docs/calls.md), [speech models](docs/speech-models.md), [summaries](docs/summaries.md),
-[translation](docs/translation.md), [notes and their file format](docs/notes.md),
+[translation](docs/translation.md), [notes and their file format](docs/notes.md), [chat](docs/chat.md),
 [settings](docs/settings.md), [shortcuts](docs/keyboard-shortcuts.md) and
 [troubleshooting](docs/troubleshooting.md).
 

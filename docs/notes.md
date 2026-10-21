@@ -39,6 +39,8 @@ a note is a result of its own, like a transcript line or an action item, so sear
 timeline" shows the line that mentions it, with the note's title and the time it was said. Click a
 result to open the note in Mixdown, scrolled to that line.
 
+To ask questions across your notes instead, use [Chat](chat.md).
+
 Notes you edit, rename or delete in another app are updated in Spotlight too, even while Mixdown's
 window is closed. Turn it off under **Settings → General → Show notes in Spotlight**, which takes
 the notes out of Spotlight again. The index stays on your Mac.
@@ -113,6 +115,8 @@ The team went through the release timeline for the weekly sync.
 | `source_kind` / `source_kinds` | `microphone` or `systemAudio` for each source |
 | `engine` | The speech model that transcribed it |
 | `trigger` | `manual` for recordings you started (including from a call notification), `automatic` for calls recorded automatically |
+| `call` | `true` for recordings started from the call notification or automatically |
+| `template` | The [summary template](summaries.md#templates) when it isn't General: `oneOnOne`, `standup` or `clientCall`. [Chat](chat.md#counting) counts notes by it |
 | `language` | The recording's language; left out when the model doesn't report one |
 | `speakers` | The speaker labels used in the transcript |
 | `translation_language` | The language of the `## Translation` section, when the note was translated (see [Translation](translation.md)) |

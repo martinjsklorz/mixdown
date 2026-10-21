@@ -8,6 +8,7 @@
 | ⌃⌥⌘M | Mark a moment while recording, from any app (change it under **Settings → General**) |
 | ⌘1 | Show Record |
 | ⌘2 | Show Notes |
+| ⌘3 | Show Chat |
 | ⌘F | Search recordings |
 | ⌘0 | Open the Mixdown window |
 | ⇧⌘O | Open the notes folder |

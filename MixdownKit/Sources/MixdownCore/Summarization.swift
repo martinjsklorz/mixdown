@@ -326,7 +326,7 @@ public struct ChunkedSummarizer: Sendable {
     /// Hebrew or Arabic; and a whole token per Chinese, Japanese, Korean, Thai or Indic letter or
     /// vowel sign. Tokenizers fall back to bytes for text they've seen little of, so scripts
     /// further from English take more tokens.
-    static func estimatedTokens(in text: some StringProtocol) -> Int {
+    public static func estimatedTokens(in text: some StringProtocol) -> Int {
         (text.utf8.count + 2) / 3
     }
 

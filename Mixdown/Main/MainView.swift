@@ -4,9 +4,9 @@ import MixdownCore
 import MixdownNotes
 import SwiftUI
 
-/// The main window: search and Record at the top of the sidebar, the notes folder below it (pinned
-/// notes, then by date), and the recorder or the selected note on the right. Above the sidebar
-/// are Open Notes Folder and Settings.
+/// The main window: search, Chat and Record at the top of the sidebar, the notes folder below it
+/// (pinned notes, then by date), and the recorder, the chat or the selected note on the right.
+/// Above the sidebar are Open Notes Folder and Settings.
 struct MainView: View {
     static let windowID = "main"
 
@@ -151,6 +151,7 @@ struct MainView: View {
         return VStack(spacing: 0) {
             HStack(spacing: 8) {
                 SidebarSearchField(text: $searchText)
+                SidebarChatButton()
                 SidebarRecordButton(coordinator: environment.coordinator)
             }
             .padding(.horizontal, 10)
@@ -247,6 +248,8 @@ struct MainView: View {
         switch navigation.destination {
         case .recorder:
             RecorderView()
+        case .chat:
+            ChatView(chat: environment.noteChat, notes: library.notes)
         case .notes:
             if let note = shownNote {
                 NoteDetailView(note: note, actions: noteActions)
@@ -412,21 +415,65 @@ private struct SidebarSearchField: View {
     }
 }
 
-/// Shows the recorder, beside the search field. Highlighted like a selected note while it's
-/// shown, and says what the recorder is doing while it's busy.
+/// Shows the recorder, beside the search field, and says what the recorder is doing while it's
+/// busy.
 private struct SidebarRecordButton: View {
-    @Environment(MainNavigation.self) private var navigation
     let coordinator: RecordingCoordinator
 
     var body: some View {
-        let isSelected = navigation.destination == .recorder
+        SidebarSectionButton("Record", systemImage: "record.circle", destination: .recorder, help: "Record (⌘1)") {
+            RecorderStatusBadge(coordinator: coordinator)
+        }
+    }
+}
+
+/// Shows the chat across the notes, beside the search field.
+private struct SidebarChatButton: View {
+    var body: some View {
+        SidebarSectionButton(
+            "Chat",
+            systemImage: "bubble.left.and.text.bubble.right",
+            destination: .chat,
+            help: "Chat with Your Notes (⌘3)"
+        ) {
+            EmptyView()
+        }
+    }
+}
+
+/// Shows `destination`. Highlighted like a selected note while it's shown, with `badge` beside
+/// its icon.
+private struct SidebarSectionButton<Badge: View>: View {
+    @Environment(MainNavigation.self) private var navigation
+    let title: String
+    let systemImage: String
+    let destination: MainNavigation.Destination
+    let help: String
+    @ViewBuilder let badge: Badge
+
+    init(
+        _ title: String,
+        systemImage: String,
+        destination: MainNavigation.Destination,
+        help: String,
+        @ViewBuilder badge: () -> Badge
+    ) {
+        self.title = title
+        self.systemImage = systemImage
+        self.destination = destination
+        self.help = help
+        self.badge = badge()
+    }
+
+    var body: some View {
+        let isSelected = navigation.destination == destination
         Button {
-            navigation.destination = .recorder
+            navigation.destination = destination
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: "record.circle")
+                Image(systemName: systemImage)
                     .font(.headline)
-                RecorderStatusBadge(coordinator: coordinator)
+                badge
             }
             .padding(.horizontal, 10)
             .frame(minWidth: SidebarControl.height, minHeight: SidebarControl.height)
@@ -437,9 +484,9 @@ private struct SidebarRecordButton: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Record")
+        .accessibilityLabel(title)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
-        .help("Record (⌘1)")
+        .help(help)
     }
 }
 

@@ -46,6 +46,7 @@ targets:
           - MixdownAppleSpeech
           - MixdownFoundationModels
           - MixdownAppleTranslation
+          - MixdownNaturalLanguage
           - MixdownNotes
       - package: KeyboardShortcuts
     settings:

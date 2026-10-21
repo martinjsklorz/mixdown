@@ -16,6 +16,7 @@ The same topics are in the app under **Help → Mixdown Help** (⌘?).
 - [Summaries](summaries.md): Apple Intelligence summaries, titles and templates
 - [Translation](translation.md): notes, and the live text, in another language
 - [Notes](notes.md): the sidebar, working with notes, Spotlight, the notes folder and the file format
+- [Chat](chat.md): questions across your notes, with citations and exact counts
 - [Notifications and sounds](notifications-and-sounds.md)
 - [Settings](settings.md): every setting, tab by tab
 - [Keyboard shortcuts](keyboard-shortcuts.md)
