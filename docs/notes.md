@@ -138,3 +138,17 @@ speakers: ["Me", "Others"]
 | 00:00:00 | ███ 18 s | ██████ 37 s |
 …
 ```
+
+### Moments
+
+Moments you marked while recording (see [Recording](recording.md#mark-a-moment)) come last in the
+summary, under `### Moments`, or in a `## Moments` section before the transcript when the note has
+no summary. Each gives the time, your words, and what was being said then, from the translation
+if there is one:
+
+```markdown
+### Moments
+
+- **[00:12:34]** Budget approved — _Others: “so we can go up to fifty thousand…”_
+- **[00:20:05]** _Me: “I'll send the contract tomorrow.”_
+```

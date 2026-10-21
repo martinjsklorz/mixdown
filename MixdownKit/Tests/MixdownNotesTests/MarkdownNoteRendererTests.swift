@@ -20,6 +20,7 @@ enum NoteFixtures {
         translation: Transcript? = nil,
         summary: NoteSummary? = nil,
         trigger: RecordingTrigger = .manual,
+        moments: [Moment] = [],
         talkTimeline: TalkTimeline? = nil
     ) -> Note {
         Note(
@@ -32,6 +33,7 @@ enum NoteFixtures {
             translation: translation,
             summary: summary,
             trigger: trigger,
+            moments: moments,
             talkTimeline: talkTimeline
         )
     }
@@ -191,6 +193,94 @@ struct MarkdownNoteRendererTests {
             ## Transcript
             """
         #expect(markdown.contains(expected))
+    }
+
+    // MARK: - Moments
+
+    @Test func momentsGoLastInTheSummary() {
+        let markdown = MarkdownNoteRenderer.render(
+            NoteFixtures.note(
+                summary: NoteSummary(overview: "A sync."),
+                moments: [
+                    Moment(time: 2, text: "The *intro*"),
+                    // Ten seconds after "Next topic." ended.
+                    Moment(time: 80),
+                ]
+            )
+        )
+
+        let expected = """
+            ## Summary
+
+            A sync.
+
+            ### Moments
+
+            - **[00:00:02]** The \\*intro\\* — _“Hello everyone.”_
+            - **[00:01:20]** _“Next topic.”_
+
+            ## Transcript
+            """
+        #expect(markdown.contains(expected))
+    }
+
+    @Test func momentsWithoutSummaryGetASectionOfTheirOwn() {
+        let markdown = MarkdownNoteRenderer.render(
+            NoteFixtures.note(
+                segments: [TranscriptSegment(start: 0, end: 4, text: "Hello.", speaker: "Others")],
+                moments: [Moment(time: 1, text: "Greeting"), Moment(time: 30)]
+            )
+        )
+
+        let expected = """
+            # Weekly Sync
+
+            ## Moments
+
+            - **[00:00:01]** Greeting — _Others: “Hello.”_
+            - **[00:00:30]** _Marked._
+
+            ## Transcript
+            """
+        #expect(markdown.contains(expected))
+        #expect(!MarkdownNoteRenderer.render(NoteFixtures.note()).contains("Moments"))
+    }
+
+    @Test func momentQuotesTheTranslationLikeTheSummary() {
+        let translation = Transcript(
+            segments: [TranscriptSegment(start: 0, end: 4, text: "Hallo zusammen.")],
+            language: "de"
+        )
+        let markdown = MarkdownNoteRenderer.render(
+            NoteFixtures.note(translation: translation, moments: [Moment(time: 1)])
+        )
+        #expect(markdown.contains("## Moments\n\n- **[00:00:01]** _“Hallo zusammen.”_\n\n## Translation"))
+    }
+
+    @Test func momentQuotesTheWordsSaidByThen() {
+        let words = { (range: ClosedRange<Int>) in range.map { "w\($0)" }.joined(separator: " ") }
+        let quote = { (time: TimeInterval) in
+            let note = NoteFixtures.note(
+                segments: [TranscriptSegment(start: 0, end: 30, text: words(1...60))],
+                moments: [Moment(time: time)]
+            )
+            let markdown = MarkdownNoteRenderer.render(note)
+            let prefix = "- **[\(MarkdownNoteRendererTests.timestamp(time))]** _“"
+            return markdown.components(separatedBy: "\n").first { $0.hasPrefix(prefix) }
+                .map { String($0.dropFirst(prefix.count).dropLast(2)) }
+        }
+
+        // Halfway through: the 20 words up to the 30th.
+        #expect(quote(15) == "…" + words(11...30) + "…")
+        // Early on: the first 20, rather than fewer.
+        #expect(quote(1) == words(1...20) + "…")
+        // Past the end: the last 20.
+        #expect(quote(40) == "…" + words(41...60))
+    }
+
+    private static func timestamp(_ seconds: TimeInterval) -> String {
+        let total = Int(seconds)
+        return String(format: "%02d:%02d:%02d", total / 3600, total % 3600 / 60, total % 60)
     }
 
     @Test func emptySummaryPartsAreLeftOut() {

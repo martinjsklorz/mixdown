@@ -1,4 +1,5 @@
 import AppKit
+import KeyboardShortcuts
 import MixdownCore
 import MixdownNotes
 import SwiftUI
@@ -138,6 +139,9 @@ private struct RecordingMenuItems: View {
         }
         .keyboardShortcut("p", modifiers: [.command, .shift])
         .disabled(!coordinator.isRecording)
+        Button("Mark Moment") { environment.markMoment() }
+            .globalKeyboardShortcut(.markMoment)
+            .disabled(!coordinator.isRecording)
 
         if case .preparingModel = coordinator.phase {
             Button("Cancel Download") { coordinator.cancelPreparation() }

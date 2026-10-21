@@ -132,7 +132,7 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             - Choose **Recording → Start Recording** (⌘R).
             - Choose **Start Recording** from Mixdown's icon in the menu bar.
             - From any other app, press ⌃⌥⌘R. Change that shortcut or turn it off under \
-            **Settings → General → Global Shortcut**.
+            **Settings → General → Global Shortcuts**.
 
             Do the same again to stop. Recording carries on if you close the window.
 
@@ -141,6 +141,14 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             Click the pause button beside Stop, or choose **Recording → Pause Recording** (⇧⌘P). \
             While paused, Mixdown records nothing, and macOS no longer shows the microphone in use. \
             Resume the same way to carry on in the same note; the paused time is left out of it.
+
+            ## Mark a moment
+
+            Press ⌃⌥⌘M in any app while recording, click the bookmark button beside Stop, or choose \
+            **Recording → Mark Moment**. A field drops down under the notch, ready to type in: \
+            write a few words, or none, and press Return to add the moment. Escape, clicking \
+            elsewhere, or 5 seconds without typing drops it. The note lists each moment under \
+            **Moments** at the end of its summary, with its time and what was being said.
 
             ## Inputs
 
@@ -387,6 +395,7 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             - ⌘R: Start or stop recording
             - ⇧⌘P: Pause or resume recording
             - ⌃⌥⌘R: Start or stop recording from any app (change it under **Settings → General**)
+            - ⌃⌥⌘M: Mark a moment while recording, from any app (change it under **Settings → General**)
             - ⌘1: Show Record
             - ⌘2: Show Notes
             - ⌘F: Search recordings

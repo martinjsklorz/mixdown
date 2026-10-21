@@ -48,6 +48,9 @@ final class AppEnvironment {
     /// Whether the Dynamic Island is showing the recording time where it can always be seen, so
     /// the menu bar leaves it out. See `DynamicIsland.showsTimeAlone`.
     private(set) var dynamicIslandShowsTimeAlone = false
+    /// The moment just marked while the user writes a note on it under the notch; `nil` once the
+    /// field closes. See `markMoment()`.
+    private(set) var momentDraft: MomentDraft?
 
     private let settings: AppSettings
     /// Shared by every coordinator, so the canceller it keeps loaded survives a model change.
@@ -58,6 +61,10 @@ final class AppEnvironment {
     @ObservationIgnored private var callPrompt: CallPrompt?
     /// Created the first time it's shown.
     @ObservationIgnored private var dynamicIsland: DynamicIsland?
+    /// The field for `momentDraft`. Created the first time it's shown.
+    @ObservationIgnored private var momentEntry: MomentEntry?
+    /// Closes the field for `momentDraft` if nothing is typed in time.
+    @ObservationIgnored private var momentDraftTimeout: Task<Void, Never>?
     /// Opens Record in the main window.
     private let showRecorder: () -> Void
     /// The note `observeNewNotes` announced last.
@@ -104,10 +111,12 @@ final class AppEnvironment {
         startCoordinatorTasks()
         observeRecording()
         observeDynamicIsland()
+        observeMoments()
         observePhaseForCues()
         observeNotesFolder()
         observeNewNotes()
         listenForRecordingShortcut()
+        listenForMomentShortcut()
         startCallPrompt()
     }
 
@@ -253,6 +262,32 @@ final class AppEnvironment {
             island.show(layout)
         } else {
             dynamicIsland?.hide()
+        }
+    }
+
+    /// Takes the Mark Moment shortcut only while recording, so other apps get those keys
+    /// otherwise, and shows the field for `momentDraft` while there is one. A recording that
+    /// stops closes the field, dropping a moment not yet added with Return.
+    private func observeMoments() {
+        let (isRecording, draft) = withObservationTracking {
+            (coordinator.isRecording, momentDraft)
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.observeMoments() }
+        }
+        if isRecording {
+            KeyboardShortcuts.enable(.markMoment)
+        } else {
+            KeyboardShortcuts.disable(.markMoment)
+            closeMomentDraft()
+        }
+        if let draft, isRecording {
+            let entry =
+                momentEntry
+                ?? MomentEntry(environment: self, islandFrame: { [weak self] in self?.dynamicIsland?.frame })
+            momentEntry = entry
+            entry.show(draft)
+        } else {
+            momentEntry?.hide()
         }
     }
 
@@ -421,6 +456,53 @@ final class AppEnvironment {
         } else {
             KeyboardShortcuts.disable(.toggleRecording)
         }
+    }
+
+    // MARK: Moments
+
+    /// How long the field for a new moment waits for typing before it closes.
+    private static let momentDraftTimeoutDuration = Duration.seconds(5)
+
+    /// Starts on the Mark Moment shortcut, from any app. `observeMoments()` takes it only while
+    /// recording.
+    private func listenForMomentShortcut() {
+        KeyboardShortcuts.onKeyUp(for: .markMoment) { [weak self] in
+            self?.markMoment()
+        }
+        KeyboardShortcuts.disable(.markMoment)
+    }
+
+    /// Marks the point the recording has reached, and opens a field under the notch to write a
+    /// few words about it. Return adds the moment to the note; Escape, clicking elsewhere, or
+    /// `momentDraftTimeoutDuration` without typing drops it. Beeps when not recording.
+    func markMoment() {
+        guard let time = coordinator.momentTime else {
+            NSSound.beep()
+            return
+        }
+        let draft = MomentDraft(time: time)
+        momentDraft = draft
+        momentDraftTimeout?.cancel()
+        momentDraftTimeout = Task { [weak self] in
+            try? await Task.sleep(for: Self.momentDraftTimeoutDuration)
+            guard let self, !Task.isCancelled, self.momentDraft === draft, draft.text.isEmpty else { return }
+            self.closeMomentDraft()
+        }
+    }
+
+    /// Adds `momentDraft` to the note, with what was typed, and closes its field.
+    func addMomentDraft() {
+        guard let momentDraft else { return }
+        coordinator.addMoment(at: momentDraft.time, text: momentDraft.text)
+        closeMomentDraft()
+    }
+
+    /// Closes the field for `momentDraft`, dropping the moment unless it was added.
+    func closeMomentDraft() {
+        guard momentDraft != nil else { return }
+        momentDraft = nil
+        momentDraftTimeout?.cancel()
+        momentDraftTimeout = nil
     }
 
     // MARK: Design

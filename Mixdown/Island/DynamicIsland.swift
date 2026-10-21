@@ -128,8 +128,13 @@ final class DynamicIsland {
         return panel
     }
 
+    /// The island's frame on screen while it's shown.
+    var frame: NSRect? {
+        isShown ? panel?.frame : nil
+    }
+
     /// The screen that has a notch, else the main screen.
-    private static var screen: NSScreen? {
+    static var screen: NSScreen? {
         NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.screens.first
     }
 
@@ -200,7 +205,7 @@ final class DynamicIsland {
 
     /// The notch in screen coordinates. On a screen without one, a zero-width rectangle at the top
     /// center, as tall as the menu bar.
-    private static func notch(on screen: NSScreen) -> NSRect {
+    static func notch(on screen: NSScreen) -> NSRect {
         let frame = screen.frame
         if screen.safeAreaInsets.top > 0,
             let left = screen.auxiliaryTopLeftArea,

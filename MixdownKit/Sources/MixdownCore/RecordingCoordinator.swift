@@ -70,6 +70,9 @@ public final class RecordingCoordinator {
     public private(set) var showsLiveTranscript = false
     /// What the inputs said so far while `showsLiveTranscript`, else empty.
     public private(set) var liveTranscript = LiveTranscript(speakers: [])
+    /// Moments added to the recording in progress, in the order they were added, until its note
+    /// is made. See `addMoment(at:text:)`.
+    public private(set) var moments: [Moment] = []
     /// `liveTranscript` translated into `translationLanguage` as it's recognized, while
     /// `showsLiveTranscript` and `translatesLiveText`; else `nil`.
     public private(set) var liveCaptions: LiveCaptions?
@@ -774,6 +777,7 @@ public final class RecordingCoordinator {
         recordingStartedAt = session.startedAt
         recordingSummaryTemplate = summaryTemplate
         isRecordingSummaryTemplateChosen = false
+        moments = []
         if engine.transcribesLive {
             liveTranscript = LiveTranscript(speakers: [])
             showsLiveTranscript = true
@@ -1041,6 +1045,7 @@ public final class RecordingCoordinator {
         let liveError = await finishLiveTranscription(of: session)
         await finish(session, lanes: lanes, interruption: interruption ?? liveError)
         recordingSummaryTemplate = nil
+        moments = []
         releaseEngine()
     }
 
@@ -1146,6 +1151,9 @@ public final class RecordingCoordinator {
                 translation: translation,
                 summary: summary,
                 trigger: session.trigger,
+                // Described up to now, as the user may have still been typing when it stopped.
+                moments: moments.map { Moment(id: $0.id, time: min($0.time, duration), text: $0.text) }
+                    .sorted { $0.time < $1.time },
                 talkTimeline: talkTimeline(of: tracks, duration: duration)
             )
             // Kept until it's saved: the folder can go away while recording or transcribing, e.g.
@@ -1518,6 +1526,27 @@ public final class RecordingCoordinator {
         guard recordingSummaryTemplate != nil else { return }
         recordingSummaryTemplate = template
         isRecordingSummaryTemplateChosen = true
+    }
+
+    /// How far the recording in progress has got, paused or not, in seconds not counting pauses:
+    /// where a moment marked now goes. `nil` when not recording.
+    public var momentTime: TimeInterval? {
+        switch phase {
+        case .recording(let startedAt): max(now().timeIntervalSince(startedAt), 0)
+        case .paused(let recorded): recorded
+        default: nil
+        }
+    }
+
+    /// Adds a moment at `time` (see `momentTime`) to the note of the recording in progress, with
+    /// `text` trimmed. Returns it, or `nil` when not recording.
+    @discardableResult
+    public func addMoment(at time: TimeInterval, text: String = "") -> Moment? {
+        guard isRecording else { return nil }
+        let moment = Moment(time: time, text: text.trimmingCharacters(in: .whitespacesAndNewlines))
+        moments.append(moment)
+        logger.info("Moment added at \(time, format: .fixed(precision: 1)) s")
+        return moment
     }
 
     public func toggleRecording() async {
