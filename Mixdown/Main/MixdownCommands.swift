@@ -31,6 +31,9 @@ struct MixdownCommands: Commands {
             SectionMenuItem("Notes", destination: .notes)
                 .keyboardShortcut("2")
                 .environment(navigation)
+            SectionMenuItem("Chat", destination: .chat)
+                .keyboardShortcut("3")
+                .environment(navigation)
             Divider()
         }
         CommandMenu("Recording") {

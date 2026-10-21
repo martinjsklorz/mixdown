@@ -45,6 +45,11 @@ public enum MarkdownNoteRenderer {
         }
         lines.append("engine: \(yamlQuoted(note.engine.displayName))")
         lines.append("trigger: \(note.trigger.rawValue)")
+        if note.isCall { lines.append("call: true") }
+        // `general` says nothing about the kind of recording.
+        if let template = note.template, template != .general {
+            lines.append("template: \(template.rawValue)")
+        }
         if let language = note.transcript.language, !language.isEmpty {
             // Quoted so codes like `no` (Norwegian) aren't read as YAML booleans.
             lines.append("language: \(yamlQuoted(language))")

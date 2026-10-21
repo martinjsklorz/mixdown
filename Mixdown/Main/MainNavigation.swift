@@ -10,6 +10,8 @@ final class MainNavigation {
         case recorder
         /// The note at `selectedNoteID`, or the newest one.
         case notes
+        /// Questions about the notes. See `NoteChat`.
+        case chat
     }
 
     /// A block of a note, by its index in `NoteDocument.displayBlocks()`.

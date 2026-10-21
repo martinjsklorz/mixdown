@@ -1151,6 +1151,8 @@ public final class RecordingCoordinator {
                 translation: translation,
                 summary: summary,
                 trigger: session.trigger,
+                isCall: session.isCall,
+                template: summarizer == nil ? nil : template,
                 // Described up to now, as the user may have still been typing when it stopped.
                 moments: moments.map { Moment(id: $0.id, time: min($0.time, duration), text: $0.text) }
                     .sorted { $0.time < $1.time },

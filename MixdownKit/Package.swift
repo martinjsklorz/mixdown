@@ -14,6 +14,7 @@ let package = Package(
         .library(name: "MixdownAppleSpeech", targets: ["MixdownAppleSpeech"]),
         .library(name: "MixdownFoundationModels", targets: ["MixdownFoundationModels"]),
         .library(name: "MixdownAppleTranslation", targets: ["MixdownAppleTranslation"]),
+        .library(name: "MixdownNaturalLanguage", targets: ["MixdownNaturalLanguage"]),
         .library(name: "MixdownNotes", targets: ["MixdownNotes"]),
     ],
     dependencies: [
@@ -61,7 +62,11 @@ let package = Package(
         // models, which macOS downloads per language.
         .target(name: "MixdownAppleTranslation", dependencies: ["MixdownCore"]),
 
-        // Markdown rendering and persistence of notes.
+        // NaturalLanguage implementation of `TextEmbedder`: Apple's on-device contextual
+        // embedding models, which macOS downloads per script, for finding notes to answer from.
+        .target(name: "MixdownNaturalLanguage", dependencies: ["MixdownCore"]),
+
+        // Markdown rendering and persistence of notes, and finding what Chat answers from.
         .target(name: "MixdownNotes", dependencies: ["MixdownCore"]),
 
         .testTarget(name: "MixdownCoreTests", dependencies: ["MixdownCore"]),

@@ -29,12 +29,14 @@ window lives in the `MixdownKit` package:
 | `MixdownAudio` | Core Audio: microphone capture (HAL IO proc), system audio (process tap), the device list, and which apps use a microphone (for call detection). |
 | `MixdownSpeechSwift` | Nemotron, Qwen3-ASR and MOSS via [speech-swift](https://github.com/soniqo/speech-swift) (MLX). |
 | `MixdownAppleSpeech` | Apple's on-device model via `SpeechAnalyzer`. |
-| `MixdownFoundationModels` | Summaries and titles via Apple Intelligence. |
+| `MixdownFoundationModels` | Summaries and titles, and Chat's answers, via Apple Intelligence. |
+| `MixdownNaturalLanguage` | Embeddings of note passages for Chat, with Apple's on-device contextual embedding models. |
 | `MixdownAppleTranslation` | Translating transcripts with Apple's on-device models via the Translation framework. |
-| `MixdownNotes` | Rendering notes to Markdown, writing them, reading the notes folder back, and what Spotlight gets of each note (`NoteSearchIndex`; the app's `NoteSpotlight` hands it to Core Spotlight). |
+| `MixdownNotes` | Rendering notes to Markdown, writing them, reading the notes folder back, and what Spotlight gets of each note (`NoteSearchIndex`; the app's `NoteSpotlight` hands it to Core Spotlight). Also Chat's passages and search (`NoteChatIndex`) and the questions Mixdown answers by counting (`NoteQuestion`). |
 
 The speech engines sit behind one protocol (`TranscriptionEngine`), and so do the summarizer
-(`Summarizer`) and the translator (`Translator`). Speech models from any engine are listed in
+(`Summarizer`), the translator (`Translator`), and Chat's model (`NoteAnswerer`) and embeddings
+(`TextEmbedder`). Speech models from any engine are listed in
 `Mixdown/App/TranscriptionModel.swift`; `Mixdown/App/AppEnvironment.swift` wires everything together.
 
 ## In-app Help

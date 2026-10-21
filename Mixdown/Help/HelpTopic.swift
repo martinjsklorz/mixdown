@@ -8,6 +8,7 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
     case recording
     case calls
     case notes
+    case chat
     case speechModels = "speech-models"
     case summaries
     case notifications
@@ -31,6 +32,7 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
         case .recording: "Recording"
         case .calls: "Recording Calls"
         case .notes: "Notes"
+        case .chat: "Chat"
         case .speechModels: "Speech Models"
         case .summaries: "Summaries"
         case .notifications: "Notifications and Sounds"
@@ -46,6 +48,7 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
         case .recording: "record.circle"
         case .calls: "phone"
         case .notes: "doc.text"
+        case .chat: "bubble.left.and.text.bubble.right"
         case .speechModels: "waveform"
         case .summaries: "sparkles"
         case .notifications: "bell.badge"
@@ -263,6 +266,43 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             Mixdown tries again every 30 seconds and as soon as you choose another folder. Keep \
             Mixdown open until then; it warns you if you quit first.
             """
+        case .chat:
+            """
+            Ask questions across all your notes, like "What did we decide about the release?", under \
+            **Chat** (⌘3, or the speech bubbles next to Record in the sidebar). Apple Intelligence \
+            answers on your Mac from the lines of your notes that match the question best.
+
+            ## Citations
+
+            Each statement in an answer cites the lines it comes from, as small numbers, and the \
+            lines are listed below it with their note's title, date and the time they were said. \
+            Click a number or a line to open the note at that line. ⌘3 takes you back to the chat. \
+            If nothing in your notes answers the question, Chat says so.
+
+            ## Counting
+
+            Questions that ask how many, like "How many 1:1s did I have in September?", are \
+            counted by Mixdown itself, so the number is exact, and the answer lists the notes it \
+            counted. Mixdown understands, in English and German:
+
+            - **When**: today, yesterday, this or last week, month or year, the last 7 days, a \
+            month ("September" is the latest one), a year, or "since August".
+            - **What kind**: 1:1s, standups and client calls are notes summarized with that \
+            [template](mixdown-help:summaries), or with it in their title. Calls are recordings \
+            started from the call notification or automatically, and notes titled as a call.
+            - **About what**: "How many calls mentioned the budget?" counts the notes with that \
+            word.
+
+            ## Reading your notes
+
+            The first time you open Chat, Mixdown reads your notes in short passages and works out \
+            what each means with Apple's on-device language models, which macOS downloads once. \
+            You can ask while it reads, but answers may miss notes it hasn't read yet. After that, \
+            only new and changed notes are read again.
+
+            Without Apple Intelligence, Chat still counts notes and shows the lines that match a \
+            question best. **New Chat** in the toolbar starts over.
+            """
         case .speechModels:
             """
             Mixdown turns speech into text with a model that runs on your Mac. Choose one under \
@@ -398,6 +438,7 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             - ⌃⌥⌘M: Mark a moment while recording, from any app (change it under **Settings → General**)
             - ⌘1: Show Record
             - ⌘2: Show Notes
+            - ⌘3: Show Chat
             - ⌘F: Search recordings
             - ⌘0: Open the Mixdown window
             - ⇧⌘O: Open the notes folder

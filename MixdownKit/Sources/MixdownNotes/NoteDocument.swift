@@ -17,6 +17,12 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
     /// How the recording was started. `nil` for notes from before Mixdown recorded it, and ones
     /// edited to something else.
     public var trigger: RecordingTrigger?
+    /// Whether the recording was of a call: from the frontmatter's `call: true` or `trigger:
+    /// automatic`, or for notes from before Mixdown recorded that, a title worded as a call's.
+    public var isCall: Bool
+    /// The summary template the recording was summarized with, from the frontmatter's `template`.
+    /// `nil` for `general`, which Mixdown doesn't write, and for notes from before it did.
+    public var template: SummaryTemplate?
     /// The Markdown after the frontmatter.
     public var body: String
     /// The first text of the body as a single line of plain text. Empty if there is none.
@@ -52,10 +58,14 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
         let sources = fields["sources"].flatMap(Self.yamlFlowSequence) ?? scalars["source"].map { [$0] } ?? []
         self.sources = sources.filter { !$0.isEmpty }
         self.trigger = scalars["trigger"].flatMap(RecordingTrigger.init(rawValue:))
+        self.template = scalars["template"].flatMap(SummaryTemplate.init(rawValue:))
         // YAML's `true`, `True` and `TRUE`.
         self.isPinned = scalars["pinned"]?.lowercased() == "true"
         self.talkTimeline = Self.talkTimeline(fields: fields)
         self.snippet = Self.snippet(from: blocks)
+        self.isCall =
+            scalars["call"]?.lowercased() == "true" || trigger == .automatic || template == .clientCall
+            || NoteTitle.isWordedAsCall(title)
     }
 
     /// The body's blocks without a leading `# Title` that repeats `title`, which the window

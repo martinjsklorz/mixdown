@@ -10,6 +10,11 @@ the recording is transcribed. Only the note is saved, to the folder you chose.
 Notes are also added to Spotlight's index on your Mac, so you can search them there. Turn that off
 under **Settings → General → Show notes in Spotlight**.
 
+[Chat](chat.md) answers with Apple Intelligence on your Mac. The passages of your notes it reads,
+and their embeddings, are kept in Mixdown's container
+(`~/Library/Containers/app.mixdown.Mixdown/Data/Library/Application Support/ChatIndex.plist`), so
+only changed notes are read again.
+
 ## Permissions
 
 The first time, macOS asks for permission:
