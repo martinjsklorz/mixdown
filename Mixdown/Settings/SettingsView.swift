@@ -20,6 +20,9 @@ struct SettingsView: View {
             TranslationSettingsView()
                 .tabItem { tabLabel(.translation) }
                 .tag(MainNavigation.SettingsTab.translation)
+            VocabularySettingsView()
+                .tabItem { tabLabel(.vocabulary) }
+                .tag(MainNavigation.SettingsTab.vocabulary)
             NotificationsSettingsView()
                 .tabItem { tabLabel(.notifications) }
                 .tag(MainNavigation.SettingsTab.notifications)
@@ -33,10 +36,11 @@ struct SettingsView: View {
     /// Tall enough for each tab without scrolling, including the warnings General can show.
     private func height(for tab: MainNavigation.SettingsTab) -> CGFloat {
         switch tab {
-        case .general: 540
+        case .general: 620
         case .recording: 540
         case .transcription: 600
         case .translation: 360
+        case .vocabulary: 520
         case .notifications: 460
         case .design: 420
         }

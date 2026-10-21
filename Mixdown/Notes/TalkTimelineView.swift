@@ -7,6 +7,8 @@ struct TalkTimelineView: View {
     /// Each side's bars reach this high for a minute of talking.
     private static let barHeight: CGFloat = 22
     private static let maxBarWidth: CGFloat = 12
+    /// A short call's columns widen to this, so the time labels under them still fit side by side.
+    private static let minBarsWidth: CGFloat = 96
 
     let timeline: TalkTimeline
 
@@ -29,6 +31,7 @@ struct TalkTimelineView: View {
                 }
                 .font(.caption2)
                 .monospacedDigit()
+                .lineLimit(1)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: barsWidth)
             }
@@ -70,7 +73,7 @@ struct TalkTimelineView: View {
     }
 
     /// One column per minute, the user's bar above the others'. Narrower columns for longer calls,
-    /// so a long one still fits.
+    /// so a long one still fits, and wider ones for a call of a minute or two.
     private var bars: some View {
         HStack(alignment: .center, spacing: columnSpacing) {
             ForEach(0..<timeline.minuteCount, id: \.self) { minute in
@@ -80,7 +83,7 @@ struct TalkTimelineView: View {
                     bar(timeline.systemAudio[minute], color: systemAudioColor)
                         .frame(height: Self.barHeight, alignment: .top)
                 }
-                .frame(maxWidth: Self.maxBarWidth)
+                .frame(maxWidth: columnWidth)
                 .contentShape(Rectangle())
                 .help(help(forMinute: minute))
             }
@@ -103,10 +106,15 @@ struct TalkTimelineView: View {
 
     private var columnSpacing: CGFloat { timeline.minuteCount > 60 ? 1 : 2 }
 
+    private var columnWidth: CGFloat {
+        let count = CGFloat(max(timeline.minuteCount, 1))
+        return max(Self.maxBarWidth, (Self.minBarsWidth - (count - 1) * columnSpacing) / count)
+    }
+
     /// As wide as the columns at their widest, so a short call's bars don't stretch across.
     private var barsWidth: CGFloat {
         let count = CGFloat(timeline.minuteCount)
-        return count * Self.maxBarWidth + (count - 1) * columnSpacing
+        return count * columnWidth + (count - 1) * columnSpacing
     }
 
     /// E.g. "12:00–13:00: Me 35 s, Others 12 s".

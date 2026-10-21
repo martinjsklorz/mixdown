@@ -17,6 +17,12 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
     /// How the recording was started. `nil` for notes from before Mixdown recorded it, and ones
     /// edited to something else.
     public var trigger: RecordingTrigger?
+    /// Whether the recording was of a call: from the frontmatter's `call: true` or `trigger:
+    /// automatic`, or for notes from before Mixdown recorded that, a title worded as a call's.
+    public var isCall: Bool
+    /// The summary template the recording was summarized with, from the frontmatter's `template`.
+    /// `nil` for `general`, which Mixdown doesn't write, and for notes from before it did.
+    public var template: SummaryTemplate?
     /// The Markdown after the frontmatter.
     public var body: String
     /// The first text of the body as a single line of plain text. Empty if there is none.
@@ -52,10 +58,14 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
         let sources = fields["sources"].flatMap(Self.yamlFlowSequence) ?? scalars["source"].map { [$0] } ?? []
         self.sources = sources.filter { !$0.isEmpty }
         self.trigger = scalars["trigger"].flatMap(RecordingTrigger.init(rawValue:))
+        self.template = scalars["template"].flatMap(SummaryTemplate.init(rawValue:))
         // YAML's `true`, `True` and `TRUE`.
         self.isPinned = scalars["pinned"]?.lowercased() == "true"
         self.talkTimeline = Self.talkTimeline(fields: fields)
         self.snippet = Self.snippet(from: blocks)
+        self.isCall =
+            scalars["call"]?.lowercased() == "true" || trigger == .automatic || template == .clientCall
+            || NoteTitle.isWordedAsCall(title)
     }
 
     /// The body's blocks without a leading `# Title` that repeats `title`, which the window
@@ -241,6 +251,70 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
             lines.removeFirst(lines.count > 2 && lines[2].isEmpty ? 3 : 2)
         }
         return lines.joined(separator: "\n")
+    }
+
+    // MARK: - Vocabulary
+
+    /// What `corrected(_:by:)` replaces with, made once for many notes: one replacer for the
+    /// frontmatter's title, one for Markdown, where both what's matched and what's put in are
+    /// escaped the way `MarkdownNoteRenderer` escapes the transcript.
+    struct VocabularyCorrection {
+        let plain: Vocabulary.Replacer
+        let markdown: Vocabulary.Replacer
+
+        init(_ vocabulary: Vocabulary) {
+            plain = Vocabulary.Replacer(vocabulary)
+            markdown = Vocabulary.Replacer(vocabulary, escaping: MarkdownNoteRenderer.escapedMarkdown)
+        }
+
+        var isEmpty: Bool { plain.isEmpty }
+    }
+
+    /// `contents` with the vocabulary applied to the frontmatter's `title` and to the body, or
+    /// `nil` if nothing changes. Headings of level 2 and below are left alone, as they name the
+    /// sections Mixdown and other apps look for, like `## Transcript`; so are code blocks. Line
+    /// endings become `\n`.
+    static func corrected(_ contents: String, by correction: VocabularyCorrection) -> String? {
+        var lines = normalizedLines(contents)
+        var isChanged = false
+        let replace = { (index: Int, line: String) in
+            guard line != lines[index] else { return }
+            lines[index] = line
+            isChanged = true
+        }
+
+        var bodyStart = 0
+        if let end = frontmatterEnd(lines) {
+            if let field = fieldLines("title", in: lines, frontmatterEnd: end), field.count == 1,
+                let colon = lines[field.lowerBound].firstIndex(of: ":")
+            {
+                let raw = lines[field.lowerBound][lines[field.lowerBound].index(after: colon)...]
+                    .trimmingCharacters(in: .whitespaces)
+                let title = yamlScalar(raw)
+                let corrected = correction.plain.replace(in: title)
+                if corrected != title {
+                    replace(field.lowerBound, "title: \(MarkdownNoteRenderer.yamlQuoted(corrected))")
+                }
+            }
+            bodyStart = end + 1
+        }
+
+        var fence: Substring?
+        for index in lines.indices.dropFirst(bodyStart) {
+            if let open = fence {
+                if Parser.isClosingFence(lines[index], for: open) { fence = nil }
+                continue
+            }
+            let trimmed = lines[index].trimmingCharacters(in: .whitespaces)
+            if let (open, _) = Parser.openingFence(trimmed) {
+                fence = open
+            } else if let (level, _) = Parser.atxHeading(trimmed), level > 1 {
+                continue
+            } else {
+                replace(index, correction.markdown.replace(in: lines[index]))
+            }
+        }
+        return isChanged ? lines.joined(separator: "\n") : nil
     }
 
     // MARK: - Frontmatter

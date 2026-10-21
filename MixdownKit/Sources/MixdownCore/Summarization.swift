@@ -132,6 +132,23 @@ public protocol Summarizer: Sendable {
     /// Summarizes a transcript, which isn't empty, in the shape of `template`. Honors task
     /// cancellation.
     func summarize(_ transcript: Transcript, template: SummaryTemplate) async throws -> NoteSummary
+
+    /// Tells someone who drifted off what they missed in `transcript`, the last few minutes of a
+    /// recording still under way, which isn't empty: a few short points, in the order they came
+    /// up. Written in `language`, a BCP 47 identifier, or with `nil` in the transcript's. Honors
+    /// task cancellation.
+    func catchUp(on transcript: Transcript, language: String?) async throws -> [String]
+}
+
+extension Summarizer {
+    /// The key points of a general summary, or else its overview, for a backend without a
+    /// catch-up of its own. Ignores `language`.
+    public func catchUp(on transcript: Transcript, language: String?) async throws -> [String] {
+        let summary = try await summarize(transcript, template: .general)
+        let points = summary.keyPoints.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let overview = summary.overview.trimmingCharacters(in: .whitespacesAndNewlines)
+        return points.isEmpty && !overview.isEmpty ? [overview] : points
+    }
 }
 
 public enum SummarizationError: LocalizedError, Sendable, Equatable {
@@ -326,7 +343,7 @@ public struct ChunkedSummarizer: Sendable {
     /// Hebrew or Arabic; and a whole token per Chinese, Japanese, Korean, Thai or Indic letter or
     /// vowel sign. Tokenizers fall back to bytes for text they've seen little of, so scripts
     /// further from English take more tokens.
-    static func estimatedTokens(in text: some StringProtocol) -> Int {
+    public static func estimatedTokens(in text: some StringProtocol) -> Int {
         (text.utf8.count + 2) / 3
     }
 

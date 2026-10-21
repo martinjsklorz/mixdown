@@ -4,6 +4,7 @@ import MixdownAppleTranslation
 import MixdownAudio
 import MixdownCore
 import MixdownFoundationModels
+import MixdownNaturalLanguage
 import MixdownNotes
 import MixdownSpeechSwift
 import Observation
@@ -22,6 +23,8 @@ final class AppEnvironment {
     let translator: any Translator
     let notesFolder: NotesFolderStore
     let noteTrash: NoteTrash
+    /// Chat across the notes, kept while the main window is closed.
+    let noteChat: NoteChat
     private let noteReady: NoteReady
     private let noteSpotlight = NoteSpotlight()
     /// Created at launch, as it handles buttons on notifications from an earlier run.
@@ -51,6 +54,11 @@ final class AppEnvironment {
     /// The moment just marked while the user writes a note on it under the notch; `nil` once the
     /// field closes. See `markMoment()`.
     private(set) var momentDraft: MomentDraft?
+    /// The catch-up asked for last, while it's summed up and shown under the notch; `nil` once
+    /// its card closes. See `catchUp()`.
+    private(set) var catchUpRequest: CatchUpRequest?
+    /// How many of the last minutes of a recording `catchUp()` sums up.
+    private(set) var catchUpMinutes: Int
 
     private let settings: AppSettings
     /// Shared by every coordinator, so the canceller it keeps loaded survives a model change.
@@ -65,6 +73,10 @@ final class AppEnvironment {
     @ObservationIgnored private var momentEntry: MomentEntry?
     /// Closes the field for `momentDraft` if nothing is typed in time.
     @ObservationIgnored private var momentDraftTimeout: Task<Void, Never>?
+    /// The card for `catchUpRequest`. Created the first time it's shown.
+    @ObservationIgnored private var catchUpCard: CatchUpCard?
+    /// Sums up `catchUpRequest`, then closes its card once it's had time to be read.
+    @ObservationIgnored private var catchingUp: Task<Void, Never>?
     /// Opens Record in the main window.
     private let showRecorder: () -> Void
     /// The note `observeNewNotes` announced last.
@@ -82,6 +94,8 @@ final class AppEnvironment {
         let translator: any Translator = AppleTranslator()
         let noteTrash = NoteTrash()
         let noteReady = NoteReady(navigation: navigation)
+        // Likewise the ONE place Chat's model and embeddings are chosen.
+        self.noteChat = NoteChat(answerer: AppleIntelligenceAnswerer(), embedder: NaturalLanguageEmbedder())
         self.settings = settings
         self.model = model
         self.summarizer = summarizer
@@ -107,16 +121,19 @@ final class AppEnvironment {
         self.showsRecordingInDynamicIsland = settings.showsRecordingInDynamicIsland
         self.islandLayout = settings.islandLayout
         self.indexesNotesInSpotlight = settings.indexesNotesInSpotlight
+        self.catchUpMinutes = settings.catchUpMinutes
 
         startCoordinatorTasks()
         observeRecording()
         observeDynamicIsland()
         observeMoments()
+        observeCatchUp()
         observePhaseForCues()
         observeNotesFolder()
         observeNewNotes()
         listenForRecordingShortcut()
         listenForMomentShortcut()
+        listenForCatchUpShortcut()
         startCallPrompt()
     }
 
@@ -151,6 +168,7 @@ final class AppEnvironment {
         )
         coordinator.cancelsEcho = settings.cancelsEcho
         coordinator.translatesLiveText = settings.translatesLiveText
+        coordinator.vocabulary = settings.vocabulary
         return coordinator
     }
 
@@ -288,6 +306,32 @@ final class AppEnvironment {
             entry.show(draft)
         } else {
             momentEntry?.hide()
+        }
+    }
+
+    /// Takes the Catch Me Up shortcut only while recording, so other apps get those keys
+    /// otherwise, and shows the card for `catchUpRequest` while there is one. A recording that
+    /// stops closes the card.
+    private func observeCatchUp() {
+        let (isRecording, request) = withObservationTracking {
+            (coordinator.isRecording, catchUpRequest)
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.observeCatchUp() }
+        }
+        if isRecording {
+            KeyboardShortcuts.enable(.catchUp)
+        } else {
+            KeyboardShortcuts.disable(.catchUp)
+            closeCatchUp()
+        }
+        if let request, isRecording {
+            let card =
+                catchUpCard
+                ?? CatchUpCard(environment: self, islandFrame: { [weak self] in self?.dynamicIsland?.frame })
+            catchUpCard = card
+            card.show(request)
+        } else {
+            catchUpCard?.hide()
         }
     }
 
@@ -480,6 +524,8 @@ final class AppEnvironment {
             NSSound.beep()
             return
         }
+        // Both would go under the notch.
+        closeCatchUp()
         let draft = MomentDraft(time: time)
         momentDraft = draft
         momentDraftTimeout?.cancel()
@@ -503,6 +549,100 @@ final class AppEnvironment {
         momentDraft = nil
         momentDraftTimeout?.cancel()
         momentDraftTimeout = nil
+    }
+
+    // MARK: Catch Me Up
+
+    /// How long a catch-up stays up once it's in: long enough to read, at about three words a
+    /// second, and at least 15 seconds. A failure, which only says why, goes sooner.
+    private static func catchUpReadingTime(for state: CatchUpRequest.State) -> Duration {
+        switch state {
+        case .summarizing:
+            return .zero
+        case .ready(let catchUp):
+            let words = catchUp.points.reduce(0) { $0 + $1.split(whereSeparator: \.isWhitespace).count }
+            return max(.seconds(15), .seconds(5) + .milliseconds(words * 350))
+        case .failed:
+            return .seconds(8)
+        }
+    }
+
+    /// Starts on the Catch Me Up shortcut, from any app. `observeCatchUp()` takes it only while
+    /// recording.
+    private func listenForCatchUpShortcut() {
+        KeyboardShortcuts.onKeyUp(for: .catchUp) { [weak self] in
+            self?.catchUp()
+        }
+        KeyboardShortcuts.disable(.catchUp)
+    }
+
+    /// Has Apple Intelligence sum up the last `catchUpMinutes` of the live text, on this Mac, in a
+    /// card under the notch, for when the user drifted off. If the card is open already, closes
+    /// it instead. It closes by itself once it's had time to be read, unless the pointer is over
+    /// it. Beeps when not recording.
+    func catchUp() {
+        guard catchUpRequest == nil else {
+            closeCatchUp()
+            return
+        }
+        guard coordinator.isRecording else {
+            NSSound.beep()
+            return
+        }
+        // Both would go under the notch.
+        closeMomentDraft()
+        let request = CatchUpRequest(minutes: catchUpMinutes)
+        catchUpRequest = request
+        catchingUp = Task { [weak self, coordinator, summarizer] in
+            do {
+                let catchUp = try await coordinator.catchUp(
+                    onLast: TimeInterval(request.minutes * 60),
+                    with: summarizer
+                )
+                request.state = .ready(catchUp)
+                Self.announce(catchUp.points.joined(separator: " "))
+            } catch {
+                if error is CancellationError || Task.isCancelled { return }
+                let message: String
+                if case SummarizationError.unavailable(let reason) = error {
+                    // What to turn on, without "Summaries aren't available".
+                    message = reason
+                } else {
+                    message = error.localizedDescription
+                }
+                request.state = .failed(message)
+                Self.announce(message)
+            }
+            try? await Task.sleep(for: Self.catchUpReadingTime(for: request.state))
+            // Not while it's being read.
+            while !Task.isCancelled, request.isHovered {
+                try? await Task.sleep(for: .seconds(1))
+            }
+            guard !Task.isCancelled, let self, self.catchUpRequest === request else { return }
+            self.closeCatchUp()
+        }
+    }
+
+    /// Closes the card for `catchUpRequest`, stopping the catch-up if it's still being summed up.
+    func closeCatchUp() {
+        guard catchUpRequest != nil else { return }
+        catchUpRequest = nil
+        catchingUp?.cancel()
+        catchingUp = nil
+    }
+
+    /// Reads `text` out with VoiceOver, as the card never has the focus.
+    private static func announce(_ text: String) {
+        NSAccessibility.post(
+            element: NSApp as Any,
+            notification: .announcementRequested,
+            userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue]
+        )
+    }
+
+    func setCatchUpMinutes(_ minutes: Int) {
+        settings.catchUpMinutes = minutes
+        catchUpMinutes = settings.catchUpMinutes
     }
 
     // MARK: Design
@@ -598,6 +738,32 @@ final class AppEnvironment {
             settings.translatesLiveText = newValue
             coordinator.translatesLiveText = newValue
         }
+    }
+
+    // MARK: Vocabulary
+
+    /// Words to correct in transcripts. Takes effect from the next transcription; notes already
+    /// written change only with `correctNotes(with:)`.
+    var vocabulary: Vocabulary {
+        get { coordinator.vocabulary }
+        set {
+            settings.vocabulary = newValue
+            coordinator.vocabulary = newValue
+        }
+    }
+
+    /// Whether `correctNotes(with:)` is running.
+    private(set) var isCorrectingNotes = false
+
+    /// Applies `vocabulary` to every note in the notes folder, off the main thread. `nil` without
+    /// a notes folder. The main window picks up the changed files as it watches the folder.
+    func correctNotes(with vocabulary: Vocabulary) async throws -> NoteLibrary.VocabularyChanges? {
+        guard let directory = notesFolder.directory else { return nil }
+        isCorrectingNotes = true
+        defer { isCorrectingNotes = false }
+        return try await Task.detached(priority: .userInitiated) {
+            try NoteLibrary.applyVocabulary(vocabulary, toNotesIn: directory)
+        }.value
     }
 
     // MARK: Notes

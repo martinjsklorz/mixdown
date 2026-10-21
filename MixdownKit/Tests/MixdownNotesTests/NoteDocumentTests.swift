@@ -34,6 +34,27 @@ struct NoteDocumentTests {
         #expect(unknown.trigger == nil)
     }
 
+    @Test func readsBackKindOfRecording() {
+        let rendered = MarkdownNoteRenderer.render(NoteFixtures.note(isCall: true, template: .standup))
+        let document = NoteDocument(url: url, contents: rendered, fileDate: fileDate)
+        #expect(document.isCall)
+        #expect(document.template == .standup)
+
+        let memo = NoteDocument(
+            url: url,
+            contents: MarkdownNoteRenderer.render(NoteFixtures.note()),
+            fileDate: fileDate
+        )
+        #expect(!memo.isCall)
+        #expect(memo.template == nil)
+
+        // From before Mixdown wrote `call`.
+        let titled = NoteDocument(url: url, contents: "---\ntitle: \"Anruf zu Budget\"\n---\n", fileDate: fileDate)
+        #expect(titled.isCall)
+        let untitled = NoteDocument(url: url, contents: "---\ntitle: \"Call about\"\n---\n", fileDate: fileDate)
+        #expect(!untitled.isCall)
+    }
+
     @Test func readsPinned() {
         let note = NoteFixtures.note()
         #expect(!NoteDocument(url: url, contents: MarkdownNoteRenderer.render(note), fileDate: fileDate).isPinned)

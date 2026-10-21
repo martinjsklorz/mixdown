@@ -2,7 +2,7 @@ import Foundation
 
 /// Names notes: after the summary's title where there is one, in the form of a call for calls, or
 /// else after the time recorded.
-enum NoteTitle {
+public enum NoteTitle {
     /// The words put around a call's title, e.g. `Call about ` before it.
     private struct CallWording {
         var prefix: String
@@ -40,6 +40,15 @@ enum NoteTitle {
         guard !title.isEmpty else { return "Recording \(date.formatted(date: .abbreviated, time: .shortened))" }
         guard let wording else { return title }
         return wording.prefix + title + wording.suffix
+    }
+
+    /// Whether `title` is worded as a call's, in any of the languages, e.g. "Anruf zu Budget".
+    public static func isWordedAsCall(_ title: String) -> Bool {
+        let title = cleaned(title)
+        return callWordings.values.contains { wording in
+            let stripped = removing(wording, from: title)
+            return stripped != title && !cleaned(stripped).isEmpty
+        }
     }
 
     private static func callWording(for language: String?) -> CallWording {

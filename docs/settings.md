@@ -14,6 +14,9 @@ Press ⌘, or click the cog above the sidebar to open Settings. **Settings…** 
   the shortcut and press new keys to change it.
 - **Global Shortcuts → Mark moment while recording**: ⌃⌥⌘M. Clear it to turn it off. See
   [Recording](recording.md#mark-a-moment).
+- **Global Shortcuts → Catch me up while recording**: ⌃⌥⌘C. Clear it to turn it off.
+  **Catch up on the last** sets how many minutes it sums up: 1, 2, 5 (the default), 10 or 15. See
+  [Recording](recording.md#catch-up).
 - **Startup → Launch Mixdown at login**. If macOS needs your approval, allow Mixdown in System
   Settings › General › Login Items.
 
@@ -42,6 +45,13 @@ Press ⌘, or click the cog above the sidebar to open Settings. **Settings…** 
   translate your recordings, with a **Download** button.
 - **Translate live text while recording**: on by default, with a live model. Translates the live
   text as it's spoken. See [Translation](translation.md).
+
+## Vocabulary
+
+- Words the speech model gets wrong: **Write as** how each is written and **Heard as** what the
+  model writes instead, separated by commas. **Add Word** adds a row, the minus button removes one.
+- **Correct Existing Notes…** makes the same corrections in every note in the notes folder. See
+  [Speech models](speech-models.md#vocabulary).
 
 ## Notifications
 

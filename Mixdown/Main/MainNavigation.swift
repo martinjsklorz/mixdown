@@ -10,6 +10,8 @@ final class MainNavigation {
         case recorder
         /// The note at `selectedNoteID`, or the newest one.
         case notes
+        /// Questions about the notes. See `NoteChat`.
+        case chat
     }
 
     /// A block of a note, by its index in `NoteDocument.displayBlocks()`.
@@ -23,6 +25,7 @@ final class MainNavigation {
         case recording = "Recording"
         case transcription = "Transcription"
         case translation = "Translation"
+        case vocabulary = "Vocabulary"
         case notifications = "Notifications"
         case design = "Design"
 
@@ -34,6 +37,7 @@ final class MainNavigation {
             case .recording: "mic"
             case .transcription: "waveform"
             case .translation: "translate"
+            case .vocabulary: "character.book.closed"
             case .notifications: "bell.badge"
             case .design: "paintbrush"
             }

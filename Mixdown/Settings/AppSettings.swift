@@ -28,6 +28,8 @@ struct AppSettings {
         /// Whether the global recording shortcut is on. Absent means yes. The shortcut itself is
         /// stored by KeyboardShortcuts.
         static let recordingShortcutEnabled = "recordingShortcutEnabled"
+        /// How many of the last minutes of a recording Catch Me Up sums up. Absent means 5.
+        static let catchUpMinutes = "catchUpMinutes"
         /// Whether notes get a summary. Absent means yes.
         static let summarizesNotes = "summarizesNotes"
         /// A `SummaryTemplate` raw value for recordings started by hand. Absent means `.general`.
@@ -39,6 +41,8 @@ struct AppSettings {
         /// Whether the live text is translated into that language while recording, too. Absent
         /// means yes.
         static let translatesLiveText = "translatesLiveText"
+        /// A `Vocabulary` as JSON. Absent means no words.
+        static let vocabulary = "vocabulary"
         /// Whether Mixdown plays audio cues at all. Absent means yes.
         static let playsSounds = "playsSounds"
         /// Whether to post notifications when calls start and end. Absent means yes.
@@ -131,6 +135,19 @@ struct AppSettings {
         nonmutating set { defaults.set(newValue, forKey: Key.recordingShortcutEnabled) }
     }
 
+    /// One of `catchUpMinuteChoices`.
+    var catchUpMinutes: Int {
+        get {
+            let minutes = defaults.integer(forKey: Key.catchUpMinutes)
+            return Self.catchUpMinuteChoices.contains(minutes) ? minutes : 5
+        }
+        nonmutating set { defaults.set(newValue, forKey: Key.catchUpMinutes) }
+    }
+
+    /// What Settings offers for `catchUpMinutes`. About ten minutes of talking fill the on-device
+    /// model's context, so more is caught up on in parts, which takes longer.
+    static let catchUpMinuteChoices = [1, 2, 5, 10, 15]
+
     var summarizesNotes: Bool {
         get { defaults.object(forKey: Key.summarizesNotes) as? Bool ?? true }
         nonmutating set { defaults.set(newValue, forKey: Key.summarizesNotes) }
@@ -171,6 +188,15 @@ struct AppSettings {
     var translatesLiveText: Bool {
         get { defaults.object(forKey: Key.translatesLiveText) as? Bool ?? true }
         nonmutating set { defaults.set(newValue, forKey: Key.translatesLiveText) }
+    }
+
+    /// Words to correct in transcripts. Empty if none were added, or what's stored can't be read.
+    var vocabulary: Vocabulary {
+        get {
+            defaults.data(forKey: Key.vocabulary).flatMap { try? JSONDecoder().decode(Vocabulary.self, from: $0) }
+                ?? Vocabulary()
+        }
+        nonmutating set { defaults.set(try? JSONEncoder().encode(newValue), forKey: Key.vocabulary) }
     }
 
     /// `nil` means auto-detect.

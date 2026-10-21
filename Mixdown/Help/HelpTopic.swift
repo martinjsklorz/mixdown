@@ -8,6 +8,7 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
     case recording
     case calls
     case notes
+    case chat
     case speechModels = "speech-models"
     case summaries
     case notifications
@@ -31,6 +32,7 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
         case .recording: "Recording"
         case .calls: "Recording Calls"
         case .notes: "Notes"
+        case .chat: "Chat"
         case .speechModels: "Speech Models"
         case .summaries: "Summaries"
         case .notifications: "Notifications and Sounds"
@@ -46,6 +48,7 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
         case .recording: "record.circle"
         case .calls: "phone"
         case .notes: "doc.text"
+        case .chat: "bubble.left.and.text.bubble.right"
         case .speechModels: "waveform"
         case .summaries: "sparkles"
         case .notifications: "bell.badge"
@@ -150,6 +153,17 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             elsewhere, or 5 seconds without typing drops it. The note lists each moment under \
             **Moments** at the end of its summary, with its time and what was being said.
 
+            ## Catch up
+
+            Drifted off? Press ⌃⌥⌘C in any app while recording, or choose **Recording → Catch Me \
+            Up**. Apple Intelligence sums up the last few minutes of the live text in a few points, \
+            in a card under the notch. It runs on your Mac, so nothing is sent anywhere and it costs \
+            nothing. Click the card or press the shortcut again to close it; otherwise it closes once \
+            you've had time to read it. It covers 5 minutes unless you choose otherwise under \
+            **Settings → General → Global Shortcuts**. It needs the live model and Apple \
+            Intelligence turned on, and is in the language the live text is translated into, if it \
+            is.
+
             ## Inputs
 
             Pick inputs in the **Recording** menu, in the menu bar, or under **Settings → \
@@ -235,6 +249,8 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             `pinned: true` in the note's frontmatter.
             - **Rename** it. This changes both the title inside the note and its file name.
             - **Copy Transcript** as plain text.
+            - **Add to Vocabulary** a word the speech model got wrong: select it first. See \
+            [Speech Models](mixdown-help:speech-models).
             - **Share** it.
             - **Delete** it (⌘⌫, or Delete in the sidebar), which moves it to the Trash. Mixdown \
             asks first (turn that off under **Settings → General**), then shows a notification with \
@@ -262,6 +278,43 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             folder. A note finished while the folder was away is kept until it can be saved: \
             Mixdown tries again every 30 seconds and as soon as you choose another folder. Keep \
             Mixdown open until then; it warns you if you quit first.
+            """
+        case .chat:
+            """
+            Ask questions across all your notes, like "What did we decide about the release?", under \
+            **Chat** (⌘3, or the speech bubbles next to Record in the sidebar). Apple Intelligence \
+            answers on your Mac from the lines of your notes that match the question best.
+
+            ## Citations
+
+            Each statement in an answer cites the lines it comes from, as small numbers, and the \
+            lines are listed below it with their note's title, date and the time they were said. \
+            Click a number or a line to open the note at that line. ⌘3 takes you back to the chat. \
+            If nothing in your notes answers the question, Chat says so.
+
+            ## Counting
+
+            Questions that ask how many, like "How many 1:1s did I have in September?", are \
+            counted by Mixdown itself, so the number is exact, and the answer lists the notes it \
+            counted. Mixdown understands, in English and German:
+
+            - **When**: today, yesterday, this or last week, month or year, the last 7 days, a \
+            month ("September" is the latest one), a year, or "since August".
+            - **What kind**: 1:1s, standups and client calls are notes summarized with that \
+            [template](mixdown-help:summaries), or with it in their title. Calls are recordings \
+            started from the call notification or automatically, and notes titled as a call.
+            - **About what**: "How many calls mentioned the budget?" counts the notes with that \
+            word.
+
+            ## Reading your notes
+
+            The first time you open Chat, Mixdown reads your notes in short passages and works out \
+            what each means with Apple's on-device language models, which macOS downloads once. \
+            You can ask while it reads, but answers may miss notes it hasn't read yet. After that, \
+            only new and changed notes are read again.
+
+            Without Apple Intelligence, Chat still counts notes and shows the lines that match a \
+            question best. **New Chat** in the toolbar starts over.
             """
         case .speechModels:
             """
@@ -298,6 +351,18 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             the menu. You'll need to download it again before recording with it. Apple Speech \
             belongs to macOS, which removes it when no app needs it any more, so it has no trash \
             button.
+
+            ## Vocabulary
+
+            Names and jargon often come out wrong, like "cooper netties" for Kubernetes. Add them \
+            under **Settings → Vocabulary**: how to write each one, and what the model writes \
+            instead, with commas between several ways it's heard. Every transcript is corrected \
+            before it's summarized, ignoring case and only for whole words.
+
+            To add a word from a note, select it and click the book button above the note, or \
+            choose **File → Add to Vocabulary…**. Leave **Correct it in existing notes** on to fix \
+            it in all your notes right away. **Correct Existing Notes…** in Settings does that for \
+            the whole vocabulary. This changes the note files and can't be undone.
 
             ## Speakers
 
@@ -396,8 +461,11 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             - ⇧⌘P: Pause or resume recording
             - ⌃⌥⌘R: Start or stop recording from any app (change it under **Settings → General**)
             - ⌃⌥⌘M: Mark a moment while recording, from any app (change it under **Settings → General**)
+            - ⌃⌥⌘C: Catch up on the last few minutes while recording, from any app (change it under \
+            **Settings → General**)
             - ⌘1: Show Record
             - ⌘2: Show Notes
+            - ⌘3: Show Chat
             - ⌘F: Search recordings
             - ⌘0: Open the Mixdown window
             - ⇧⌘O: Open the notes folder

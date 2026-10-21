@@ -485,6 +485,7 @@ final class MockSummarizer: Summarizer {
     private let error: (any Error)?
     private let received = LockedValue<[Transcript]>([])
     private let receivedTemplateList = LockedValue<[SummaryTemplate]>([])
+    private let receivedCatchUpList = LockedValue<[(transcript: Transcript, language: String?)]>([])
 
     init(
         summary: NoteSummary = NoteSummary(overview: "A test."),
@@ -498,12 +499,21 @@ final class MockSummarizer: Summarizer {
 
     var receivedTranscripts: [Transcript] { received.current }
     var receivedTemplates: [SummaryTemplate] { receivedTemplateList.current }
+    /// What `catchUp(on:language:)` was given, separately from the summaries.
+    var receivedCatchUps: [(transcript: Transcript, language: String?)] { receivedCatchUpList.current }
 
     func summarize(_ transcript: Transcript, template: SummaryTemplate) async throws -> NoteSummary {
         received.update { $0.append(transcript) }
         receivedTemplateList.update { $0.append(template) }
         if let error { throw error }
         return summary
+    }
+
+    /// The summary's key points, as the default catch-up would make them.
+    func catchUp(on transcript: Transcript, language: String?) async throws -> [String] {
+        receivedCatchUpList.update { $0.append((transcript, language)) }
+        if let error { throw error }
+        return summary.keyPoints
     }
 }
 

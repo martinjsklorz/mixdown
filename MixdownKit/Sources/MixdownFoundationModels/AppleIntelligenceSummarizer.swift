@@ -34,6 +34,12 @@ enum SystemModelSummary {
     static let minimumPieceTokens = 400
 
     static var availability: SummarizerAvailability {
+        availability(for: "to get summaries")
+    }
+
+    /// Whether the model can be used, and if not, why; `purpose` finishes the sentence about
+    /// turning Apple Intelligence on, e.g. "to get summaries".
+    static func availability(for purpose: String) -> SummarizerAvailability {
         switch SystemLanguageModel.default.availability {
         case .available:
             return .available
@@ -42,7 +48,7 @@ enum SystemModelSummary {
             case .deviceNotEligible:
                 return .unavailable(reason: "This Mac doesn't support Apple Intelligence.")
             case .appleIntelligenceNotEnabled:
-                return .unavailable(reason: "Turn on Apple Intelligence in System Settings to get summaries.")
+                return .unavailable(reason: "Turn on Apple Intelligence in System Settings \(purpose).")
             case .modelNotReady:
                 return .unavailable(reason: "Apple Intelligence is still getting ready. Try again later.")
             @unknown default:

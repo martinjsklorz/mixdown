@@ -120,6 +120,9 @@ public final class RecordingCoordinator {
     }
     /// Speaker names for multi-source recordings.
     public var sourceLabels: SourceLabels
+    /// Words to correct in each transcript, before it's translated and summarized. Read once the
+    /// recording is transcribed.
+    public var vocabulary = Vocabulary()
     /// Whether to take the echo of the system audio out of the microphones while both record, if
     /// there's an `echoCancellation`. Changes apply to the next recording.
     public var cancelsEcho = true
@@ -1117,7 +1120,7 @@ public final class RecordingCoordinator {
         phase = .transcribing(progress: 0)
         do {
             try await prepareModelIfMissing()
-            let transcript: Transcript
+            var transcript: Transcript
             var trackFailure: TrackFailure?
             if engine.transcribesLive {
                 transcript = transcriptFromLiveText(tracks, language: session.options.language)
@@ -1131,6 +1134,7 @@ public final class RecordingCoordinator {
             } else {
                 (transcript, trackFailure) = try await transcribeSeparately(tracks, session: session)
             }
+            transcript = vocabulary.apply(to: transcript)
             let (translation, translationError) = await translate(transcript)
             let template = recordingSummaryTemplate ?? (session.isCall ? callSummaryTemplate : summaryTemplate)
             // The template can't change once the summary is under way.
@@ -1151,6 +1155,8 @@ public final class RecordingCoordinator {
                 translation: translation,
                 summary: summary,
                 trigger: session.trigger,
+                isCall: session.isCall,
+                template: summarizer == nil ? nil : template,
                 // Described up to now, as the user may have still been typing when it stopped.
                 moments: moments.map { Moment(id: $0.id, time: min($0.time, duration), text: $0.text) }
                     .sorted { $0.time < $1.time },
@@ -1547,6 +1553,32 @@ public final class RecordingCoordinator {
         moments.append(moment)
         logger.info("Moment added at \(time, format: .fixed(precision: 1)) s")
         return moment
+    }
+
+    /// Sums up the last `duration` seconds of the live text with `summarizer`, for someone who
+    /// drifted off: in the language the live text is translated into, if it is, else the
+    /// recording's. Works paused, too, up to where it paused.
+    ///
+    /// Throws `CatchUpError` when not recording, without live text, or if nothing (worth summing
+    /// up) was said in that time, and `SummarizationError` if `summarizer` isn't available or
+    /// fails.
+    public func catchUp(onLast duration: TimeInterval, with summarizer: any Summarizer) async throws -> CatchUp {
+        guard let session, let time = momentTime else { throw CatchUpError.notRecording }
+        guard showsLiveTranscript else { throw CatchUpError.noLiveText }
+        if case .unavailable(let reason) = summarizer.availability {
+            throw SummarizationError.unavailable(reason)
+        }
+        let transcript = liveTranscript.transcript(since: time - duration, language: session.options.language)
+        guard !transcript.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw CatchUpError.nothingSaid
+        }
+        let language = liveCaptions?.language
+        logger.info("Catching up on \(transcript.segments.count) line(s) of the last \(Int(duration)) s")
+        let points = try await summarizer.catchUp(on: transcript, language: language)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !points.isEmpty else { throw CatchUpError.nothingSaid }
+        return CatchUp(duration: min(duration, time), points: points)
     }
 
     public func toggleRecording() async {

@@ -383,6 +383,68 @@ struct NoteLibraryTests {
 
     // MARK: Restoring
 
+    @Test func vocabularyCorrectsRenderedNotesAndLeavesOthersAlone() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let writer = MarkdownNoteWriter(directory: directory)
+        let misheard = NoteFixtures.note(
+            title: "Moving to cooper netties",
+            segments: [TranscriptSegment(start: 0, end: 4, text: "Is cooper netties [ready]?", speaker: "Me")],
+            summary: NoteSummary(overview: "Cooper Netties is ready.")
+        )
+        let url = try await writer.write(misheard)
+        let untouched = try await writer.write(NoteFixtures.note(title: "Lunch"))
+        let untouchedContents = try contents(of: untouched)
+        let vocabulary = Vocabulary(entries: [
+            .init(term: "Kubernetes", soundsLike: ["cooper netties"]),
+            .init(term: "Transkript_", soundsLike: ["transcript"]),
+        ])
+
+        let changes = try NoteLibrary.applyVocabulary(vocabulary, toNotesIn: directory)
+
+        #expect(changes.correctedNotes.map(\.lastPathComponent) == [url.lastPathComponent])
+        #expect(changes.failures.isEmpty)
+        var corrected = misheard
+        corrected.title = "Moving to Kubernetes"
+        corrected.transcript.segments[0].text = "Is Kubernetes [ready]?"
+        corrected.summary?.overview = "Kubernetes is ready."
+        // `## Transcript` is a section heading, so it stays.
+        #expect(try contents(of: url) == MarkdownNoteRenderer.render(corrected))
+        #expect(try contents(of: untouched) == untouchedContents)
+        #expect(try fileNames(in: directory).contains(url.lastPathComponent))
+    }
+
+    @Test func vocabularyEscapesMarkdownAndSkipsCodeBlocks() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try write(
+            "---\ntitle: 'snake case'\n---\n# snake case\n\nsnake case\n\n```\nsnake case\n```\n",
+            to: "Note.md",
+            in: directory
+        )
+        let vocabulary = Vocabulary(entries: [.init(term: "snake_case", soundsLike: ["snake case"])])
+
+        let changes = try NoteLibrary.applyVocabulary(vocabulary, toNotesIn: directory)
+
+        #expect(changes.correctedNotes.count == 1)
+        #expect(
+            try contents(of: directory.appending(path: "Note.md"))
+                == "---\ntitle: \"snake_case\"\n---\n# snake\\_case\n\nsnake\\_case\n\n```\nsnake case\n```\n"
+        )
+        #expect(try loadNotes(in: directory).map(\.title) == ["snake_case"])
+    }
+
+    @Test func emptyVocabularyChangesNothing() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        _ = try await MarkdownNoteWriter(directory: directory).write(NoteFixtures.note())
+
+        let changes = try NoteLibrary.applyVocabulary(Vocabulary(), toNotesIn: directory)
+
+        #expect(changes.correctedNotes.isEmpty)
+        #expect(changes.failures.isEmpty)
+    }
+
     @Test func restoreMovesTrashedNoteBackUnderItsName() throws {
         let directory = try makeDirectory()
         let trash = try makeDirectory()

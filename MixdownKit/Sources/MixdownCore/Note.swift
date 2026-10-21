@@ -16,6 +16,11 @@ public struct Note: Sendable, Equatable {
     public var summary: NoteSummary?
     /// Whether the user started the recording or Mixdown started it for a call by itself.
     public var trigger: RecordingTrigger
+    /// Whether the recording was started for a call, from the call notification or automatically.
+    public var isCall: Bool
+    /// The template the recording was summarized with, which says what kind of recording it is
+    /// (a 1:1, a standup). `nil` when summaries are off. Kept when summarizing fails.
+    public var template: SummaryTemplate?
     /// Points the user marked while recording, in order of time.
     public var moments: [Moment]
     /// How long the user and the others talked, minute by minute. `nil` unless both microphone and
@@ -32,6 +37,8 @@ public struct Note: Sendable, Equatable {
         translation: Transcript? = nil,
         summary: NoteSummary? = nil,
         trigger: RecordingTrigger = .manual,
+        isCall: Bool? = nil,
+        template: SummaryTemplate? = nil,
         moments: [Moment] = [],
         talkTimeline: TalkTimeline? = nil
     ) {
@@ -44,6 +51,9 @@ public struct Note: Sendable, Equatable {
         self.translation = translation
         self.summary = summary
         self.trigger = trigger
+        // Mixdown only starts recordings by itself for calls.
+        self.isCall = isCall ?? (trigger == .automatic)
+        self.template = template
         self.moments = moments
         self.talkTimeline = talkTimeline
     }

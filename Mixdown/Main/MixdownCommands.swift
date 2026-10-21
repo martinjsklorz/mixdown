@@ -31,6 +31,9 @@ struct MixdownCommands: Commands {
             SectionMenuItem("Notes", destination: .notes)
                 .keyboardShortcut("2")
                 .environment(navigation)
+            SectionMenuItem("Chat", destination: .chat)
+                .keyboardShortcut("3")
+                .environment(navigation)
             Divider()
         }
         CommandMenu("Recording") {
@@ -96,6 +99,10 @@ private struct NotesFileMenuItems: View {
             if let shownNote { shownNote.actions.rename(shownNote.note) }
         }
         .disabled(shownNote == nil)
+        Button("Add to Vocabulary…") {
+            shownNote?.actions.addToVocabulary()
+        }
+        .disabled(shownNote == nil)
         if let note = shownNote?.note {
             ShareLink(item: note.url, preview: SharePreview(note.title))
         } else {
@@ -141,6 +148,9 @@ private struct RecordingMenuItems: View {
         .disabled(!coordinator.isRecording)
         Button("Mark Moment") { environment.markMoment() }
             .globalKeyboardShortcut(.markMoment)
+            .disabled(!coordinator.isRecording)
+        Button("Catch Me Up") { environment.catchUp() }
+            .globalKeyboardShortcut(.catchUp)
             .disabled(!coordinator.isRecording)
 
         if case .preparingModel = coordinator.phase {
