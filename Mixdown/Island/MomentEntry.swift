@@ -2,15 +2,16 @@ import AppKit
 import MixdownCore
 import SwiftUI
 
-/// A moment just marked, while the user writes a few words about it.
+/// A moment just marked, while the user writes a few words about it. It only goes into the note
+/// on Return; see `AppEnvironment.markMoment()`.
 @MainActor @Observable
 final class MomentDraft {
-    let moment: Moment
-    /// As typed; the coordinator gets it trimmed with every change.
+    /// Where in the recording it was marked. See `RecordingCoordinator.momentTime`.
+    let time: TimeInterval
     var text = ""
 
-    init(moment: Moment) {
-        self.moment = moment
+    init(time: TimeInterval) {
+        self.time = time
     }
 }
 
@@ -19,7 +20,8 @@ final class MomentDraft {
 ///
 /// It takes the keyboard without bringing Mixdown to the front, so the app that was in front gets
 /// it back as soon as the field closes: on Return, Escape, clicking elsewhere, or after a few
-/// seconds without typing (see `AppEnvironment.markMoment()`).
+/// seconds without typing (see `AppEnvironment.markMoment()`). Should the panel not get the
+/// keyboard that way, Mixdown comes to the front, and hands it back to that app on closing.
 @MainActor
 final class MomentEntry {
     private static let size = NSSize(width: 320, height: 32)
@@ -33,6 +35,9 @@ final class MomentEntry {
     private var panel: MomentPanel?
     /// The draft the field is showing, if it's open.
     private var shownDraft: MomentDraft?
+    /// The app that was in front, while Mixdown had to come forward for the field to get the
+    /// keyboard.
+    private var appToReactivate: NSRunningApplication?
 
     init(environment: AppEnvironment, islandFrame: @escaping () -> NSRect?) {
         self.environment = environment
@@ -47,6 +52,13 @@ final class MomentEntry {
         panel.contentView = NSHostingView(rootView: MomentEntryView(environment: environment, draft: draft))
         place(panel)
         panel.makeKeyAndOrderFront(nil)
+        // A nonactivating panel normally gets the keyboard as it is; just in case it didn't.
+        Task { [weak self] in
+            guard let self, self.shownDraft === draft, !panel.isKeyWindow, !NSApp.isActive else { return }
+            self.appToReactivate = NSWorkspace.shared.frontmostApplication
+            NSApp.activate()
+            panel.makeKeyAndOrderFront(nil)
+        }
     }
 
     /// Closes the field, which hands the keyboard back to the app in front.
@@ -55,12 +67,16 @@ final class MomentEntry {
         shownDraft = nil
         panel.orderOut(nil)
         panel.contentView = nil
+        if let app = appToReactivate {
+            appToReactivate = nil
+            app.activate(options: [])
+        }
     }
 
     private func makePanel() -> MomentPanel {
         let panel = MomentPanel()
         self.panel = panel
-        // Clicking anywhere else, or switching apps, leaves the moment with what was typed so far.
+        // Clicking anywhere else, or switching apps, drops the moment, like Escape.
         _ = NotificationCenter.default.addObserver(
             forName: NSWindow.didResignKeyNotification,
             object: panel,
@@ -68,7 +84,7 @@ final class MomentEntry {
         ) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, self.shownDraft != nil else { return }
-                self.environment.finishMomentDraft()
+                self.environment.closeMomentDraft()
             }
         }
         return panel
@@ -107,6 +123,8 @@ private final class MomentPanel: NSPanel {
         isReleasedWhenClosed = false
         becomesKeyOnlyIfNeeded = false
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        // Light text and caret on black, whatever the system appearance.
+        appearance = NSAppearance(named: .darkAqua)
     }
 
     override var canBecomeKey: Bool { true }
@@ -121,9 +139,8 @@ private final class MomentPanel: NSPanel {
 /// A bookmark, the moment's time, and a field for a note on it, in black like the island.
 private struct MomentEntryView: View {
     let environment: AppEnvironment
-    let draft: MomentDraft
+    @Bindable var draft: MomentDraft
 
-    @FocusState private var isFocused: Bool
     /// Grows in from the notch once shown.
     @State private var isExpanded = false
 
@@ -132,20 +149,15 @@ private struct MomentEntryView: View {
             Image(systemName: "bookmark.fill")
                 .font(.system(size: 10))
                 .foregroundStyle(.yellow)
-            Text(MenuBarLabel.elapsedText(Int(draft.moment.time)))
+            Text(MenuBarLabel.elapsedText(Int(draft.time)))
                 .monospacedDigit()
                 .foregroundStyle(.white.opacity(0.6))
                 .fixedSize()
-            TextField(
-                "Add a note, then press Return",
-                text: Binding(get: { draft.text }, set: { environment.describeMoment($0) })
+            MomentTextField(
+                text: $draft.text,
+                onSubmit: { environment.addMomentDraft() },
+                onCancel: { environment.closeMomentDraft() }
             )
-            .textFieldStyle(.plain)
-            .foregroundStyle(.white)
-            .focused($isFocused)
-            .onSubmit { environment.finishMomentDraft() }
-            // Keeps the mark, without the note.
-            .onExitCommand { environment.finishMomentDraft(discardingText: true) }
         }
         .font(.system(size: 13))
         .padding(.horizontal, 12)
@@ -156,12 +168,87 @@ private struct MomentEntryView: View {
         .scaleEffect(isExpanded ? 1 : 0.9, anchor: .top)
         .opacity(isExpanded ? 1 : 0)
         .onAppear {
-            isFocused = true
             withAnimation(.smooth(duration: 0.25)) { isExpanded = true }
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(
-            "Moment at \(Duration.seconds(Int(draft.moment.time)).formatted(.units(width: .wide)))"
+            "Moment at \(Duration.seconds(Int(draft.time)).formatted(.units(width: .wide)))"
         )
+    }
+}
+
+/// The note field, in AppKit: it has to have the keyboard as soon as the panel shows, which
+/// SwiftUI's focus doesn't manage in a panel of an app that isn't in front.
+private struct MomentTextField: NSViewRepresentable {
+    @Binding var text: String
+    /// On Return.
+    let onSubmit: () -> Void
+    /// On Escape.
+    let onCancel: () -> Void
+
+    func makeNSView(context: Context) -> FocusingTextField {
+        let field = FocusingTextField()
+        field.isBordered = false
+        field.drawsBackground = false
+        field.focusRingType = .none
+        field.usesSingleLineMode = true
+        field.cell?.isScrollable = true
+        field.cell?.wraps = false
+        field.font = .systemFont(ofSize: 13)
+        field.textColor = .white
+        field.placeholderAttributedString = NSAttributedString(
+            string: "Add a note, then press Return",
+            attributes: [.foregroundColor: NSColor.white.withAlphaComponent(0.4), .font: NSFont.systemFont(ofSize: 13)]
+        )
+        field.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        field.delegate = context.coordinator
+        return field
+    }
+
+    func updateNSView(_ field: FocusingTextField, context: Context) {
+        context.coordinator.parent = self
+        if field.stringValue != text {
+            field.stringValue = text
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var parent: MomentTextField
+
+        init(parent: MomentTextField) {
+            self.parent = parent
+        }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let field = notification.object as? NSTextField else { return }
+            parent.text = field.stringValue
+        }
+
+        func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+            switch selector {
+            case #selector(NSResponder.insertNewline(_:)):
+                parent.onSubmit()
+                return true
+            case #selector(NSResponder.cancelOperation(_:)):
+                parent.onCancel()
+                return true
+            default:
+                return false
+            }
+        }
+    }
+}
+
+/// Takes the keyboard as soon as it's in a window.
+private final class FocusingTextField: NSTextField {
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        window?.makeFirstResponder(self)
     }
 }

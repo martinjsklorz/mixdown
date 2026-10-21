@@ -946,7 +946,7 @@ struct RecordingCoordinatorTests {
 
     // MARK: - Moments
 
-    @Test func markedMomentsGoIntoTheNote() async throws {
+    @Test func addedMomentsGoIntoTheNote() async throws {
         let date = LockedValue(Fixtures.startDate)
         let writer = InMemoryNoteWriter()
         let coordinator = makeCoordinator(
@@ -955,16 +955,18 @@ struct RecordingCoordinatorTests {
             now: { date.current }
         )
         await coordinator.monitorDevices()
-        #expect(coordinator.markMoment() == nil)
+        #expect(coordinator.momentTime == nil)
+        #expect(coordinator.addMoment(at: 0) == nil)
         await coordinator.startRecording()
 
         date.update { $0 = Fixtures.startDate.addingTimeInterval(3) }
-        let first = try #require(coordinator.markMoment())
-        #expect(first.time == 3)
-        coordinator.describeMoment(first.id, as: "  Budget approved \n")
+        let time = try #require(coordinator.momentTime)
+        #expect(time == 3)
+        // Marked at 3 s, added once the note on it is written.
+        date.update { $0 = Fixtures.startDate.addingTimeInterval(8) }
+        let first = try #require(coordinator.addMoment(at: time, text: "  Budget approved \n"))
         // Past the end of the audio.
-        date.update { $0 = Fixtures.startDate.addingTimeInterval(12) }
-        let second = try #require(coordinator.markMoment())
+        let second = try #require(coordinator.addMoment(at: 12))
         #expect(coordinator.moments.map(\.id) == [first.id, second.id])
         await coordinator.stopRecording()
 
@@ -974,7 +976,7 @@ struct RecordingCoordinatorTests {
         )
         #expect(coordinator.moments.isEmpty)
         // Too late for that note.
-        coordinator.describeMoment(second.id, as: "Ignored")
+        #expect(coordinator.addMoment(at: 5) == nil)
         #expect(coordinator.moments.isEmpty)
     }
 
@@ -990,10 +992,10 @@ struct RecordingCoordinatorTests {
         date.update { $0 = Fixtures.startDate.addingTimeInterval(5) }
         await coordinator.pauseRecording()
         date.update { $0 = Fixtures.startDate.addingTimeInterval(65) }
-        #expect(coordinator.markMoment()?.time == 5)
+        #expect(coordinator.momentTime == 5)
         await coordinator.resumeRecording()
         date.update { $0 = Fixtures.startDate.addingTimeInterval(67) }
-        #expect(coordinator.markMoment()?.time == 7)
+        #expect(coordinator.momentTime == 7)
     }
 
     @Test func pausedTimeIsLeftOutOfTheRecordedTime() async {

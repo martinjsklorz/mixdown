@@ -1,4 +1,5 @@
 import KeyboardShortcuts
+import SwiftUI
 
 extension KeyboardShortcuts.Name {
     /// Starts and stops recording from any app. Changed or turned off under Settings → General.
@@ -16,4 +17,17 @@ extension KeyboardShortcuts.Name {
         "markMoment",
         initial: .init(.m, modifiers: [.control, .option, .command])
     )
+}
+
+extension View {
+    /// Shows the global Start/Stop Recording shortcut on a menu bar menu item while `isGlobal`, as
+    /// that's the one that works with the menu closed, else ⌘R.
+    @ViewBuilder
+    func recordingShortcut(isGlobal: Bool) -> some View {
+        if isGlobal, KeyboardShortcuts.getShortcut(for: .toggleRecording) != nil {
+            globalKeyboardShortcut(.toggleRecording)
+        } else {
+            keyboardShortcut("r")
+        }
+    }
 }

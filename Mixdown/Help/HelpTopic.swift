@@ -145,10 +145,10 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             ## Mark a moment
 
             Press ⌃⌥⌘M in any app while recording, click the bookmark button beside Stop, or choose \
-            **Recording → Mark Moment**. A field drops down under the notch: type a few words and \
-            press Return, or just carry on and it closes by itself. Escape keeps the mark without \
-            the words. The note lists each moment under **Moments** at the end of its summary, with \
-            its time and what was being said.
+            **Recording → Mark Moment**. A field drops down under the notch, ready to type in: \
+            write a few words, or none, and press Return to add the moment. Escape, clicking \
+            elsewhere, or 5 seconds without typing drops it. The note lists each moment under \
+            **Moments** at the end of its summary, with its time and what was being said.
 
             ## Inputs
 

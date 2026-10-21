@@ -1,3 +1,4 @@
+import KeyboardShortcuts
 import MixdownCore
 import SwiftUI
 
@@ -14,7 +15,7 @@ struct MenuBarContent: View {
         Button(coordinator.canStopRecording ? "Stop Recording" : "Start Recording") {
             Task { await coordinator.toggleRecording() }
         }
-        .keyboardShortcut("r")
+        .recordingShortcut(isGlobal: environment.isRecordingShortcutEnabled)
         .disabled(!coordinator.canStartRecording && !coordinator.canStopRecording)
         if coordinator.isRecording {
             Button(coordinator.isPaused ? "Resume Recording" : "Pause Recording") {
@@ -22,6 +23,7 @@ struct MenuBarContent: View {
             }
             .keyboardShortcut("p", modifiers: [.command, .shift])
             Button("Mark Moment") { environment.markMoment() }
+                .globalKeyboardShortcut(.markMoment)
         }
 
         RecordingStatusView(

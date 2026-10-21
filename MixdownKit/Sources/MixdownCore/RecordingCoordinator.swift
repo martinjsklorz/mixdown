@@ -70,8 +70,8 @@ public final class RecordingCoordinator {
     public private(set) var showsLiveTranscript = false
     /// What the inputs said so far while `showsLiveTranscript`, else empty.
     public private(set) var liveTranscript = LiveTranscript(speakers: [])
-    /// Moments marked in the recording in progress, in the order they were marked, until its note
-    /// is made. See `markMoment()`.
+    /// Moments added to the recording in progress, in the order they were added, until its note
+    /// is made. See `addMoment(at:text:)`.
     public private(set) var moments: [Moment] = []
     /// Saves finished notes. `nil` while there's no folder to save to; recording waits for one.
     /// Setting it saves `pendingNotes`.
@@ -1466,27 +1466,25 @@ public final class RecordingCoordinator {
         isRecordingSummaryTemplateChosen = true
     }
 
-    /// Marks the point the recording in progress has reached, paused or not, for its note.
-    /// Returns the moment, to describe with `describeMoment(_:as:)`, or `nil` when not recording.
-    @discardableResult
-    public func markMoment() -> Moment? {
-        let time: TimeInterval
+    /// How far the recording in progress has got, paused or not, in seconds not counting pauses:
+    /// where a moment marked now goes. `nil` when not recording.
+    public var momentTime: TimeInterval? {
         switch phase {
-        case .recording(let startedAt): time = max(now().timeIntervalSince(startedAt), 0)
-        case .paused(let recorded): time = recorded
-        default: return nil
+        case .recording(let startedAt): max(now().timeIntervalSince(startedAt), 0)
+        case .paused(let recorded): recorded
+        default: nil
         }
-        let moment = Moment(time: time)
-        moments.append(moment)
-        logger.info("Moment marked at \(time, format: .fixed(precision: 1)) s")
-        return moment
     }
 
-    /// Sets what the user wrote about a moment of the recording in progress, or of the one being
-    /// transcribed, until its note is made. Ignored after that.
-    public func describeMoment(_ id: Moment.ID, as text: String) {
-        guard let index = moments.firstIndex(where: { $0.id == id }) else { return }
-        moments[index].text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// Adds a moment at `time` (see `momentTime`) to the note of the recording in progress, with
+    /// `text` trimmed. Returns it, or `nil` when not recording.
+    @discardableResult
+    public func addMoment(at time: TimeInterval, text: String = "") -> Moment? {
+        guard isRecording else { return nil }
+        let moment = Moment(time: time, text: text.trimmingCharacters(in: .whitespacesAndNewlines))
+        moments.append(moment)
+        logger.info("Moment added at \(time, format: .fixed(precision: 1)) s")
+        return moment
     }
 
     public func toggleRecording() async {

@@ -23,14 +23,14 @@ To find something again later, press ⌃⌥⌘M in any app while recording, clic
 beside Stop, or choose **Recording → Mark Moment**, also in the menu bar. A field drops down under
 the notch (or the Dynamic Island, while it shows) with the recording's time:
 
-- Type a few words and press **Return** to keep them.
-- Press **Escape** to keep the mark without words.
-- Do nothing for 5 seconds, or click elsewhere, and it closes; what you typed so far is kept.
+- Type a few words, or none, and press **Return** to add the moment to the note.
+- Press **Escape** or click elsewhere to drop it.
+- Type nothing for 5 seconds and it closes, dropping it too.
 
 The field takes the keyboard without switching to Mixdown, so the app you were in gets it back
-when the field closes. Marking again while it's open starts a new moment. Change the shortcut, or
-clear it to turn it off, under **Settings → General → Global Shortcuts**; Mixdown only takes those
-keys while recording.
+when the field closes. Marking again while it's open starts over at the new time. Change the
+shortcut, or clear it to turn it off, under **Settings → General → Global Shortcuts**; Mixdown only
+takes those keys while recording.
 
 The note lists the moments under **Moments** at the end of its summary, or in a section of their
 own without one. Each has its time, matching the transcript's, your words, and what was being said
