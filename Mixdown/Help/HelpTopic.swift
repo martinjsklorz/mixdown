@@ -235,6 +235,8 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             `pinned: true` in the note's frontmatter.
             - **Rename** it. This changes both the title inside the note and its file name.
             - **Copy Transcript** as plain text.
+            - **Add to Vocabulary** a word the speech model got wrong: select it first. See \
+            [Speech Models](mixdown-help:speech-models).
             - **Share** it.
             - **Delete** it (⌘⌫, or Delete in the sidebar), which moves it to the Trash. Mixdown \
             asks first (turn that off under **Settings → General**), then shows a notification with \
@@ -298,6 +300,18 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             the menu. You'll need to download it again before recording with it. Apple Speech \
             belongs to macOS, which removes it when no app needs it any more, so it has no trash \
             button.
+
+            ## Vocabulary
+
+            Names and jargon often come out wrong, like "cooper netties" for Kubernetes. Add them \
+            under **Settings → Vocabulary**: how to write each one, and what the model writes \
+            instead, with commas between several ways it's heard. Every transcript is corrected \
+            before it's summarized, ignoring case and only for whole words.
+
+            To add a word from a note, select it and click the book button above the note, or \
+            choose **File → Add to Vocabulary…**. Leave **Correct it in existing notes** on to fix \
+            it in all your notes right away. **Correct Existing Notes…** in Settings does that for \
+            the whole vocabulary. This changes the note files and can't be undone.
 
             ## Speakers
 

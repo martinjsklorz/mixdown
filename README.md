@@ -18,6 +18,8 @@ Everything happens on your Mac. Your audio never leaves it.
   to record them, or records them automatically.
 - **On-device speech models**: a live model that shows the text as you speak, more accurate
   offline models (one tells speakers apart), or Apple Speech.
+- **Custom vocabulary**: tell Mixdown how to write names and jargon the speech model gets wrong,
+  right from a note, and every note, old and new, gets them right.
 - **Summaries**: Apple Intelligence adds an overview, key points and action items, and names the
   note. Templates for 1:1s, standups and client calls.
 - **Translation**: notes in another language, translated on your Mac by Apple's translation

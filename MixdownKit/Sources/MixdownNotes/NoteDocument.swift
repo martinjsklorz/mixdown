@@ -243,6 +243,70 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
         return lines.joined(separator: "\n")
     }
 
+    // MARK: - Vocabulary
+
+    /// What `corrected(_:by:)` replaces with, made once for many notes: one replacer for the
+    /// frontmatter's title, one for Markdown, where both what's matched and what's put in are
+    /// escaped the way `MarkdownNoteRenderer` escapes the transcript.
+    struct VocabularyCorrection {
+        let plain: Vocabulary.Replacer
+        let markdown: Vocabulary.Replacer
+
+        init(_ vocabulary: Vocabulary) {
+            plain = Vocabulary.Replacer(vocabulary)
+            markdown = Vocabulary.Replacer(vocabulary, escaping: MarkdownNoteRenderer.escapedMarkdown)
+        }
+
+        var isEmpty: Bool { plain.isEmpty }
+    }
+
+    /// `contents` with the vocabulary applied to the frontmatter's `title` and to the body, or
+    /// `nil` if nothing changes. Headings of level 2 and below are left alone, as they name the
+    /// sections Mixdown and other apps look for, like `## Transcript`; so are code blocks. Line
+    /// endings become `\n`.
+    static func corrected(_ contents: String, by correction: VocabularyCorrection) -> String? {
+        var lines = normalizedLines(contents)
+        var isChanged = false
+        let replace = { (index: Int, line: String) in
+            guard line != lines[index] else { return }
+            lines[index] = line
+            isChanged = true
+        }
+
+        var bodyStart = 0
+        if let end = frontmatterEnd(lines) {
+            if let field = fieldLines("title", in: lines, frontmatterEnd: end), field.count == 1,
+                let colon = lines[field.lowerBound].firstIndex(of: ":")
+            {
+                let raw = lines[field.lowerBound][lines[field.lowerBound].index(after: colon)...]
+                    .trimmingCharacters(in: .whitespaces)
+                let title = yamlScalar(raw)
+                let corrected = correction.plain.replace(in: title)
+                if corrected != title {
+                    replace(field.lowerBound, "title: \(MarkdownNoteRenderer.yamlQuoted(corrected))")
+                }
+            }
+            bodyStart = end + 1
+        }
+
+        var fence: Substring?
+        for index in lines.indices.dropFirst(bodyStart) {
+            if let open = fence {
+                if Parser.isClosingFence(lines[index], for: open) { fence = nil }
+                continue
+            }
+            let trimmed = lines[index].trimmingCharacters(in: .whitespaces)
+            if let (open, _) = Parser.openingFence(trimmed) {
+                fence = open
+            } else if let (level, _) = Parser.atxHeading(trimmed), level > 1 {
+                continue
+            } else {
+                replace(index, correction.markdown.replace(in: lines[index]))
+            }
+        }
+        return isChanged ? lines.joined(separator: "\n") : nil
+    }
+
     // MARK: - Frontmatter
 
     /// Splits off a leading `---` … `---` block and reads its top-level `key: value` lines.

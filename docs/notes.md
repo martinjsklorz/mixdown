@@ -20,6 +20,9 @@ The buttons above a note, right-clicking it in the sidebar, and the File and Edi
   out characters that break Obsidian links: `[ ]` become `( )`, `|` becomes `-`, and `#` and `^`
   are dropped.
 - **Copy Transcript** as plain text. A notification confirms it.
+- **Add to Vocabulary** a word the speech model got wrong: select it first, then say how it's
+  written. It's corrected in this note and all the others. See
+  [Speech models](speech-models.md#vocabulary).
 - **Share** it.
 - **Delete** it (⌘⌫, or Delete in the sidebar), which moves it to the Trash. Mixdown asks first
   (tick **Do not ask again**, or turn it back on under **Settings → General → Ask before deleting a

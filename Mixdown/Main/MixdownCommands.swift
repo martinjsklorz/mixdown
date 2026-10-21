@@ -96,6 +96,10 @@ private struct NotesFileMenuItems: View {
             if let shownNote { shownNote.actions.rename(shownNote.note) }
         }
         .disabled(shownNote == nil)
+        Button("Add to Vocabulary…") {
+            shownNote?.actions.addToVocabulary()
+        }
+        .disabled(shownNote == nil)
         if let note = shownNote?.note {
             ShareLink(item: note.url, preview: SharePreview(note.title))
         } else {

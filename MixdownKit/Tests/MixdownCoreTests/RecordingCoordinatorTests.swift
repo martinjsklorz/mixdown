@@ -452,6 +452,20 @@ struct RecordingCoordinatorTests {
         #expect(summarizer.receivedTemplates == [.general])
     }
 
+    @Test func correctsTranscriptWithVocabularyBeforeSummarizing() async throws {
+        let summarizer = MockSummarizer(summary: NoteSummary(overview: "A migration."))
+        let (_, note) = try await recordNote(
+            transcript: Transcript(segments: [TranscriptSegment(start: 0, end: 1, text: "We move to cooper netties.")]),
+            summarizer: summarizer,
+            configure: {
+                $0.vocabulary = Vocabulary(entries: [.init(term: "Kubernetes", soundsLike: ["cooper netties"])])
+            }
+        )
+
+        #expect(note.transcript.text == "We move to Kubernetes.")
+        #expect(summarizer.receivedTranscripts == [note.transcript])
+    }
+
     @Test func summaryTemplateDependsOnHowRecordingStarted() async throws {
         let setTemplates = { (coordinator: RecordingCoordinator) in
             coordinator.summaryTemplate = .standup

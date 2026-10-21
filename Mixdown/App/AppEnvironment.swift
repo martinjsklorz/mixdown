@@ -151,6 +151,7 @@ final class AppEnvironment {
         )
         coordinator.cancelsEcho = settings.cancelsEcho
         coordinator.translatesLiveText = settings.translatesLiveText
+        coordinator.vocabulary = settings.vocabulary
         return coordinator
     }
 
@@ -598,6 +599,32 @@ final class AppEnvironment {
             settings.translatesLiveText = newValue
             coordinator.translatesLiveText = newValue
         }
+    }
+
+    // MARK: Vocabulary
+
+    /// Words to correct in transcripts. Takes effect from the next transcription; notes already
+    /// written change only with `correctNotes(with:)`.
+    var vocabulary: Vocabulary {
+        get { coordinator.vocabulary }
+        set {
+            settings.vocabulary = newValue
+            coordinator.vocabulary = newValue
+        }
+    }
+
+    /// Whether `correctNotes(with:)` is running.
+    private(set) var isCorrectingNotes = false
+
+    /// Applies `vocabulary` to every note in the notes folder, off the main thread. `nil` without
+    /// a notes folder. The main window picks up the changed files as it watches the folder.
+    func correctNotes(with vocabulary: Vocabulary) async throws -> NoteLibrary.VocabularyChanges? {
+        guard let directory = notesFolder.directory else { return nil }
+        isCorrectingNotes = true
+        defer { isCorrectingNotes = false }
+        return try await Task.detached(priority: .userInitiated) {
+            try NoteLibrary.applyVocabulary(vocabulary, toNotesIn: directory)
+        }.value
     }
 
     // MARK: Notes

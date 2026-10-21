@@ -40,6 +40,13 @@ Press ⌘, or click the cog above the sidebar to open Settings. **Settings…** 
   recording** (on by default, with a live model) translates the live text as it's spoken. See
   [Translation](translation.md).
 
+## Vocabulary
+
+- Words the speech model gets wrong: **Write as** how each is written and **Heard as** what the
+  model writes instead, separated by commas. **Add Word** adds a row, the minus button removes one.
+- **Correct Existing Notes…** makes the same corrections in every note in the notes folder. See
+  [Speech models](speech-models.md#vocabulary).
+
 ## Notifications
 
 - **Show notifications**: on by default.

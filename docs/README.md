@@ -11,7 +11,8 @@ The same topics are in the app under **Help → Mixdown Help** (⌘?).
 - [Recording](recording.md): starting, pausing and stopping, inputs, the Dynamic Island and the
   menu bar
 - [Recording calls](calls.md): both sides of a call, echo, and call detection
-- [Speech models](speech-models.md): live and offline models, downloading and deleting them
+- [Speech models](speech-models.md): live and offline models, downloading and deleting them,
+  and the vocabulary for words they get wrong
 - [Summaries](summaries.md): Apple Intelligence summaries, titles and templates
 - [Translation](translation.md): notes, and the live text, in another language
 - [Notes](notes.md): the sidebar, working with notes, Spotlight, the notes folder and the file format
