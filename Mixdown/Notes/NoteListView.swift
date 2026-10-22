@@ -238,6 +238,7 @@ struct NoteListView<Footer: View>: View {
         .contextMenu {
             Button(note.isPinned ? "Unpin Note" : "Pin Note") { actions.togglePinned(note) }
             Button("Rename…") { actions.rename(note) }
+            RenameSpeakerMenu(note: note, actions: actions) { Text("Rename Speaker") }
             Button("Copy Transcript") { NoteActions.copyTranscript(of: note) }
             ShareLink(item: note.url, preview: SharePreview(note.title))
             Divider()

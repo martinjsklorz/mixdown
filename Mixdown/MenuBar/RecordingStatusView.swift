@@ -34,6 +34,8 @@ struct RecordingStatusView: View {
             Text("Paused · \(ProgressText.elapsed(Int(recorded))) recorded")
         case .transcribing(let progress):
             Text("Transcribing… \(ProgressText.detail(progress: progress, remaining: timeRemaining))")
+        case .identifyingSpeakers:
+            Text("Identifying speakers…")
         case .translating:
             Text("Translating…")
         case .summarizing:

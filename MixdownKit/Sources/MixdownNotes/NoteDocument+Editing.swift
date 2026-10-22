@@ -1,8 +1,8 @@
 import Foundation
 import MixdownCore
 
-/// Changes to a note's file contents: its title, whether it's pinned, and vocabulary
-/// corrections.
+/// Changes to a note's file contents: its title, whether it's pinned, its speakers' names, and
+/// vocabulary corrections.
 extension NoteDocument {
     // MARK: - Renaming
 
@@ -70,6 +70,88 @@ extension NoteDocument {
             lines.removeFirst(lines.count > 2 && lines[2].isEmpty ? 3 : 2)
         }
         return lines.joined(separator: "\n")
+    }
+
+    // MARK: - Speakers
+
+    /// `contents` with the speaker `old` renamed `new`, or `nil` if the note has no such speaker
+    /// or nothing changes. `new` is a single line with no runs of whitespace. Renaming a speaker
+    /// to the name of another merges the two.
+    ///
+    /// Changes the frontmatter's `speakers` and `talk_labels`, and in the body, where
+    /// `MarkdownNoteRenderer` writes the speaker: before each of their lines in the transcript and
+    /// translation, before quotes in the moments, and in the Talk Time section. A label with a
+    /// number in it, such as "Others (Speaker 2)", which can't be mistaken for a word, is replaced
+    /// wherever else the body has it too, as summaries may name speakers by their labels. Code
+    /// blocks and headings of level 2 and below are left alone. Line endings become `\n`.
+    static func renamingSpeaker(_ contents: String, from old: String, to new: String) -> String? {
+        guard !old.isEmpty, !new.isEmpty, old != new else { return nil }
+        var lines = Frontmatter.normalizedLines(contents)
+        let original = lines
+
+        var bodyStart = 0
+        if let end = Frontmatter.end(of: lines) {
+            for key in ["speakers", "talk_labels"] {
+                guard let field = Frontmatter.fieldLines(key, in: lines, end: end),
+                    let colon = lines[field.lowerBound].firstIndex(of: ":")
+                else { continue }
+                let value = [String(lines[field.lowerBound][lines[field.lowerBound].index(after: colon)...])]
+                    + lines[field].dropFirst()
+                guard let items = Frontmatter.yamlFlowSequence(
+                    value.joined(separator: " ").trimmingCharacters(in: .whitespaces)
+                ),
+                    items.contains(old)
+                else { continue }
+                var renamed = items.map { $0 == old ? new : $0 }
+                // Two speakers merged into one. Talk Time's labels stay two, for its two sides.
+                if key == "speakers" {
+                    var seen = Set<String>()
+                    renamed = renamed.filter { seen.insert($0).inserted }
+                }
+                let list = renamed.map(MarkdownNoteRenderer.yamlQuoted).joined(separator: ", ")
+                lines.replaceSubrange(field, with: ["\(key): [\(list)]"])
+            }
+            bodyStart = (Frontmatter.end(of: lines) ?? 0) + 1
+        }
+
+        let escapedOld = MarkdownNoteRenderer.escapedMarkdown(old)
+        let escapedNew = MarkdownNoteRenderer.escapedMarkdown(new)
+        // Matched only as a whole label, so "Speaker 1" isn't found in "Speaker 12".
+        let isDistinctive = old.contains(where: \.isNumber)
+        let elsewhere = try? NSRegularExpression(
+            pattern: "(?<![\\p{L}\\p{N}])" + NSRegularExpression.escapedPattern(for: escapedOld) + "(?![\\p{L}\\p{N}])"
+        )
+        for index in linesOutsideCode(lines, from: bodyStart) {
+            var line = lines[index]
+            if let (level, _) = Parser.atxHeading(line.trimmingCharacters(in: .whitespaces)), level > 1 { continue }
+            if isDistinctive, let elsewhere {
+                lines[index] = elsewhere.stringByReplacingMatches(
+                    in: line,
+                    range: NSRange(line.startIndex..., in: line),
+                    withTemplate: NSRegularExpression.escapedTemplate(for: escapedNew)
+                )
+                continue
+            }
+            // A transcript line: `**[00:01:02] Speaker:** text`.
+            if line.hasPrefix("**["), let close = line.range(of: "] "),
+                line[close.upperBound...].hasPrefix(escapedOld + ":**")
+            {
+                let label = close.upperBound..<line.index(close.upperBound, offsetBy: escapedOld.count)
+                line.replaceSubrange(label, with: escapedNew)
+            }
+            // A moment: `- **[00:01:02]** Note — _Speaker: “words”_`.
+            if line.hasPrefix("- **["), let quote = line.range(of: " _\(escapedOld): “") {
+                line.replaceSubrange(quote, with: " _\(escapedNew): “")
+            }
+            // Talk Time's share of each side, `**Me** 40 % (…) · **Others** 60 % (…)`, and its table.
+            if line.hasPrefix("**") || line.hasPrefix("| Minute |") {
+                line = line.replacingOccurrences(of: "**\(escapedOld)** ", with: "**\(escapedNew)** ")
+                let cell = { (text: String) in text.replacingOccurrences(of: "|", with: "\\|") }
+                line = line.replacingOccurrences(of: "| \(cell(escapedOld)) |", with: "| \(cell(escapedNew)) |")
+            }
+            lines[index] = line
+        }
+        return lines == original ? nil : lines.joined(separator: "\n")
     }
 
     // MARK: - Vocabulary

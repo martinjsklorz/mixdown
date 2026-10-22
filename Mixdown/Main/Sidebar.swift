@@ -132,7 +132,7 @@ struct RecorderStatusBadge: View {
             Text(progress.formatted(.percent.precision(.fractionLength(0))))
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
-        case .startingCapture, .translating, .summarizing:
+        case .startingCapture, .identifyingSpeakers, .translating, .summarizing:
             ProgressView()
                 .controlSize(.small)
         case .failed:

@@ -375,9 +375,25 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
 
             ## Speakers
 
-            With MOSS, speaker numbers start over every 10 minutes, so "Speaker 1" may be someone \
-            else later in a long recording. The other models, Apple Speech included, don't tell \
-            speakers apart.
+            Turn on **Settings → Transcription → Tell speakers apart** to label the people on the \
+            system audio by their voices, with any model: **Others (Speaker 1)**, **Others \
+            (Speaker 2)** and so on, the same speaker keeping their number for the whole recording. \
+            It runs once the recording ends, on this Mac, after a one-time download of about \
+            100 MB. Your microphone keeps its name. With the live model, the system audio is kept \
+            in memory until you stop.
+
+            With **Name speakers from the conversation** on, your summary model then looks for \
+            names said in the call, such as people introducing themselves or being asked by name, \
+            and uses them instead of the numbers. A speaker it can't tell stays numbered, and it \
+            can get a name wrong, so check names that matter.
+
+            To name a speaker yourself, click the people button above the note, or choose **File → \
+            Rename Speaker**, and pick them. That renames them throughout the note: the transcript, \
+            quotes in moments and the list of speakers. Give two speakers the same name to merge \
+            them, such as one person the model took for two.
+
+            Without it, only MOSS tells speakers apart, and its numbers start over every 10 \
+            minutes, so "Speaker 1" may be someone else later in a long recording.
             """
         case .summaries:
             """

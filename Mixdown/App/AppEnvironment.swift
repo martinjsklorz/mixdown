@@ -31,6 +31,14 @@ final class AppEnvironment {
     /// so views update when a download finishes, which `summarizer.availability` alone wouldn't do.
     private(set) var isSummaryModelDownloaded: Bool
     private(set) var isDeletingSummaryModel = false
+    /// Whether the model that tells speakers apart is on disk. Kept here so views update when a
+    /// download finishes.
+    private(set) var isSpeakerModelDownloaded: Bool
+    /// How much of that model has downloaded, 0...1, while it downloads; `nil` otherwise.
+    private(set) var speakerModelProgress: Double?
+    /// Why that model couldn't be downloaded or deleted, until the next try.
+    private(set) var speakerModelError: String?
+    private(set) var isDeletingSpeakerModel = false
     /// Translates transcripts, into the coordinator's `translationLanguage` when there is one.
     let translator: any Translator
     /// The BCP 47 identifier of the language notes are translated into while `translatesNotes`;
@@ -84,8 +92,12 @@ final class AppEnvironment {
     private let settings: AppSettings
     /// Shared by every coordinator, so the canceller it keeps loaded survives a model change.
     private static let echoCancellation = LocalVQEEchoCancellation()
+    /// Tells speakers apart once a recording ends, while `identifiesSpeakers`. Shared by every
+    /// coordinator, like `echoCancellation`.
+    private static let speakerDiarizer = NemotronSpeakerDiarizer()
     @ObservationIgnored private var deviceMonitor: Task<Void, Never>?
     @ObservationIgnored private var summaryModelDownload: Task<Void, Never>?
+    @ObservationIgnored private var speakerModelDownload: Task<Void, Never>?
     @ObservationIgnored private var recordingClock: Task<Void, Never>?
     @ObservationIgnored private var recordingClockStart: Date?
     @ObservationIgnored private var callPrompt: CallPrompt?
@@ -127,6 +139,7 @@ final class AppEnvironment {
         self.summaryModel = summaryModel
         self.summarizer = summarizer
         self.isSummaryModelDownloaded = (summarizer as? MLXSummarizer)?.isDownloaded ?? true
+        self.isSpeakerModelDownloaded = Self.speakerDiarizer.isDownloaded
         self.translator = translator
         self.translationLanguage = settings.translationLanguage
         self.summaryTemplates = settings.summaryTemplates
@@ -137,6 +150,7 @@ final class AppEnvironment {
         self.coordinator = Self.makeCoordinator(
             model: model,
             summarizer: settings.summarizesNotes ? summarizer : nil,
+            speakerNamer: settings.identifiesSpeakers && settings.namesSpeakers ? summarizer : nil,
             translator: translator,
             notesDirectory: notesFolder.directory,
             settings: settings
@@ -178,6 +192,7 @@ final class AppEnvironment {
     private static func makeCoordinator(
         model: TranscriptionModel,
         summarizer: (any Summarizer)?,
+        speakerNamer: (any Summarizer)?,
         translator: any Translator,
         notesDirectory: URL?,
         pendingNotes: [Note] = [],
@@ -204,6 +219,8 @@ final class AppEnvironment {
         )
         coordinator.cancelsEcho = settings.cancelsEcho
         coordinator.measuresTalkTime = settings.measuresTalkTime
+        coordinator.speakerDiarizer = settings.identifiesSpeakers ? speakerDiarizer : nil
+        coordinator.speakerNamer = speakerNamer
         coordinator.stillRecordingDelay = stillRecordingDelay(minutes: settings.stillRecordingMinutes)
         coordinator.translatesLiveText = settings.translatesLiveText
         coordinator.vocabulary = settings.vocabulary
@@ -506,6 +523,82 @@ final class AppEnvironment {
         }
     }
 
+    // MARK: Speakers
+
+    /// Whether the people on the system audio are told apart once a recording ends. Takes effect
+    /// from the next recording. Turning it on downloads the model if it isn't on disk.
+    var identifiesSpeakers: Bool {
+        get { coordinator.speakerDiarizer != nil }
+        set {
+            settings.identifiesSpeakers = newValue
+            coordinator.speakerDiarizer = newValue ? Self.speakerDiarizer : nil
+            coordinator.speakerNamer = newValue && settings.namesSpeakers ? summarizer : nil
+            if newValue, !isSpeakerModelDownloaded { downloadSpeakerModel() }
+            if !newValue { cancelSpeakerModelDownload() }
+        }
+    }
+
+    /// Whether the speakers told apart are named after what's said, by the summary model. Takes
+    /// effect from the next transcription.
+    var namesSpeakers: Bool {
+        get { settings.namesSpeakers }
+        set {
+            settings.namesSpeakers = newValue
+            coordinator.speakerNamer = newValue && identifiesSpeakers ? summarizer : nil
+        }
+    }
+
+    /// Downloads the model that tells speakers apart, showing progress in `speakerModelProgress`.
+    /// Keeps going while Settings is closed. A recording that ends without it downloads it then.
+    func downloadSpeakerModel() {
+        guard speakerModelDownload == nil else { return }
+        let diarizer = Self.speakerDiarizer
+        speakerModelError = nil
+        speakerModelProgress = 0
+        let reportProgress: @Sendable (Double) -> Void = { [weak self] fraction in
+            Task { @MainActor in
+                guard let self, let progress = self.speakerModelProgress else { return }
+                // Hops to the main actor can arrive out of order.
+                self.speakerModelProgress = max(progress, fraction)
+            }
+        }
+        speakerModelDownload = Task { [weak self] in
+            var failure: String?
+            do {
+                try await diarizer.prepare(progress: reportProgress)
+            } catch {
+                failure = "Couldn't download the speaker model: \(error.localizedDescription)"
+            }
+            // Cancelled: `cancelSpeakerModelDownload()` reset the state.
+            guard !Task.isCancelled, let self else { return }
+            self.speakerModelDownload = nil
+            self.speakerModelProgress = nil
+            self.speakerModelError = failure
+            self.isSpeakerModelDownloaded = diarizer.isDownloaded
+        }
+    }
+
+    /// Stops downloading the speaker model. What's on disk is kept, so a new download resumes.
+    func cancelSpeakerModelDownload() {
+        speakerModelDownload?.cancel()
+        speakerModelDownload = nil
+        speakerModelProgress = nil
+    }
+
+    /// Removes the speaker model's files. Turns telling speakers apart off, as it would only
+    /// download them again.
+    func deleteSpeakerModel() async {
+        isDeletingSpeakerModel = true
+        defer { isDeletingSpeakerModel = false }
+        identifiesSpeakers = false
+        do {
+            try await Self.speakerDiarizer.deleteModel()
+        } catch {
+            speakerModelError = "Couldn't delete the speaker model: \(error.localizedDescription)"
+        }
+        isSpeakerModelDownloaded = Self.speakerDiarizer.isDownloaded
+    }
+
     /// Speaker names for multi-source recordings. Takes effect from the next transcription.
     var sourceLabels: SourceLabels {
         get { coordinator.sourceLabels }
@@ -763,6 +856,7 @@ final class AppEnvironment {
         coordinator = Self.makeCoordinator(
             model: model,
             summarizer: coordinator.summarizer,
+            speakerNamer: coordinator.speakerNamer,
             translator: translator,
             notesDirectory: notesFolder.directory,
             pendingNotes: coordinator.takePendingNotes(),
@@ -791,6 +885,7 @@ final class AppEnvironment {
         summaryModelError = nil
         isSummaryModelDownloaded = (summarizer as? MLXSummarizer)?.isDownloaded ?? true
         if coordinator.summarizer != nil { coordinator.summarizer = summarizer }
+        if coordinator.speakerNamer != nil { coordinator.speakerNamer = summarizer }
     }
 
     /// Downloads `summaryModel` if Mixdown downloads it, showing progress in

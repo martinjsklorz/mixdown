@@ -105,6 +105,15 @@ struct RecorderView: View {
                 progressBar(progress, for: coordinator)
                 summaryTemplatePicker(for: coordinator)
 
+            case .identifyingSpeakers:
+                headline(
+                    "Identifying Speakers…",
+                    detail: "Mixdown is telling apart the people on the system audio and looking for their names."
+                )
+                ProgressView()
+                    .controlSize(.large)
+                summaryTemplatePicker(for: coordinator)
+
             case .translating:
                 headline(
                     "Translating…",

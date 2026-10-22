@@ -5,6 +5,7 @@ import SwiftUI
 struct TranscriptionSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
     @State private var isConfirmingDelete = false
+    @State private var isConfirmingSpeakerModelDelete = false
     /// Whether macOS has Apple's speech model for the chosen language, for the model menu while
     /// another model is selected. macOS only says so asynchronously.
     @State private var isAppleSpeechInstalled = false
@@ -81,6 +82,29 @@ struct TranscriptionSettingsView: View {
                         + "people; otherwise Mixdown drops lines your microphone only heard from the speakers."
                 )
             }
+
+            Section {
+                Toggle(
+                    "Tell speakers apart",
+                    isOn: Binding(
+                        get: { environment.identifiesSpeakers },
+                        set: { environment.identifiesSpeakers = $0 }
+                    )
+                )
+                speakerModelStatus
+                Toggle(
+                    "Name speakers from the conversation",
+                    isOn: Binding(
+                        get: { environment.namesSpeakers },
+                        set: { environment.namesSpeakers = $0 }
+                    )
+                )
+                .disabled(!environment.identifiesSpeakers)
+            } header: {
+                Text("Speakers")
+            } footer: {
+                Caption(speakersFooter)
+            }
         }
         .formStyle(.grouped)
         .task(id: environment.language) {
@@ -103,6 +127,82 @@ struct TranscriptionSettingsView: View {
                     .foregroundStyle(.red)
             }
         }
+    }
+
+    /// The speaker model's download progress, why it failed, or Download while it's missing;
+    /// Delete once it's on disk.
+    @ViewBuilder
+    private var speakerModelStatus: some View {
+        if let progress = environment.speakerModelProgress {
+            HStack {
+                ProgressView(value: progress) {
+                    Text("Downloading the speaker model…")
+                } currentValueLabel: {
+                    Text(progress.formatted(.percent.precision(.fractionLength(0))))
+                        .monospacedDigit()
+                }
+                Button("Cancel", systemImage: "xmark.circle") { environment.cancelSpeakerModelDownload() }
+                    .labelStyle(.iconOnly)
+                    .help("Cancel")
+            }
+        } else if let error = environment.speakerModelError {
+            HStack {
+                Text(error)
+                    .foregroundStyle(.red)
+                Spacer()
+                Button("Retry", systemImage: "arrow.clockwise") { environment.downloadSpeakerModel() }
+                    .labelStyle(.titleAndIcon)
+            }
+        } else if environment.isDeletingSpeakerModel {
+            LabeledContent("Speaker model") {
+                ProgressView()
+                    .controlSize(.small)
+            }
+        } else if environment.isSpeakerModelDownloaded {
+            LabeledContent("Speaker model") {
+                Button("Delete", systemImage: "trash") { isConfirmingSpeakerModelDelete = true }
+                    .labelStyle(.iconOnly)
+                    .help("Delete the speaker model")
+                    // Not while a recording may need it.
+                    .disabled(!environment.canChangeModel)
+                    .confirmationDialog(
+                        "Delete the speaker model?",
+                        isPresented: $isConfirmingSpeakerModelDelete
+                    ) {
+                        Button("Delete", role: .destructive) {
+                            Task { await environment.deleteSpeakerModel() }
+                        }
+                    } message: {
+                        Text("This frees up disk space and turns off telling speakers apart.")
+                    }
+            }
+        } else if environment.identifiesSpeakers {
+            LabeledContent("Speaker model") {
+                Button("Download", systemImage: "arrow.down.circle") { environment.downloadSpeakerModel() }
+                    .labelStyle(.titleAndIcon)
+            }
+        }
+    }
+
+    private var speakersFooter: String {
+        var lines = [
+            "Once a recording ends, Mixdown tells the people on the system audio apart by their voices and labels "
+                + "their lines Speaker 1, Speaker 2 and so on. Your microphone keeps its name.",
+            "The speaker model, Nemotron 3 Diarization, is downloaded once from Hugging Face (about 100 MB) and runs "
+                + "on this Mac.",
+        ]
+        if environment.model.isLive {
+            lines.append("With the live model, the system audio is kept in memory until you stop.")
+        }
+        lines.append(
+            "Naming them uses \(environment.summarizer.info.displayName), your summary model: it looks for "
+                + "names said in the conversation, such as people introducing themselves or being asked by "
+                + "name. A speaker it can't tell stays numbered."
+        )
+        if environment.namesSpeakers, case .unavailable(let reason) = environment.summaryAvailability {
+            lines.append(reason)
+        }
+        return lines.joined(separator: " ")
     }
 
     /// The model's name, followed by a green check for models on disk, so the menu says which
@@ -185,7 +285,9 @@ struct TranscriptionSettingsView: View {
         var lines: [String]
         if model.isLive {
             lines = [
-                "The live model shows the text as you speak and saves it as the note, so the note is ready when you stop and no audio is kept, however long you record.",
+                environment.identifiesSpeakers
+                    ? "The live model shows the text as you speak and saves it as the note, so the note is ready when you stop."
+                    : "The live model shows the text as you speak and saves it as the note, so the note is ready when you stop and no audio is kept, however long you record.",
                 "It's less accurate than the offline models and names speakers only by input, like Me and Others.",
             ]
         } else {

@@ -36,21 +36,31 @@ extension RecordingCoordinator {
         phase = .transcribing(progress: 0)
         do {
             try await prepareModelIfMissing()
-            var transcript: Transcript
+            var transcripts: [TrackTranscript]
             var trackFailure: TrackFailure?
             if engine.transcribesLive {
-                transcript = transcriptFromLiveText(tracks, language: session.options.language)
+                transcripts = transcriptsFromLiveText(tracks, language: session.options.language)
             } else if let track = tracks.first, tracks.count == 1 {
                 transcriptionProgress = TranscriptionProgress(sessionID: session.id, tracks: tracks)
-                transcript = try await engine.transcribe(
+                let transcript = try await engine.transcribe(
                     track.samples,
                     options: session.options,
                     progress: progressHandler(track: 0, sessionID: session.id)
                 )
+                transcripts = [TrackTranscript(track: track, transcript: transcript)]
             } else {
-                (transcript, trackFailure) = try await transcribeSeparately(tracks, session: session)
+                (transcripts, trackFailure) = try await transcribeSeparately(tracks, session: session)
             }
+            let diarizedLanes: Set<Int>
+            (transcripts, diarizedLanes) = try await identifySpeakers(in: transcripts, using: session.diarizer)
+            var transcript: Transcript
+            let namable: [String]
+            (transcript, namable) = merged(transcripts, of: tracks, diarizedLanes: diarizedLanes)
+            // With no speech from the tracks that worked, the note would only be empty, so the
+            // recording fails as a whole.
+            if let trackFailure, transcript.isEmpty { throw trackFailure.error }
             transcript = vocabulary.apply(to: transcript)
+            transcript = await nameSpeakers(namable, in: transcript)
             let (translation, translationError) = await translate(transcript)
             let template = recordingSummaryTemplate ?? (session.isCall ? callSummaryTemplate : summaryTemplate)
             // The template can't change once the summary is under way.
@@ -152,21 +162,115 @@ extension RecordingCoordinator {
         }
     }
 
-    /// The note's transcript from what the live sessions recognized: per track like
-    /// `transcribeSeparately`, merged by time when there are several.
-    private func transcriptFromLiveText(_ tracks: [RecordedTrack], language: String?) -> Transcript {
-        let transcripts = tracks.map { track in
-            Self.shifted(
-                Transcript(segments: liveTranscript.segments(fromSource: track.lane), language: language),
-                by: track.offset
+    /// Each track's transcript from what the live sessions recognized, with the words' times.
+    private func transcriptsFromLiveText(_ tracks: [RecordedTrack], language: String?) -> [TrackTranscript] {
+        tracks.map { track in
+            TrackTranscript(
+                track: track,
+                transcript: Self.shifted(
+                    Transcript(segments: liveTranscript.segments(fromSource: track.lane), language: language),
+                    by: track.offset
+                ),
+                words: liveTranscript.words(fromSource: track.lane).map { segment in
+                    segment.map { LiveWord(text: $0.text, start: $0.start + track.offset, end: $0.end + track.offset) }
+                }
             )
         }
-        guard tracks.count > 1 else { return transcripts.first ?? Transcript(segments: []) }
-        let lanes = tracks.map(\.device)
-        let sources = zip(tracks, transcripts).flatMap { track, transcript in
-            Self.sources(of: transcript, track: track, among: lanes, labels: sourceLabels)
+    }
+
+    /// `transcripts` with the speakers of the system audio told apart by `diarizer`, and the lanes
+    /// whose speakers were. A track the diarizer fails on keeps its transcript as it was; the
+    /// failure is only logged.
+    private func identifySpeakers(
+        in transcripts: [TrackTranscript],
+        using diarizer: (any SpeakerDiarizer)?
+    ) async throws -> ([TrackTranscript], Set<Int>) {
+        guard let diarizer else { return (transcripts, []) }
+        var transcripts = transcripts
+        var diarizedLanes = Set<Int>()
+        for index in transcripts.indices {
+            let track = transcripts[index].track
+            guard track.device.kind == .systemAudio, !track.samples.isEmpty, !transcripts[index].transcript.isEmpty
+            else { continue }
+            phase = .identifyingSpeakers
+            do {
+                let started = now()
+                let turns = try await diarizer.diarize(track.samples).map {
+                    SpeakerTurn(start: $0.start + track.offset, end: $0.end + track.offset, speaker: $0.speaker)
+                }
+                transcripts[index].transcript.segments = SpeakerAssignment.label(
+                    transcripts[index].transcript.segments,
+                    words: transcripts[index].words,
+                    turns: turns
+                )
+                diarizedLanes.insert(track.lane)
+                logger.info(
+                    "Found \(Set(turns.map(\.speaker)).count) speakers in \(track.device.name, privacy: .public) in \(self.now().timeIntervalSince(started), format: .fixed(precision: 1)) s"
+                )
+            } catch {
+                if error is CancellationError || Task.isCancelled { throw CancellationError() }
+                logger.error(
+                    "Telling speakers apart in \(track.device.name, privacy: .public) failed: \(error.localizedDescription, privacy: .public)"
+                )
+            }
         }
-        return TranscriptMerger.merge(sources)
+        return (transcripts, diarizedLanes)
+    }
+
+    /// The note's transcript: the only track's as it is, else every track's labeled with its
+    /// source and merged by time. Also returns the transcript's speakers from `diarizedLanes`,
+    /// which `nameSpeakers(_:in:)` may rename.
+    private func merged(
+        _ transcripts: [TrackTranscript],
+        of tracks: [RecordedTrack],
+        diarizedLanes: Set<Int>
+    ) -> (Transcript, namable: [String]) {
+        guard tracks.count > 1 else {
+            let transcript = transcripts.first?.transcript ?? Transcript(segments: [])
+            return (transcript, diarizedLanes.isEmpty ? [] : transcript.speakers)
+        }
+        // A lane that switched microphones becomes one source per device, so with several
+        // microphones each part is named after the device that recorded it.
+        let lanes = tracks.map(\.device)
+        var namable: [String] = []
+        var sources: [SourceTranscript] = []
+        for item in transcripts {
+            let parts = Self.sources(of: item.transcript, track: item.track, among: lanes, labels: sourceLabels)
+            if diarizedLanes.contains(item.track.lane) {
+                for source in parts {
+                    for segment in source.transcript.segments {
+                        let label = TranscriptMerger.label(of: segment, in: source)
+                        if !namable.contains(label) { namable.append(label) }
+                    }
+                }
+            }
+            sources += parts
+        }
+        let transcript = TranscriptMerger.merge(sources)
+        // Echo removal may have dropped all of a label's lines.
+        return (transcript, namable.filter(transcript.speakers.contains))
+    }
+
+    /// `transcript` with `speakers` renamed after what's said, where `speakerNamer` can tell. The
+    /// note is saved either way, so a failure is only logged.
+    private func nameSpeakers(_ speakers: [String], in transcript: Transcript) async -> Transcript {
+        guard let speakerNamer, !speakers.isEmpty else { return transcript }
+        let name = speakerNamer.info.displayName
+        if case .unavailable(let reason) = speakerNamer.availability {
+            logger.info("Not naming speakers, \(name, privacy: .public) is unavailable: \(reason, privacy: .public)")
+            return transcript
+        }
+        phase = .identifyingSpeakers
+        do {
+            let names = try await speakerNamer.nameSpeakers(speakers, in: transcript)
+            logger.info("Named \(names.count) of \(speakers.count) speakers")
+            return SpeakerNaming.applying(names, to: transcript)
+        } catch {
+            logger.error(
+                "Naming speakers with \(name, privacy: .public) failed: \(error.localizedDescription, privacy: .public)"
+            )
+            return transcript
+        }
     }
 
     /// When the user and the others talked, from the microphone and system audio tracks. `nil`
@@ -187,20 +291,18 @@ extension RecordingCoordinator {
         return timeline.total.total > 0 ? timeline : nil
     }
 
-    /// Transcribes each track on its own, so speech stays attributed to its source, then merges the
-    /// labeled transcripts by time. Tracks are submitted together; the engine decides how many it
-    /// runs at once (speech-swift runs one at a time, since they share the GPU anyway).
+    /// Transcribes each track on its own, so speech stays attributed to its source. Tracks are
+    /// submitted together; the engine decides how many it runs at once (speech-swift runs one at a
+    /// time, since they share the GPU anyway).
     ///
-    /// A track that fails doesn't take the others with it: the transcript has the tracks that
-    /// worked, and the failure is returned alongside. Throws the failure instead if the tracks
-    /// that worked have no speech, e.g. because every track failed.
+    /// A track that fails doesn't take the others with it: the transcripts are the tracks that
+    /// worked, and the failure is returned alongside.
     private func transcribeSeparately(
         _ tracks: [RecordedTrack],
         session: Session
-    ) async throws -> (Transcript, TrackFailure?) {
+    ) async throws -> ([TrackTranscript], TrackFailure?) {
         let engine = engine
         let options = session.options
-        let sourceLabels = sourceLabels
         let audible = tracks.filter { $0.duration >= Self.minimumRecordingDuration }
         for track in tracks {
             logger.info(
@@ -243,16 +345,13 @@ extension RecordingCoordinator {
             return results
         }
 
-        // A lane that switched microphones becomes one source per device, so with several
-        // microphones each part is named after the device that recorded it.
-        let lanes = tracks.map(\.device)
-        var sources: [SourceTranscript] = []
+        var transcripts: [TrackTranscript] = []
         var failedDevices: [AudioInputDevice] = []
         var firstError: (any Error)?
         for (track, result) in zip(audible, results) {
             switch result {
             case .success(let transcript):
-                sources += Self.sources(of: transcript, track: track, among: lanes, labels: sourceLabels)
+                transcripts.append(TrackTranscript(track: track, transcript: transcript))
             // Cancelling the transcription stops every track; none of them failed.
             case .failure(let error) where error is CancellationError || Task.isCancelled:
                 throw CancellationError()
@@ -266,12 +365,8 @@ extension RecordingCoordinator {
                 }
             }
         }
-        // With no speech from the tracks that worked, the note would only be empty, so the
-        // recording fails as a whole.
-        let transcript = TranscriptMerger.merge(sources)
-        if let firstError, transcript.isEmpty { throw firstError }
         let failure = firstError.map { TrackFailure(devices: failedDevices, error: $0) }
-        return (transcript, failure)
+        return (transcripts, failure)
     }
 
     /// `transcript` of `track` as one labeled source per device that recorded part of it, in order

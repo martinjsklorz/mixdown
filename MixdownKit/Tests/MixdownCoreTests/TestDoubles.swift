@@ -420,15 +420,29 @@ final class MockSummarizer: Summarizer {
     private let received = LockedValue<[Transcript]>([])
     private let receivedTemplateList = LockedValue<[SummaryTemplate]>([])
     private let receivedCatchUpList = LockedValue<[(transcript: Transcript, language: String?)]>([])
+    private let speakerNames: [String: String]
+    private let receivedNamingList = LockedValue<[(speakers: [String], transcript: Transcript)]>([])
 
+    /// - Parameter speakerNames: Returned by `nameSpeakers(_:in:)`, by label.
     init(
         summary: NoteSummary = NoteSummary(overview: "A test."),
         error: (any Error)? = nil,
-        availability: SummarizerAvailability = .available
+        availability: SummarizerAvailability = .available,
+        speakerNames: [String: String] = [:]
     ) {
         self.summary = summary
         self.error = error
         self.availability = availability
+        self.speakerNames = speakerNames
+    }
+
+    /// What `nameSpeakers(_:in:)` was given.
+    var receivedNamings: [(speakers: [String], transcript: Transcript)] { receivedNamingList.current }
+
+    func nameSpeakers(_ speakers: [String], in transcript: Transcript) async throws -> [String: String] {
+        receivedNamingList.update { $0.append((speakers, transcript)) }
+        if let error { throw error }
+        return speakerNames
     }
 
     var receivedTranscripts: [Transcript] { received.current }
@@ -448,6 +462,31 @@ final class MockSummarizer: Summarizer {
         receivedCatchUpList.update { $0.append((transcript, language)) }
         if let error { throw error }
         return summary.keyPoints
+    }
+}
+
+/// Returns the turns registered for the number of samples it's given, else none, or throws
+/// `error`.
+final class MockDiarizer: SpeakerDiarizer {
+    let isDownloaded = true
+    private let turnsBySampleCount: [Int: [SpeakerTurn]]
+    private let error: (any Error)?
+    private let received = LockedValue<[Int]>([])
+
+    init(turnsBySampleCount: [Int: [SpeakerTurn]] = [:], error: (any Error)? = nil) {
+        self.turnsBySampleCount = turnsBySampleCount
+        self.error = error
+    }
+
+    var receivedSampleCounts: [Int] { received.current }
+
+    func prepare(progress: (@Sendable (Double) -> Void)?) async throws {}
+    func deleteModel() async throws {}
+
+    func diarize(_ samples: [Float]) async throws -> [SpeakerTurn] {
+        received.update { $0.append(samples.count) }
+        if let error { throw error }
+        return turnsBySampleCount[samples.count] ?? []
     }
 }
 

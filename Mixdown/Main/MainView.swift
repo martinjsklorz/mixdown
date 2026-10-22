@@ -16,6 +16,9 @@ struct MainView: View {
     @State private var searchText = ""
     @State private var columnVisibility = NavigationSplitViewVisibility.automatic
     @State private var noteToRename: NoteDocument?
+    /// The speaker to rename and their note, while asking for the new name.
+    @State private var speakerToRename: SpeakerToRename?
+    @State private var speakerDraft = ""
     @State private var noteToTrash: NoteDocument?
     /// What to fill in as heard when adding to the vocabulary, while its sheet is open.
     @State private var vocabularyDraft: VocabularyDraft?
@@ -29,6 +32,11 @@ struct MainView: View {
     private struct VocabularyDraft: Identifiable {
         let id = UUID()
         var soundsLike: String
+    }
+
+    private struct SpeakerToRename {
+        var note: NoteDocument
+        var speaker: String
     }
 
     /// An action on a note that didn't work, for an alert.
@@ -99,6 +107,19 @@ struct MainView: View {
                 Task { await rename(note, to: titleDraft) }
             }
             Button("Cancel", role: .cancel) {}
+        }
+        .alert(
+            "Rename “\(speakerToRename?.speaker ?? "")”",
+            isPresented: isPresent($speakerToRename),
+            presenting: speakerToRename
+        ) { rename in
+            TextField("Name", text: $speakerDraft)
+            Button("Rename") {
+                Task { await renameSpeaker(rename.speaker, to: speakerDraft, in: rename.note) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("Renames the speaker throughout this note. Give two speakers the same name to merge them.")
         }
         // Shows a note opened from outside the window while it's open, e.g. from its notification.
         // If the window was closed, the `.task` above takes the note when it opens.
@@ -300,6 +321,10 @@ struct MainView: View {
                 titleDraft = note.title
                 noteToRename = note
             },
+            renameSpeaker: { note, speaker in
+                speakerDraft = ""
+                speakerToRename = SpeakerToRename(note: note, speaker: speaker)
+            },
             moveToTrash: { note in
                 if suppressesTrashConfirmation {
                     moveToTrash(note)
@@ -324,6 +349,16 @@ struct MainView: View {
             // The title may have changed even if the file name couldn't.
             await reload()
         }
+    }
+
+    private func renameSpeaker(_ speaker: String, to name: String, in note: NoteDocument) async {
+        guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        do {
+            try await library.renameSpeaker(speaker, to: name, in: note)
+        } catch {
+            failure = Failure(title: "Couldn't Rename Speaker", message: error.localizedDescription)
+        }
+        await reload()
     }
 
     private func setPinned(_ isPinned: Bool, _ note: NoteDocument) async {

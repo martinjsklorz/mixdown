@@ -72,6 +72,14 @@ final class NoteLibraryModel {
         }.value
     }
 
+    /// Renames one of the note's speakers throughout it, off the main thread.
+    func renameSpeaker(_ speaker: String, to name: String, in note: NoteDocument) async throws {
+        let url = note.url
+        try await Task.detached(priority: .userInitiated) {
+            try NoteLibrary.renameSpeaker(speaker, to: name, inNoteAt: url)
+        }.value
+    }
+
     /// Pins or unpins the note, off the main thread.
     func setPinned(_ isPinned: Bool, _ note: NoteDocument) async throws {
         let url = note.url

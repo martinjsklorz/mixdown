@@ -67,6 +67,11 @@ struct AppSettings {
         /// Whether to time how long the user and the others talk while both a microphone and
         /// system audio record. Absent means no.
         static let measuresTalkTime = "measuresTalkTime"
+        /// Whether the people on the system audio are told apart once a recording ends. Absent
+        /// means no.
+        static let identifiesSpeakers = "identifiesSpeakers"
+        /// Whether the speakers told apart are named after what's said. Absent means yes.
+        static let namesSpeakers = "namesSpeakers"
         /// An `Appearance` raw value. Absent means `.auto`. Read with `@AppStorage`.
         static let appearance = "appearance"
         /// Whether a recording's time and input levels show in the Dynamic Island instead of in the
@@ -221,6 +226,16 @@ struct AppSettings {
     var measuresTalkTime: Bool {
         get { defaults.bool(forKey: Key.measuresTalkTime) }
         nonmutating set { defaults.set(newValue, forKey: Key.measuresTalkTime) }
+    }
+
+    var identifiesSpeakers: Bool {
+        get { defaults.bool(forKey: Key.identifiesSpeakers) }
+        nonmutating set { defaults.set(newValue, forKey: Key.identifiesSpeakers) }
+    }
+
+    var namesSpeakers: Bool {
+        get { defaults.object(forKey: Key.namesSpeakers) as? Bool ?? true }
+        nonmutating set { defaults.set(newValue, forKey: Key.namesSpeakers) }
     }
 
     /// One of `stillRecordingMinuteChoices`, or 0 to never ask.
