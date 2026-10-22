@@ -71,9 +71,9 @@ struct NoteListView<Footer: View>: View {
                 .scrollTargetLayout()
                 .padding(.horizontal, 10)
                 .padding(.bottom, 8)
+                .mask(alignment: .top) { stickyHeaderMask(in: rows) }
             }
             .onScrollTargetVisibilityChange(idType: Row.ID.self) { visibleRows = $0 }
-            .mask(alignment: .top) { stickyHeaderMask(in: rows) }
             .overlay(alignment: .top) { stickyHeader(in: rows) }
             .onChange(of: collapsesPinned) { _, isFolded in slideRows(folding: isFolded) }
             .focusable()
@@ -201,12 +201,21 @@ struct NoteListView<Footer: View>: View {
     }
 
     /// Hides the notes scrolled under the sticky header, so it shows the sidebar's own background
-    /// behind it: no material drawn over the list matches the sidebar's.
+    /// behind it: no material drawn over the list matches the sidebar's. Masks the list's content
+    /// rather than the scroll view, which would cut the sidebar's background out from under the
+    /// header too and show the window's through it.
     private func stickyHeaderMask(in rows: [Row]) -> some View {
         let hiddenHeight = stickyHeaderPlacement(in: rows).map { max(0, stickyHeaderHeight + $0.push) } ?? 0
-        return VStack(spacing: 0) {
-            Color.clear.frame(height: hiddenHeight)
-            Rectangle()
+        return GeometryReader { proxy in
+            // How far the content has scrolled up past the top of the list's visible area.
+            let scrolled = max(0, -proxy.frame(in: .scrollView).minY)
+            VStack(spacing: 0) {
+                Color.clear.frame(height: scrolled + hiddenHeight)
+                Rectangle()
+            }
+            // Past the content's end too, for the notes drawn below it while they slide up over
+            // the pinned notes folding away.
+            .frame(height: proxy.size.height * 2, alignment: .top)
         }
     }
 
