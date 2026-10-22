@@ -31,7 +31,7 @@ struct RecordingStatusView: View {
         case .recording(let startedAt):
             Text("Recording since \((recordingStartedAt ?? startedAt).formatted(date: .omitted, time: .shortened))")
         case .paused(let recorded):
-            Text("Paused · \(MenuBarLabel.elapsedText(Int(recorded))) recorded")
+            Text("Paused · \(ProgressText.elapsed(Int(recorded))) recorded")
         case .transcribing(let progress):
             Text("Transcribing… \(ProgressText.detail(progress: progress, remaining: timeRemaining))")
         case .translating:

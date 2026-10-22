@@ -20,9 +20,7 @@ struct SummarySettingsView: View {
                     )
                 )
             } footer: {
-                Text(footer)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Caption(footer)
             }
 
             Section {
@@ -44,12 +42,10 @@ struct SummarySettingsView: View {
             } header: {
                 Text("Templates")
             } footer: {
-                Text(
+                Caption(
                     "Detected calls are recordings started from a call notification or automatically. "
                         + "Change what each template looks out for, or add your own, under Templates."
                 )
-                .font(.caption)
-                .foregroundStyle(.secondary)
             }
             .disabled(!environment.summarizesNotes)
 
@@ -84,9 +80,7 @@ struct SummarySettingsView: View {
             } header: {
                 Text("Model")
             } footer: {
-                Text(modelFooter)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Caption(modelFooter)
             }
         }
         .formStyle(.grouped)
@@ -115,7 +109,7 @@ struct SummarySettingsView: View {
             case .appleIntelligence: false
             }
         guard isDownloaded else { return Text(model.label) }
-        return Text("\(model.label)  \(Image(nsImage: TranscriptionSettingsView.downloadedImage))")
+        return Text("\(model.label)  \(Image(nsImage: DownloadedBadge.image))")
             .accessibilityLabel("\(model.label), downloaded")
     }
 

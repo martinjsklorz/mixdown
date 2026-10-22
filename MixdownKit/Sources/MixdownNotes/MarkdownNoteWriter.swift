@@ -30,24 +30,38 @@ public struct MarkdownNoteWriter: NoteWriting {
         defer { try? fileManager.removeItem(at: temporaryURL) }
         try Data(MarkdownNoteRenderer.render(note).utf8).write(to: temporaryURL)
 
-        let stem = Self.fileNameStem(for: note)
-        for index in 1...Self.maxCollisionSuffix {
-            let name = index == 1 ? "\(stem).md" : "\(stem) \(index).md"
+        return try Self.withFreeName(stem: Self.fileNameStem(for: note), pathExtension: "md") { name in
             let destination = directory.appending(path: name, directoryHint: .notDirectory)
-            if fileManager.fileExists(atPath: destination.path(percentEncoded: false)) { continue }
-            do {
-                try fileManager.moveItem(at: temporaryURL, to: destination)
-                return destination
-            } catch let error as CocoaError where error.code == .fileWriteFileExists {
-                continue  // Lost a race with another writer; try the next suffix.
-            }
+            if fileManager.fileExists(atPath: destination.path(percentEncoded: false)) { return nil }
+            try fileManager.moveItem(at: temporaryURL, to: destination)
+            return destination
         }
-        throw CocoaError(.fileWriteFileExists)
     }
 
     /// A hidden file name in `directory` to write to before moving the file into place.
     static func temporaryURL(in directory: URL) -> URL {
         directory.appending(path: ".\(UUID().uuidString).mixdown-tmp", directoryHint: .notDirectory)
+    }
+
+    /// Calls `attempt` with `stem.pathExtension`, then `stem 2.pathExtension`, `stem 3…`, up to
+    /// `maxCollisionSuffix`, until it returns a URL; it returns `nil` for a name that's taken.
+    /// Throwing `CocoaError.fileWriteFileExists` moves on too: another file got the name first.
+    /// Throws that error itself once every name is taken.
+    static func withFreeName(
+        stem: String,
+        pathExtension: String,
+        _ attempt: (_ name: String) throws -> URL?
+    ) throws -> URL {
+        for index in 1...maxCollisionSuffix {
+            var name = index == 1 ? stem : "\(stem) \(index)"
+            if !pathExtension.isEmpty { name += ".\(pathExtension)" }
+            do {
+                if let url = try attempt(name) { return url }
+            } catch let error as CocoaError where error.code == .fileWriteFileExists {
+                continue  // Lost a race with another file; try the next suffix.
+            }
+        }
+        throw CocoaError(.fileWriteFileExists)
     }
 
     // MARK: - File names

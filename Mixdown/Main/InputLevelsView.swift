@@ -25,7 +25,7 @@ struct InputLevelsView: View {
                             .font(.callout)
                     }
                     if SilentInputWarning.needsPermission(silent) {
-                        Button("Open Privacy Settings…") { SilentInputWarning.openPrivacySettings() }
+                        Button("Open Privacy Settings…") { SystemSettings.open(.screenAndSystemAudioRecording) }
                             .controlSize(.small)
                     }
                 }

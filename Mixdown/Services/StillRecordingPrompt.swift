@@ -77,6 +77,10 @@ final class StillRecordingPrompt {
     private func keep() {
         coordinator()?.keepRecording()
     }
+
+    private func openRecorder() {
+        showRecorder()
+    }
 }
 
 extension StillRecordingPrompt {
@@ -88,7 +92,7 @@ extension StillRecordingPrompt {
         case Self.keepAction:
             await keep()
         case UNNotificationDefaultActionIdentifier:
-            await showRecorder()
+            await openRecorder()
         default:
             break
         }

@@ -32,7 +32,7 @@ final class MomentEntry {
     /// The Dynamic Island's frame while it's shown, to go under it.
     private let islandFrame: () -> NSRect?
     /// Created on the first `show(_:)`, as windows shouldn't be made before the app has launched.
-    private var panel: MomentPanel?
+    private var panel: NotchPanel?
     /// The draft the field is showing, if it's open.
     private var shownDraft: MomentDraft?
     /// The app that was in front, while Mixdown had to come forward for the field to get the
@@ -73,8 +73,15 @@ final class MomentEntry {
         }
     }
 
-    private func makePanel() -> MomentPanel {
-        let panel = MomentPanel()
+    private func makePanel() -> NotchPanel {
+        let panel = NotchPanel(
+            // Takes the keyboard without activating Mixdown, over every Space and full-screen app,
+            // as the moment can be marked from any of them.
+            canBecomeKey: true,
+            showsOverFullScreenApps: true,
+            // Light text and caret on black, whatever the system appearance.
+            isDark: true
+        )
         self.panel = panel
         // Clicking anywhere else, or switching apps, drops the moment, like Escape.
         _ = NotificationCenter.default.addObserver(
@@ -91,7 +98,7 @@ final class MomentEntry {
     }
 
     /// Centers the field under the notch, or under the island while it's shown.
-    private func place(_ panel: MomentPanel) {
+    private func place(_ panel: NotchPanel) {
         guard let screen = DynamicIsland.screen else { return }
         let notch = DynamicIsland.notch(on: screen)
         let top = islandFrame()?.minY ?? notch.minY
@@ -104,35 +111,6 @@ final class MomentEntry {
             ),
             display: true
         )
-    }
-}
-
-/// A panel that can take the keyboard without activating Mixdown, over every Space and
-/// full-screen app, as the moment can be marked from any of them.
-private final class MomentPanel: NSPanel {
-    convenience init() {
-        self.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
-        isFloatingPanel = true
-        level = .statusBar
-        backgroundColor = .clear
-        isOpaque = false
-        hasShadow = false
-        hidesOnDeactivate = false
-        isMovable = false
-        isExcludedFromWindowsMenu = true
-        isReleasedWhenClosed = false
-        becomesKeyOnlyIfNeeded = false
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
-        // Light text and caret on black, whatever the system appearance.
-        appearance = NSAppearance(named: .darkAqua)
-    }
-
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { false }
-
-    /// Keeps the panel up by the menu bar, where AppKit would otherwise move a window out from.
-    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
-        frameRect
     }
 }
 
@@ -149,7 +127,7 @@ private struct MomentEntryView: View {
             Image(systemName: "bookmark.fill")
                 .font(.system(size: 10))
                 .foregroundStyle(.yellow)
-            Text(MenuBarLabel.elapsedText(Int(draft.time)))
+            Text(ProgressText.elapsed(Int(draft.time)))
                 .monospacedDigit()
                 .foregroundStyle(.white.opacity(0.6))
                 .fixedSize()

@@ -107,7 +107,6 @@ public final class CallDetector {
     public private(set) var activeCalls: Set<CallApp> = []
 
     private let monitor: any AudioInputActivityMonitoring
-    private let apps: [CallApp]
     private let ownProcessID: Int32
     private let startDelay: Duration
     private let endDelay: Duration
@@ -121,13 +120,11 @@ public final class CallDetector {
     ///   don't count.
     public init(
         monitor: any AudioInputActivityMonitoring,
-        apps: [CallApp] = CallApp.known,
         ownProcessID: Int32 = ProcessInfo.processInfo.processIdentifier,
         startDelay: Duration = .seconds(3),
         endDelay: Duration = .seconds(5)
     ) {
         self.monitor = monitor
-        self.apps = apps
         self.ownProcessID = ownProcessID
         self.startDelay = startDelay
         self.endDelay = endDelay
@@ -150,7 +147,7 @@ public final class CallDetector {
         var found = Set<CallApp>()
         for client in clients where client.processID != ownProcessID {
             let bundleIDs = [client.bundleID, client.appBundleID].compactMap { $0 }
-            guard let app = apps.first(where: { app in bundleIDs.contains { app.matches(bundleID: $0) } })
+            guard let app = CallApp.known.first(where: { app in bundleIDs.contains { app.matches(bundleID: $0) } })
             else { continue }
             found.insert(app)
         }

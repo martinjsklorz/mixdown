@@ -1,6 +1,6 @@
 import Foundation
 import MixdownCore
-import NaturalLanguage
+import MixdownNaturalLanguage
 import Translation
 
 /// Translates with Apple's on-device translation models, through the Translation framework: the
@@ -27,8 +27,7 @@ public struct AppleTranslator: Translator {
         to target: String
     ) async throws -> MixdownCore.Transcript? {
         let targetLanguage = Locale.Language(identifier: target)
-        guard let source = transcript.language.map(Locale.Language.init(identifier:)) ?? Self.language(of: transcript)
-        else {
+        guard let source = TranscriptLanguage.code(of: transcript).map(Locale.Language.init(identifier:)) else {
             throw TranscriptTranslationError.unknownSourceLanguage
         }
         guard !Self.isSameLanguage(source, targetLanguage) else { return nil }
@@ -104,13 +103,6 @@ public struct AppleTranslator: Translator {
         to target: Locale.Language
     ) async -> LanguageAvailability.Status {
         await LanguageAvailability().status(from: source, to: target)
-    }
-
-    /// The language most of the transcript is in, for transcripts that don't say.
-    private static func language(of transcript: MixdownCore.Transcript) -> Locale.Language? {
-        let recognizer = NLLanguageRecognizer()
-        recognizer.processString(transcript.text)
-        return recognizer.dominantLanguage.map { Locale.Language(identifier: $0.rawValue) }
     }
 
     // MARK: - Session

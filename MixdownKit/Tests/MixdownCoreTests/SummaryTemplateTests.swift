@@ -49,10 +49,12 @@ struct SummaryTemplateTests {
     @Test func decodesLeniently() throws {
         let json = #"[{"id": "custom-1", "name": "Review", "layout": "columns"}, {"id": "standup"}]"#
         let templates = try JSONDecoder().decode([SummaryTemplate].self, from: Data(json.utf8))
-        #expect(templates == [
-            SummaryTemplate(id: "custom-1", name: "Review", instructions: "", layout: .overview),
-            SummaryTemplate(id: "standup", name: "", instructions: "", layout: .overview),
-        ])
+        #expect(
+            templates == [
+                SummaryTemplate(id: "custom-1", name: "Review", instructions: "", layout: .overview),
+                SummaryTemplate(id: "standup", name: "", instructions: "", layout: .overview),
+            ]
+        )
 
         let review = SummaryTemplate(id: "custom-2", name: "Review", instructions: "Demos.", layout: .sections)
         let decoded = try JSONDecoder().decode(SummaryTemplate.self, from: JSONEncoder().encode(review))

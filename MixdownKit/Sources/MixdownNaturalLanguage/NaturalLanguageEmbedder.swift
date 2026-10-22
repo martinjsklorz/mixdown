@@ -107,13 +107,7 @@ public actor NaturalLanguageEmbedder: TextEmbedder {
 
     /// The language `text` is in, if it's at least `minimumConfidence` sure.
     private static func language(of text: String, minimumConfidence: Double = minimumConfidence) -> NLLanguage? {
-        let recognizer = NLLanguageRecognizer()
-        // Plenty to tell the language from.
-        recognizer.processString(String(text.prefix(2000)))
-        guard let (language, confidence) = recognizer.languageHypotheses(withMaximum: 1).first,
-            language != .undetermined, confidence >= minimumConfidence
-        else { return nil }
-        return language
+        TranscriptLanguage.language(of: text, minimumConfidence: minimumConfidence)
     }
 }
 

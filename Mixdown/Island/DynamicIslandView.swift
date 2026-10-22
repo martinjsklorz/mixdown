@@ -11,7 +11,7 @@ struct DynamicIslandView: View {
     /// A wing's margin next to the notch.
     fileprivate static let innerPadding: CGFloat = 6
     /// The rounding of the island's bottom corners.
-    fileprivate static let cornerRadius: CGFloat = 10
+    fileprivate nonisolated static let cornerRadius: CGFloat = 10
     /// How far the input levels reach out from the notch.
     static let levelsWingWidth = LevelWaveform.width + outerPadding + innerPadding
     /// The height of the live text's line under the notch.
@@ -193,7 +193,7 @@ private struct ElapsedWing: View {
                     }
                 }
                 .font(.system(size: 8))
-                Text(MenuBarLabel.elapsedText(elapsed))
+                Text(ProgressText.elapsed(elapsed))
                     .font(.system(size: 13, weight: .semibold))
                     .monospacedDigit()
                     .foregroundStyle(.white)

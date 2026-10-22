@@ -258,4 +258,31 @@ final class HALPropertyListener: @unchecked Sendable {
     }
 
     deinit { remove() }
+
+    /// Listens to `selectors` on each of `objectIDs` that `listeners` doesn't cover yet, and drops
+    /// the listeners of objects that are gone.
+    static func sync(
+        _ listeners: inout [AudioObjectID: HALPropertyListener],
+        to objectIDs: some Sequence<AudioObjectID>,
+        selectors: [AudioObjectPropertySelector],
+        scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal,
+        onChange: @escaping @Sendable () -> Void
+    ) {
+        let current = Set(objectIDs)
+        for objectID in current where listeners[objectID] == nil {
+            let listener = HALPropertyListener(
+                objectID: objectID,
+                selectors: selectors,
+                scope: scope,
+                onChange: onChange
+            )
+            listener.install()
+            listeners[objectID] = listener
+        }
+        for (objectID, listener) in listeners where !current.contains(objectID) {
+            // The process has exited or the device is gone, so the HAL may have dropped the listener.
+            listener.remove(logsFailures: false)
+            listeners[objectID] = nil
+        }
+    }
 }

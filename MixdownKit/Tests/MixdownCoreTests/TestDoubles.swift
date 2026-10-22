@@ -68,32 +68,6 @@ struct MockDeviceProvider: AudioDeviceProvider {
     func deviceUpdates() -> AsyncStream<[AudioInputDevice]> { updates }
 }
 
-/// A device list that changes while the test runs, like devices being plugged in and out.
-final class LiveDeviceProvider: AudioDeviceProvider {
-    private let devices: LockedValue<[AudioInputDevice]>
-    private let subscribers = LockedValue<[AsyncStream<[AudioInputDevice]>.Continuation]>([])
-
-    init(devices: [AudioInputDevice]) {
-        self.devices = LockedValue(devices)
-    }
-
-    func availableDevices() async -> [AudioInputDevice] { devices.current }
-
-    func deviceUpdates() -> AsyncStream<[AudioInputDevice]> {
-        let (stream, continuation) = AsyncStream<[AudioInputDevice]>.makeStream()
-        subscribers.update { $0.append(continuation) }
-        return stream
-    }
-
-    /// Changes the device list and reports it to subscribers.
-    func send(_ list: [AudioInputDevice]) {
-        devices.update { $0 = list }
-        for subscriber in subscribers.current {
-            subscriber.yield(list)
-        }
-    }
-}
-
 /// Yields `chunks` on start, then finishes on `stop()` (or immediately with `streamError`, or
 /// immediately without error when `finishesOnStart`, like a capture the system ended). With a
 /// `startGate`, `start()` waits for it to open, like a capture held up by a permission prompt.
@@ -179,13 +153,6 @@ struct MockCaptureFactory: AudioCaptureFactory {
     }
 }
 
-/// Reports whether other apps play audio as `isPlaying` says.
-struct MockPlaybackMonitor: AudioPlaybackMonitoring {
-    let isPlaying = LockedValue(false)
-
-    func isOtherAudioPlaying() async -> Bool { isPlaying.current }
-}
-
 actor MockEngine: TranscriptionEngine {
     nonisolated let info = TranscriptionEngineInfo(id: "mock", displayName: "Mock Engine")
     nonisolated var isDownloaded: Bool { downloaded.current }
@@ -197,57 +164,36 @@ actor MockEngine: TranscriptionEngine {
     private let transcribeError: (any Error)?
     /// Thrown instead of returning a transcript for a given sample count, to fail one source.
     private let transcribeErrorsBySampleCount: [Int: any Error]
-    private let progressBySampleCount: [Int: Double]
-    private let transcriptionGate: Gate?
-    private let ungatedSampleCounts: Set<Int>
     private let prepareError: (any Error)?
     private let preparesUntilCancelled: Bool
-    private let cancellationGate: Gate?
-    private let preparationGate: Gate?
     private let deleteError: (any Error)?
     private let liveSession: MockLiveSession?
     private let liveError: (any Error)?
     private nonisolated let downloaded: LockedValue<Bool>
     private(set) var receivedSampleCounts: [Int] = []
     private(set) var receivedSamples: [[Float]] = []
-    /// The `progress` callback of each `transcribe` call, by sample count, to report more later.
-    private(set) var progressCallbacks: [Int: @Sendable (Double) -> Void] = [:]
     private(set) var prepareCount = 0
     private(set) var cancelledPrepareCount = 0
     private(set) var deleteCount = 0
     /// Recordings between `recordingWillStart()` and `recordingDidFinish()`.
     nonisolated let recordingsInProgress = LockedValue(0)
-    /// `recordingsInProgress` at each `transcribe` call.
-    private(set) var recordingsInProgressWhileTranscribing: [Int] = []
 
     /// - Parameters:
     ///   - isDownloaded: Whether the model starts out on disk. A successful `prepare` downloads it.
     ///   - preparesUntilCancelled: `prepare` stalls halfway, like a slow download, until its task
     ///     is cancelled.
-    ///   - cancellationGate: A cancelled `prepare` throws once it opens, like a download that takes a
-    ///     while to stop.
-    ///   - preparationGate: `prepare` stalls halfway until it opens.
     ///   - deleteError: Thrown by `deleteModel`, which then leaves the model on disk.
     ///   - liveSession: Handed out by `makeLiveSession` for every input; `nil` if the engine
     ///     doesn't transcribe live.
     ///   - liveError: Thrown by `makeLiveSession` instead.
-    ///   - progressBySampleCount: Progress `transcribe` reports for a given sample count before
-    ///     waiting for `transcriptionGate`.
-    ///   - transcriptionGate: `transcribe` returns once it opens.
-    ///   - ungatedSampleCounts: Sample counts `transcribe` returns for right away, gate or not.
     init(
         transcript: Transcript = Transcript(segments: []),
         transcriptsBySampleCount: [Int: Transcript] = [:],
         transcribeError: (any Error)? = nil,
         transcribeErrorsBySampleCount: [Int: any Error] = [:],
-        progressBySampleCount: [Int: Double] = [:],
-        transcriptionGate: Gate? = nil,
-        ungatedSampleCounts: Set<Int> = [],
         isDownloaded: Bool = true,
         prepareError: (any Error)? = nil,
         preparesUntilCancelled: Bool = false,
-        cancellationGate: Gate? = nil,
-        preparationGate: Gate? = nil,
         deleteError: (any Error)? = nil,
         liveSession: MockLiveSession? = nil,
         liveError: (any Error)? = nil
@@ -256,14 +202,9 @@ actor MockEngine: TranscriptionEngine {
         self.transcriptsBySampleCount = transcriptsBySampleCount
         self.transcribeError = transcribeError
         self.transcribeErrorsBySampleCount = transcribeErrorsBySampleCount
-        self.progressBySampleCount = progressBySampleCount
-        self.transcriptionGate = transcriptionGate
-        self.ungatedSampleCounts = ungatedSampleCounts
         self.downloaded = LockedValue(isDownloaded)
         self.prepareError = prepareError
         self.preparesUntilCancelled = preparesUntilCancelled
-        self.cancellationGate = cancellationGate
-        self.preparationGate = preparationGate
         self.deleteError = deleteError
         self.liveSession = liveSession
         self.liveError = liveError
@@ -284,11 +225,9 @@ actor MockEngine: TranscriptionEngine {
                 try await Task.sleep(for: .seconds(60))
             } catch {
                 cancelledPrepareCount += 1
-                await cancellationGate?.wait()
                 throw error
             }
         }
-        await preparationGate?.wait()
         if let prepareError { throw prepareError }
         downloaded.update { $0 = true }
         progress?(1)
@@ -320,11 +259,6 @@ actor MockEngine: TranscriptionEngine {
     ) async throws -> Transcript {
         receivedSampleCounts.append(samples.count)
         receivedSamples.append(samples)
-        progressCallbacks[samples.count] = progress
-        recordingsInProgressWhileTranscribing.append(recordingsInProgress.current)
-        if let fraction = progressBySampleCount[samples.count] { progress?(fraction) }
-        if !ungatedSampleCounts.contains(samples.count) { await transcriptionGate?.wait() }
-        try Task.checkCancellation()
         if let error = transcribeErrorsBySampleCount[samples.count] ?? transcribeError { throw error }
         return transcriptsBySampleCount[samples.count] ?? transcript
     }
@@ -536,33 +470,5 @@ final class MockTranslator: Translator {
         received.update { $0.append((transcript, target)) }
         if let error { throw error }
         return translation
-    }
-}
-
-/// Translates each transcript by looking its text up in `translations`, as a live caption's line
-/// is translated on its own. Texts it has no translation for are in the target language already;
-/// those in `failures` throw their error.
-final class DictionaryTranslator: Translator {
-    let info = TranslatorInfo(id: "dictionary", displayName: "Dictionary Translator")
-    private let translations: [String: String]
-    private let failures: [String: any Error]
-    private let received = LockedValue<[Transcript]>([])
-
-    init(translations: [String: String] = [:], failures: [String: any Error] = [:]) {
-        self.translations = translations
-        self.failures = failures
-    }
-
-    var receivedTexts: [String] { received.current.map(\.text) }
-    var receivedTranscripts: [Transcript] { received.current }
-
-    func translate(_ transcript: Transcript, to target: String) async throws -> Transcript? {
-        received.update { $0.append(transcript) }
-        if let error = failures[transcript.text] { throw error }
-        guard let translation = translations[transcript.text] else { return nil }
-        return Transcript(
-            segments: transcript.segments.map { TranscriptSegment(start: $0.start, end: $0.end, text: translation) },
-            language: target
-        )
     }
 }

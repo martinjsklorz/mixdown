@@ -91,12 +91,14 @@ private final class ProcessInputWatcher: @unchecked Sendable {
             audioLogger.error("\(error.localizedDescription, privacy: .public)")
             return
         }
-        syncListeners(&processListeners, to: processes, selector: kAudioProcessPropertyIsRunningInput) {
+        HALPropertyListener.sync(&processListeners, to: processes, selectors: [kAudioProcessPropertyIsRunningInput]) {
             [weak self] in self?.scheduleRefresh("process input changed")
         }
-        syncListeners(&deviceListeners, to: inputDevices, selector: kAudioDevicePropertyDeviceIsRunningSomewhere) {
-            [weak self] in self?.scheduleRefresh("input device started or stopped")
-        }
+        HALPropertyListener.sync(
+            &deviceListeners,
+            to: inputDevices,
+            selectors: [kAudioDevicePropertyDeviceIsRunningSomewhere]
+        ) { [weak self] in self?.scheduleRefresh("input device started or stopped") }
 
         let clients = processes.compactMap { objectID -> AudioInputClient? in
             guard CoreAudioHAL.boolProperty(kAudioProcessPropertyIsRunningInput, of: objectID),
@@ -120,27 +122,6 @@ private final class ProcessInputWatcher: @unchecked Sendable {
             "\(processes.count, privacy: .public) audio processes; using an input: \(described.joined(separator: ", "), privacy: .public) (found by: \(reason, privacy: .public))"
         )
         onChange(clients)
-    }
-
-    /// Listens to `selector` on each of `objectIDs` that `listeners` doesn't cover yet, and drops
-    /// the listeners of objects that are gone.
-    private func syncListeners(
-        _ listeners: inout [AudioObjectID: HALPropertyListener],
-        to objectIDs: [AudioObjectID],
-        selector: AudioObjectPropertySelector,
-        onChange: @escaping @Sendable () -> Void
-    ) {
-        for objectID in objectIDs where listeners[objectID] == nil {
-            let listener = HALPropertyListener(objectID: objectID, selectors: [selector], onChange: onChange)
-            listener.install()
-            listeners[objectID] = listener
-        }
-        let current = Set(objectIDs)
-        for (objectID, listener) in listeners where !current.contains(objectID) {
-            // The process has exited or the device is gone, so the HAL may have dropped the listener.
-            listener.remove(logsFailures: false)
-            listeners[objectID] = nil
-        }
     }
 
     // MARK: - Process details

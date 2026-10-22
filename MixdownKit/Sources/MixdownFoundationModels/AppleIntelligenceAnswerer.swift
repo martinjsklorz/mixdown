@@ -1,7 +1,7 @@
 import Foundation
 import FoundationModels
 import MixdownCore
-import NaturalLanguage
+import MixdownNaturalLanguage
 import os
 
 private let logger = Logger(subsystem: "app.mixdown", category: "chat")
@@ -60,15 +60,12 @@ public struct AppleIntelligenceAnswerer: NoteAnswerer {
         if case .unavailable(let reason) = SystemModelSummary.availability(for: "to chat with your notes") {
             throw NoteAnswerError.unavailable(reason)
         }
-        let rules = instructions(now: now, language: language(of: question))
+        // Only if it's long enough to tell.
+        let language = TranscriptLanguage.code(of: question, minimumConfidence: 0.6)
+        let rules = instructions(now: now, language: language)
         var excerpts = excerpts
         while true {
-            let session: LanguageModelSession
-            if #available(macOS 27, *) {
-                session = makeSession(instructions: rules)
-            } else {
-                session = LanguageModelSession(model: .default) { rules }
-            }
+            let session = SystemModelSummary.makeSession(instructions: rules)
             var hasAnswered = false
             do {
                 let stream = session.streamResponse(
@@ -101,18 +98,7 @@ public struct AppleIntelligenceAnswerer: NoteAnswerer {
         }
     }
 
-    /// See `SystemModelSummary.makeSession(model:instructions:)`.
-    @available(macOS 27, *)
-    private static func makeSession(instructions: String) -> LanguageModelSession {
-        makeSession(model: SystemLanguageModel.default, instructions: instructions)
-    }
-
-    @available(macOS 27, *)
-    private static func makeSession<Model: LanguageModel>(model: Model, instructions: String) -> LanguageModelSession {
-        LanguageModelSession(model: model) { instructions }
-    }
-
-    static func instructions(now: Date, language: String?) -> String {
+    private static func instructions(now: Date, language: String?) -> String {
         // The model answers in the language of its input, and the excerpts may be in another one
         // than the question.
         let languageName = language.flatMap { Locale(identifier: "en").localizedString(forIdentifier: $0) }
@@ -129,7 +115,7 @@ public struct AppleIntelligenceAnswerer: NoteAnswerer {
             """
     }
 
-    static func prompt(_ question: String, excerpts: [NoteExcerpt], history: [ChatTurn]) -> String {
+    private static func prompt(_ question: String, excerpts: [NoteExcerpt], history: [ChatTurn]) -> String {
         var parts: [String] = []
         let turns = history.suffix(maxHistoryTurns)
         if !turns.isEmpty {
@@ -159,15 +145,5 @@ public struct AppleIntelligenceAnswerer: NoteAnswerer {
         date.formatted(
             .dateTime.weekday(.wide).day().month(.wide).year().locale(Locale(identifier: "en_GB"))
         )
-    }
-
-    /// The language of `question`, if it's long enough to tell.
-    static func language(of question: String) -> String? {
-        let recognizer = NLLanguageRecognizer()
-        recognizer.processString(question)
-        guard let (language, confidence) = recognizer.languageHypotheses(withMaximum: 1).first,
-            language != .undetermined, confidence >= 0.6
-        else { return nil }
-        return language.rawValue
     }
 }

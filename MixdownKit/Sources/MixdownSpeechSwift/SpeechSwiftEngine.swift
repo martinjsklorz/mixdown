@@ -28,7 +28,9 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
     private nonisolated let model: SpeechSwiftModel
     private var models: LoadedModels?
     private var loading: (task: Task<LoadedModels, any Error>, progress: ProgressRelay)?
-    private var lastTranscription: Task<Void, Never>?
+    /// Transcriptions run one after another: the model instances aren't thread-safe, and actor
+    /// reentrancy alone would let a second transcription interleave at the `await`s.
+    private let transcriptions = SerialTaskQueue()
     /// Transcriptions running or queued. The models stay loaded while there are any.
     private var activeTranscriptions = 0
     /// Recordings between `recordingWillStart()` and `recordingDidFinish()`. The models stay loaded
@@ -108,7 +110,7 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
             activeTranscriptions -= 1
             scheduleUnload()
         }
-        let transcript = try await oneAtATime {
+        let transcript = try await transcriptions.run {
             try await self.performTranscription(samples, options: options, language: language, progress: progress)
         }
         // Also when there was no speech, so a silent source doesn't hold the bar back.
@@ -208,7 +210,7 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
             if task.isCancelled {
                 return try await loadedModels(progress: progress)
             }
-            throw Self.unavailable(error)
+            throw TranscriptionError.unavailable(error)
         }
     }
 
@@ -295,40 +297,15 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
         return .offline(detector: detector, recognizer: recognizer)
     }
 
-    /// Where weights are cached: `Application Support/Mixdown/Models`, inside the container when
-    /// sandboxed.
+    /// Where weights are cached: `ModelDirectory.url`.
     static func modelDirectory() throws -> URL {
-        guard let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-        else {
+        guard let url = ModelDirectory.url else {
             throw TranscriptionError.modelUnavailable("Application Support directory not found")
         }
-        return support.appendingPathComponent("Mixdown/Models", isDirectory: true)
-    }
-
-    private static func unavailable(_ error: any Error) -> TranscriptionError {
-        if let error = error as? TranscriptionError { return error }
-        return .modelUnavailable(error.localizedDescription)
+        return url
     }
 
     // MARK: - Transcription
-
-    /// Runs `operation` after every earlier transcription has finished. The model instances aren't
-    /// thread-safe, and actor reentrancy alone would let a second transcription interleave at the
-    /// `await`s. Cancelling the caller cancels its job.
-    private func oneAtATime<T: Sendable>(_ operation: @escaping @Sendable () async throws -> T) async throws -> T {
-        let previous = lastTranscription
-        let job = Task {
-            await previous?.value
-            try Task.checkCancellation()
-            return try await operation()
-        }
-        lastTranscription = Task { _ = await job.result }
-        return try await withTaskCancellationHandler {
-            try await job.value
-        } onCancel: {
-            job.cancel()
-        }
-    }
 
     private func performTranscription(
         _ samples: [Float],

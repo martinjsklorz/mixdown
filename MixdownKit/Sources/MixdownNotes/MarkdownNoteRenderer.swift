@@ -18,6 +18,9 @@ public enum MarkdownNoteRenderer {
     static let momentExcerptWordCount = 20
     /// The heading of the talk timeline's section, which the app shows as a chart instead.
     public static let talkTimeHeading = "Talk Time"
+    /// The headings of the transcript's and its translation's sections.
+    static let transcriptHeading = "Transcript"
+    static let translationHeading = "Translation"
     /// The talk timeline's bars are this many blocks long for a minute of talking.
     static let talkBarLength = 10
 
@@ -89,9 +92,9 @@ public enum MarkdownNoteRenderer {
             sections.append(section("Moments", body: moments))
         }
         if let translation = note.translation {
-            sections.append(section("Translation", body: transcriptBody(translation)))
+            sections.append(section(translationHeading, body: transcriptBody(translation)))
         }
-        sections.append(section("Transcript", body: transcriptBody(note.transcript)))
+        sections.append(section(transcriptHeading, body: transcriptBody(note.transcript)))
         if let timeline = note.talkTimeline {
             sections.append(section(talkTimeHeading, body: talkTimeBody(timeline)))
         }

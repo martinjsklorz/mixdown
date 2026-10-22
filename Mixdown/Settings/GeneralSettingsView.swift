@@ -1,10 +1,8 @@
-import AppKit
 import KeyboardShortcuts
 import SwiftUI
 
 struct GeneralSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
-    @State private var launchAtLogin = LaunchAtLogin()
     @AppStorage(AppSettings.Key.suppressesTrashConfirmation) private var suppressesTrashConfirmation = false
 
     var body: some View {
@@ -12,20 +10,12 @@ struct GeneralSettingsView: View {
 
         Form {
             Section("Notes") {
-                LabeledContent("Folder") {
-                    Text(notesFolder.status.path ?? "Not chosen")
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .textSelection(.enabled)
-                        .help(notesFolder.status.path ?? "")
-                }
+                NotesFolderPathRow()
                 if let warning = NotesFolderWarning.message(
                     for: notesFolder.status,
                     hasLegacyNotes: notesFolder.hasLegacyNotes
                 ) {
-                    Text(warning)
-                        .font(.caption)
-                        .foregroundStyle(notesFolder.status == .notChosen ? Color.secondary : Color.red)
+                    Caption(warning, isWarning: notesFolder.status != .notChosen)
                 }
                 HStack {
                     Button("Choose…") { environment.chooseNotesFolder() }
@@ -50,9 +40,7 @@ struct GeneralSettingsView: View {
                         set: { environment.setIndexesNotesInSpotlight($0) }
                     )
                 )
-                Text("Search for any line of a note with Spotlight (⌘Space). The index stays on this Mac.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Caption("Search for any line of a note with Spotlight (⌘Space). The index stays on this Mac.")
             }
 
             Section("Chat") {
@@ -63,28 +51,15 @@ struct GeneralSettingsView: View {
                         set: { environment.setChatEnabled($0) }
                     )
                 )
-                Text(
+                Caption(
                     "Ask questions across all your notes under Chat (⌘3). Apple Intelligence answers "
                         + "on this Mac from the lines that match best. Off, Chat leaves the sidebar "
                         + "and Mixdown stops reading your notes for it."
                 )
-                .font(.caption)
-                .foregroundStyle(.secondary)
             }
 
             Section {
-                Toggle(
-                    "Start and stop recording from any app",
-                    isOn: Binding(
-                        get: { environment.isRecordingShortcutEnabled },
-                        set: { environment.setRecordingShortcutEnabled($0) }
-                    )
-                )
-                // Hidden rather than disabled: the recorder is an AppKit field that ignores
-                // SwiftUI's `disabled`.
-                if environment.isRecordingShortcutEnabled {
-                    KeyboardShortcuts.Recorder("Shortcut", name: .toggleRecording)
-                }
+                RecordingShortcutToggle()
                 KeyboardShortcuts.Recorder("Mark moment while recording", name: .markMoment)
                 KeyboardShortcuts.Recorder("Catch me up while recording", name: .catchUp)
                 Picker(
@@ -101,43 +76,18 @@ struct GeneralSettingsView: View {
             } header: {
                 Text("Global Shortcuts")
             } footer: {
-                Text(
+                Caption(
                     "Work while Mixdown is in the background. If recording can't start yet, Mixdown "
                         + "opens to show why. Marking a moment opens a field under the notch for a "
                         + "note on it. Catching up has Apple Intelligence sum up what was just said, "
                         + "on this Mac, with a live speech model. Clear a shortcut to turn it off."
                 )
-                .font(.caption)
-                .foregroundStyle(.secondary)
             }
 
             Section("Startup") {
-                Toggle(
-                    "Launch Mixdown at login",
-                    isOn: Binding(
-                        get: { launchAtLogin.isEnabled },
-                        set: { launchAtLogin.setEnabled($0) }
-                    )
-                )
-                if launchAtLogin.requiresApproval {
-                    Text("Allow Mixdown in System Settings › General › Login Items.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                if let error = launchAtLogin.errorMessage {
-                    Text(error)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                }
+                LaunchAtLoginToggle()
             }
         }
         .formStyle(.grouped)
-        // The user can change it in System Settings › General › Login Items, so re-read on switching
-        // to this tab, and whenever a window of ours comes back to the front: on reopening Settings
-        // (which keeps this view alive) and on returning from System Settings.
-        .onAppear { launchAtLogin.refresh() }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
-            launchAtLogin.refresh()
-        }
     }
 }

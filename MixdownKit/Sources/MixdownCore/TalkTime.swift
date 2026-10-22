@@ -102,7 +102,7 @@ public struct TalkTimeline: Sendable, Equatable {
     }
 
     /// `spans` sorted, with overlapping and touching ones joined.
-    static func merged(_ spans: [Range<TimeInterval>]) -> [Range<TimeInterval>] {
+    private static func merged(_ spans: [Range<TimeInterval>]) -> [Range<TimeInterval>] {
         var merged: [Range<TimeInterval>] = []
         for span in spans.sorted(by: { $0.lowerBound < $1.lowerBound }) where !span.isEmpty {
             if let last = merged.last, span.lowerBound <= last.upperBound {

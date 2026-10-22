@@ -47,7 +47,7 @@ struct MenuBarContent: View {
             Label(SilentInputWarning.title(for: device), systemImage: "speaker.slash")
         }
         if SilentInputWarning.needsPermission(coordinator.silentDevices) {
-            Button("Open Privacy Settings…") { SilentInputWarning.openPrivacySettings() }
+            Button("Open Privacy Settings…") { SystemSettings.open(.screenAndSystemAudioRecording) }
         }
         if environment.notesFolder.directory == nil && !coordinator.isRecording {
             Button("Choose Notes Folder…") { environment.chooseNotesFolder() }

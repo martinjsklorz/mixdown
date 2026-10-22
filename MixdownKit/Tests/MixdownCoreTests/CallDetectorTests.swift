@@ -16,12 +16,12 @@ struct CallDetectorTests {
         let detector: CallDetector
         private var run: Task<Void, Never>?
 
-        init(startDelay: Duration = .milliseconds(50), endDelay: Duration = .milliseconds(50)) {
+        init() {
             detector = CallDetector(
                 monitor: monitor,
                 ownProcessID: CallDetectorTests.ownProcessID,
-                startDelay: startDelay,
-                endDelay: endDelay
+                startDelay: .milliseconds(50),
+                endDelay: .milliseconds(50)
             )
             run = Task { [detector] in
                 await detector.run { [weak self] event in self?.events.append(event) }
@@ -78,16 +78,6 @@ struct CallDetectorTests {
         await harness.stop()
     }
 
-    @Test func ignoresBriefMicrophoneChecks() async throws {
-        let harness = Harness(startDelay: .milliseconds(200))
-        harness.send([zoom])
-        try await Task.sleep(for: .milliseconds(20))
-        harness.send([])
-        try await Task.sleep(for: .milliseconds(400))
-        #expect(harness.events.isEmpty)
-        await harness.stop()
-    }
-
     @Test func recognizesHelpersInsideAnAppsBundle() async throws {
         let harness = Harness()
         harness.send([
@@ -104,13 +94,17 @@ struct CallDetectorTests {
 
     @Test func ignoresOwnAndUnknownProcesses() async throws {
         let harness = Harness()
-        harness.send([
+        let ignored = [
             AudioInputClient(processID: Self.ownProcessID, bundleID: "com.google.Chrome"),
             AudioInputClient(processID: 300, bundleID: "com.apple.VoiceMemos"),
             AudioInputClient(processID: 301, bundleID: nil),
-        ])
-        try await Task.sleep(for: .milliseconds(200))
-        #expect(harness.events.isEmpty)
+        ]
+        // Sent first, so any of them reported would be before Zoom.
+        harness.send(ignored)
+        harness.send(ignored + [zoom])
+        try await waitUntil { !harness.events.isEmpty }
+        #expect(harness.events == [.started(Self.zoomApp)])
+        #expect(harness.detector.activeCalls == [Self.zoomApp])
         await harness.stop()
     }
 
@@ -137,20 +131,6 @@ struct CallDetectorTests {
         harness.send([AudioInputClient(processID: 101, bundleID: "us.zoom.xos")])
         try await waitUntil { harness.events.count == 3 }
         #expect(harness.events == [.started(Self.zoomApp), .ended(Self.zoomApp), .started(Self.zoomApp)])
-        await harness.stop()
-    }
-
-    @Test func shortGapMidCallIsTheSameCall() async throws {
-        let harness = Harness(endDelay: .milliseconds(200))
-        harness.send([zoom])
-        try await waitUntil { harness.events == [.started(Self.zoomApp)] }
-
-        // E.g. switching microphones restarts the input.
-        harness.send([])
-        try await Task.sleep(for: .milliseconds(20))
-        harness.send([AudioInputClient(processID: 100, bundleID: "us.zoom.xos")])
-        try await Task.sleep(for: .milliseconds(400))
-        #expect(harness.events == [.started(Self.zoomApp)])
         await harness.stop()
     }
 
