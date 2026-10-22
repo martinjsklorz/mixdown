@@ -11,6 +11,7 @@ final class SubtractingEchoCanceller: EchoCanceller, @unchecked Sendable {
     private let failingFrame: Int?
     private var previous: [Float]
     private(set) var frameCount = 0
+    private(set) var resetCount = 0
 
     struct Failure: Error {}
 
@@ -25,6 +26,11 @@ final class SubtractingEchoCanceller: EchoCanceller, @unchecked Sendable {
         let output = previous
         previous = zip(microphone, reference).map { $0 - $1 }
         return output
+    }
+
+    func reset() {
+        resetCount += 1
+        previous = Array(repeating: 0, count: 256)
     }
 }
 
@@ -48,9 +54,10 @@ enum EchoFixtures {
     static let systemAudio: [Float] = (0..<16_000).map { Float(sin(Double($0) * 0.05) * 0.5) }
 
     /// `seconds` of a steady voice plus the echo of `systemAudio` as `EchoRemover` expects it:
-    /// `referenceLead` after the system audio, for a microphone starting `offset` seconds after it.
+    /// `referenceLead` before the system audio's timestamps, for a microphone starting `offset`
+    /// seconds after it.
     static func microphone(voice: Float, offset: TimeInterval = 0, count: Int = 16_000) -> [Float] {
-        let start = Int(offset * AudioChunk.sampleRate) - EchoRemover.referenceLead
+        let start = Int(offset * AudioChunk.sampleRate) + EchoRemover.referenceLead
         return (0..<count).map { index in
             let echoIndex = start + index
             return voice + (systemAudio.indices.contains(echoIndex) ? systemAudio[echoIndex] : 0)
@@ -111,7 +118,7 @@ struct EchoRemoverTests {
     @Test func stopsWaitingForSystemAudioThatDoesNotCome() {
         let reference = EchoReference()
         reference.beginWriting()
-        let input = [Float](repeating: 0.25, count: EchoRemover.maximumWait + 1_000)
+        let input = [Float](repeating: 0.25, count: EchoRemover.maximumWait + EchoRemover.referenceLead + 1_000)
         let remover = EchoRemover(canceller: SubtractingEchoCanceller(), reference: reference, startHostTime: 100)
 
         let output = remover.process(input)

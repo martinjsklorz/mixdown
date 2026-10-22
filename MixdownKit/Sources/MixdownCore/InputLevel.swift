@@ -5,7 +5,7 @@ import Foundation
 public struct InputLevel: Sendable, Equatable {
     /// Peaks at or below this (-80 dBFS) count as silence. A real microphone hisses above it; a
     /// muted input, or a system audio tap without permission, delivers exact zeros.
-    private static let silenceThreshold: Float = 0.0001
+    static let silenceThreshold: Float = 0.0001
 
     /// Loudest sample magnitude in the interval, 0...1.
     public let peak: Float

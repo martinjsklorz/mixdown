@@ -58,7 +58,9 @@ extension RecordingCoordinator {
         phase = .recording(startedAt: session.startedAt)
         startStillRecordingCheck(for: session)
         let names = devices.map(\.name).joined(separator: " + ")
-        logger.info("Recording started on \(names, privacy: .public)")
+        logger.info(
+            "Recording started on \(names, privacy: .public); echo removal \(echoCancellation == nil ? "off" : "on", privacy: .public)"
+        )
         // Catches devices that changed while the captures were starting.
         reconcileSelection()
     }
@@ -97,6 +99,7 @@ extension RecordingCoordinator {
         let kind = lane.kind
         let echoReference = session.echoReference
         let echoCancellation = echoReference == nil ? nil : echoCancellation
+        let deviceName = started.device.name
         if kind == .systemAudio { echoReference?.beginWriting() }
         let consumer = Task.detached(priority: .userInitiated) { [weak self] () async -> CaptureResult in
             // Where the captured samples go, gaps filled; `track` gets them once their echo is
@@ -104,6 +107,8 @@ extension RecordingCoordinator {
             var timeline = AudioTrack(keepsSamples: false)
             var track = AudioTrack(keepsSamples: !transcribesLive)
             var echoRemover: EchoRemover?
+            // Whether system audio recorded alongside, which tells why `echoRemover` never started.
+            var sawSystemAudio = false
             var meter = LevelMeter()
             // Judges the audio as it's kept, so the microphones' echo doesn't count as the user
             // talking.
@@ -141,13 +146,18 @@ extension RecordingCoordinator {
                     let added = timeline.append(chunk)
                     if kind == .systemAudio { echoReference?.write(chunk) }
                     // Starts once system audio records too and a canceller is ready.
-                    if kind == .microphone, echoRemover == nil, let echoReference, echoReference.state.isActive,
-                        let canceller = echoCancellation?.takeCanceller()
-                    {
-                        let start = timeline.startHostTime.map {
-                            $0 + timeline.duration - Double(added.count) / AudioChunk.sampleRate
+                    if kind == .microphone, echoRemover == nil, let echoReference, echoReference.state.isActive {
+                        sawSystemAudio = true
+                        if let canceller = echoCancellation?.takeCanceller() {
+                            let start = timeline.startHostTime.map {
+                                $0 + timeline.duration - Double(added.count) / AudioChunk.sampleRate
+                            }
+                            echoRemover = EchoRemover(
+                                canceller: canceller,
+                                reference: echoReference,
+                                startHostTime: start
+                            )
                         }
-                        echoRemover = EchoRemover(canceller: canceller, reference: echoReference, startHostTime: start)
                     }
                     keep(echoRemover?.process(added) ?? added)
                     // Fire and forget, so a busy main actor never holds up capture.
@@ -162,7 +172,14 @@ extension RecordingCoordinator {
             } catch {
                 captureError = error
             }
-            if let echoRemover { keep(echoRemover.finish()) }
+            if let echoRemover {
+                keep(echoRemover.finish())
+            } else if kind == .microphone, echoReference != nil {
+                let reason = sawSystemAudio ? "no canceller loaded in time" : "no system audio recorded alongside"
+                RecordingCoordinator.echoLogger.info(
+                    "Recorded \(deviceName, privacy: .public) without echo removal: \(reason, privacy: .public)"
+                )
+            }
             return CaptureResult(track: track, speech: speechDetector.spans, error: captureError)
         }
         let live = feed.map { feed in

@@ -255,6 +255,8 @@ public final class RecordingCoordinator {
     let now: @Sendable () -> Date
     let hostClock: @Sendable () -> TimeInterval
     let logger = Logger(subsystem: "app.mixdown", category: "coordinator")
+    /// For the captures' echo removal, which runs off the main actor.
+    nonisolated static let echoLogger = Logger(subsystem: "app.mixdown", category: "echo")
     /// Changes with every `noteWriter`, so a save that failed can tell it has a new one to try.
     @ObservationIgnored var noteWriterGeneration = 0
     @ObservationIgnored var pendingNoteRetry: Task<Void, Never>?

@@ -96,7 +96,7 @@ private final class LocalVQEFrameCanceller: EchoCanceller, @unchecked Sendable {
     func process(microphone: [Float], reference: [Float]) throws -> [Float] {
         let output = try canceller.processFrame(microphone: microphone, reference: reference)
         // Logged when the delay is found, which says the echo was recognized and how late it is.
-        // Counted from the reference as given, which `EchoRemover` reads 100 ms early.
+        // Counted from the reference as given, which `EchoRemover` reads ahead of the microphone.
         let delay = canceller.currentDelaySamples
         if delay != loggedDelay {
             loggedDelay = delay
@@ -106,5 +106,10 @@ private final class LocalVQEFrameCanceller: EchoCanceller, @unchecked Sendable {
             )
         }
         return output
+    }
+
+    func reset() {
+        canceller.reset()
+        loggedDelay = 0
     }
 }
