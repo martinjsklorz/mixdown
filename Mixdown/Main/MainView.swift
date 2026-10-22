@@ -23,6 +23,7 @@ struct MainView: View {
     @AppStorage(AppSettings.Key.showsNotifications) private var showsNotifications = true
     @AppStorage(AppSettings.Key.collapsesPinnedNotes) private var collapsesPinnedNotes = false
     @State private var titleDraft = ""
+    @FocusState private var isChatFieldFocused: Bool
     @State private var failure: Failure?
 
     private struct VocabularyDraft: Identifiable {
@@ -51,6 +52,7 @@ struct MainView: View {
                 }
         }
         .frame(minWidth: 720, minHeight: 480)
+        .toolbar(id: "detail") { detailToolbar }
         // Reads the folder and watches it for changes; again for each folder the user chooses.
         .task(id: environment.notesFolder.directory) {
             let directory = environment.notesFolder.directory
@@ -249,16 +251,26 @@ struct MainView: View {
 
     // MARK: Detail
 
+    private var detailToolbar: DetailToolbar {
+        DetailToolbar(
+            destination: navigation.destination,
+            note: shownNote,
+            actions: noteActions,
+            chat: environment.noteChat,
+            isChatFieldFocused: $isChatFieldFocused
+        )
+    }
+
     @ViewBuilder
     private var detail: some View {
         switch navigation.destination {
         case .recorder:
             RecorderView()
         case .chat:
-            ChatView(chat: environment.noteChat, notes: library.notes)
+            ChatView(chat: environment.noteChat, notes: library.notes, isFieldFocused: $isChatFieldFocused)
         case .notes:
             if let note = shownNote {
-                NoteDetailView(note: note, actions: noteActions)
+                NoteDetailView(note: note)
             } else if library.notes.isEmpty {
                 ContentUnavailableView(
                     "No Notes",

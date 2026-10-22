@@ -31,27 +31,12 @@ public enum SummaryPrompt {
             """
     }
 
-    /// What kind of recording `template` is for, and what matters in one.
-    private static func focus(of template: SummaryTemplate) -> String? {
-        switch template {
-        case .general:
-            nil
-        case .oneOnOne:
-            """
-            The recording is a one-on-one meeting between two people, such as a manager and a team \
-            member. Look out for feedback, goals, concerns and what the two agreed on.
-            """
-        case .standup:
-            """
-            The recording is a team standup. Look out for what each person finished, what they'll \
-            work on next and what blocks them, naming the person.
-            """
-        case .clientCall:
-            """
-            The recording is a call with a client. Look out for the client's needs and requirements, \
-            what was promised to them, and the next steps on both sides.
-            """
-        }
+    /// What kind of recording `template` is for, and what matters in one: its instructions, cut
+    /// to `SummaryTemplate.maximumInstructionsLength`. `nil` if it has none.
+    public static func focus(of template: SummaryTemplate) -> String? {
+        let instructions = template.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !instructions.isEmpty else { return nil }
+        return String(instructions.prefix(SummaryTemplate.maximumInstructionsLength))
     }
 
     /// Instructions for catching someone up on one piece of the last few minutes of a recording

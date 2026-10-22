@@ -149,6 +149,20 @@ public final class RecordingCoordinator {
     /// the time other apps play audio.
     var silenceWarningDelay: Duration = .seconds(10)
 
+    /// Whether the recording has gone `stillRecordingDelay` without anyone speaking, on any input,
+    /// so it may have been left running by mistake, e.g. after a meeting ended. Cleared once
+    /// someone speaks, the recording is paused or stops, or by `keepRecording()`.
+    public internal(set) var isAskingIfStillRecording = false
+
+    /// How long a recording may go without speech before `isAskingIfStillRecording`; `nil` to
+    /// never ask. Time spent paused doesn't count. Changing it starts the wait over.
+    public var stillRecordingDelay: Duration? {
+        didSet {
+            guard stillRecordingDelay != oldValue, let session else { return }
+            startStillRecordingCheck(for: session)
+        }
+    }
+
     /// How long to wait before trying to save `pendingNotes` again, while there's a `noteWriter`
     /// that failed to write them.
     var pendingNoteRetryInterval: Duration = .seconds(30)
@@ -273,6 +287,11 @@ public final class RecordingCoordinator {
     @ObservationIgnored var heardDeviceIDs: Set<String> = []
     /// Add each recording device to `silentDevices` once `silenceWarningDelay` has passed, by ID.
     @ObservationIgnored var silenceChecks: [String: Task<Void, Never>] = [:]
+    /// Sets `isAskingIfStillRecording` once the recording has gone `stillRecordingDelay` without
+    /// speech.
+    @ObservationIgnored var stillRecordingCheck: Task<Void, Never>?
+    /// Set when someone speaks or the user answers, so `stillRecordingCheck` starts counting again.
+    @ObservationIgnored var restartsQuietTime = false
     /// Fed by whichever of preparing and transcribing is running.
     var progressEstimator = RemainingTimeEstimator()
     /// Per-track progress of the transcription in flight.
@@ -351,6 +370,8 @@ public final class RecordingCoordinator {
         // Already set if no input started again since the last pause, which then still counts.
         session.pausedAt = session.pausedAt ?? hostClock()
         phase = .paused(recorded: max(now().timeIntervalSince(startedAt), 0))
+        // Pausing is an answer too; the wait starts over once it resumes.
+        if isAskingIfStillRecording { isAskingIfStillRecording = false }
         let running = session.takeCurrentCaptures()
         for capture in running {
             clearLevel(of: capture.device)

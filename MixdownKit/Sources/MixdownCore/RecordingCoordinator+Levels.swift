@@ -15,7 +15,12 @@ extension RecordingCoordinator {
         guard let session, session.id == sessionID, session.activeDevices.contains(where: { $0.id == deviceID })
         else { return }
         inputLevels[deviceID] = level
-        if speech > 0 { talkTime?.add(speech, from: kind) }
+        if speech > 0 {
+            talkTime?.add(speech, from: kind)
+            restartsQuietTime = true
+            // Only when it changes: levels come about ten times a second.
+            if isAskingIfStillRecording { isAskingIfStillRecording = false }
+        }
         if !level.isSilent, heardDeviceIDs.insert(deviceID).inserted {
             silenceChecks.removeValue(forKey: deviceID)?.cancel()
             silentDevices.removeAll { $0.id == deviceID }
@@ -49,6 +54,50 @@ extension RecordingCoordinator {
         else { return }
         silentDevices.append(device)
         logger.info("No sound yet from \(device.name, privacy: .public)")
+    }
+
+    // MARK: - Still recording?
+
+    /// Answers `isAskingIfStillRecording`: the recording goes on, and is asked about again only
+    /// after another `stillRecordingDelay` without speech.
+    public func keepRecording() {
+        guard isAskingIfStillRecording else { return }
+        isAskingIfStillRecording = false
+        restartsQuietTime = true
+        logger.info("Still recording")
+    }
+
+    /// Counts the time `session` records without speech, in tenths of `stillRecordingDelay`, and
+    /// asks whether it's still recording once that's passed. Speech, an answer, or a pause start
+    /// the count over.
+    func startStillRecordingCheck(for session: Session) {
+        stopStillRecordingCheck()
+        guard let delay = stillRecordingDelay, delay > .zero else { return }
+        stillRecordingCheck = Task { [weak self] in
+            let step = delay / 10
+            var quietFor = Duration.zero
+            while true {
+                try? await Task.sleep(for: step)
+                guard !Task.isCancelled, let self, self.session === session else { return }
+                if self.restartsQuietTime || session.isPaused {
+                    self.restartsQuietTime = false
+                    quietFor = .zero
+                    continue
+                }
+                quietFor += step
+                if quietFor >= delay, !self.isAskingIfStillRecording {
+                    self.isAskingIfStillRecording = true
+                    self.logger.info("No speech for \(quietFor.components.seconds) s; asking if still recording")
+                }
+            }
+        }
+    }
+
+    func stopStillRecordingCheck() {
+        stillRecordingCheck?.cancel()
+        stillRecordingCheck = nil
+        restartsQuietTime = false
+        if isAskingIfStillRecording { isAskingIfStillRecording = false }
     }
 
     /// Forgets the level of a device the recording no longer records from.

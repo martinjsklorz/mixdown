@@ -13,7 +13,7 @@ struct InputLevelsView: View {
         let silent = coordinator.silentDevices
 
         VStack(spacing: 12) {
-            LevelWaveform(coordinator: coordinator, isSilent: !silent.isEmpty, scale: 2)
+            LevelWaveform(coordinator: coordinator, scale: 2)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Input level")
 

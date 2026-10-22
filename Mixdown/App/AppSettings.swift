@@ -36,10 +36,13 @@ struct AppSettings {
         static let summarizesNotes = "summarizesNotes"
         /// A `SummaryModel` raw value. Absent means `.appleIntelligence`.
         static let summaryModel = "summaryModel"
-        /// A `SummaryTemplate` raw value for recordings started by hand. Absent means `.general`.
+        /// A `SummaryTemplate` id for recordings started by hand. Absent means `general`.
         static let summaryTemplate = "summaryTemplate"
-        /// A `SummaryTemplate` raw value for recordings started for a call. Absent means `.general`.
+        /// A `SummaryTemplate` id for recordings started for a call. Absent means `general`.
         static let callSummaryTemplate = "callSummaryTemplate"
+        /// The user's own `SummaryTemplate`s and the built-ins they edited, as JSON. Absent means
+        /// just the built-ins as they came.
+        static let summaryTemplates = "summaryTemplates"
         /// Whether notes are translated. Absent means yes if a `translationLanguage` was picked
         /// before this setting existed, else no.
         static let translatesNotes = "translatesNotes"
@@ -56,6 +59,9 @@ struct AppSettings {
         static let notifiesAboutCalls = "notifiesAboutCalls"
         /// Whether to start and stop recording with calls. Absent means no.
         static let recordsCallsAutomatically = "recordsCallsAutomatically"
+        /// Minutes without speech before Mixdown asks whether it's still recording; 0 for never.
+        /// Absent means 15.
+        static let stillRecordingMinutes = "stillRecordingMinutes"
         /// Whether to take the system audio's echo out of the microphone. Absent means yes.
         static let cancelsEcho = "cancelsEcho"
         /// An `Appearance` raw value. Absent means `.auto`. Read with `@AppStorage`.
@@ -170,20 +176,56 @@ struct AppSettings {
         nonmutating set { defaults.set(newValue.rawValue, forKey: Key.summaryModel) }
     }
 
+    /// Every template on offer: the built-ins, edited or not, then the user's own. Only what
+    /// differs from the built-ins as they came is stored.
+    var summaryTemplates: [SummaryTemplate] {
+        get {
+            let stored =
+                defaults.data(forKey: Key.summaryTemplates).flatMap {
+                    try? JSONDecoder().decode([SummaryTemplate].self, from: $0)
+                } ?? []
+            return SummaryTemplate.list(from: stored)
+        }
+        nonmutating set {
+            let changed = newValue.filter { !$0.isBuiltIn || $0.isEdited }
+            defaults.set(try? JSONEncoder().encode(changed), forKey: Key.summaryTemplates)
+        }
+    }
+
     var summaryTemplate: SummaryTemplate {
-        get { defaults.string(forKey: Key.summaryTemplate).flatMap(SummaryTemplate.init(rawValue:)) ?? .general }
-        nonmutating set { defaults.set(newValue.rawValue, forKey: Key.summaryTemplate) }
+        get { template(id: defaults.string(forKey: Key.summaryTemplate)) }
+        nonmutating set { defaults.set(newValue.id, forKey: Key.summaryTemplate) }
     }
 
     var callSummaryTemplate: SummaryTemplate {
-        get { defaults.string(forKey: Key.callSummaryTemplate).flatMap(SummaryTemplate.init(rawValue:)) ?? .general }
-        nonmutating set { defaults.set(newValue.rawValue, forKey: Key.callSummaryTemplate) }
+        get { template(id: defaults.string(forKey: Key.callSummaryTemplate)) }
+        nonmutating set { defaults.set(newValue.id, forKey: Key.callSummaryTemplate) }
+    }
+
+    /// The template with `id` from `summaryTemplates`, or General if there's none, e.g. because the
+    /// user deleted it.
+    private func template(id: String?) -> SummaryTemplate {
+        let templates = summaryTemplates
+        return templates.first { $0.id == id } ?? templates.first { $0.id == SummaryTemplate.general.id }
+            ?? .general
     }
 
     var cancelsEcho: Bool {
         get { defaults.object(forKey: Key.cancelsEcho) as? Bool ?? true }
         nonmutating set { defaults.set(newValue, forKey: Key.cancelsEcho) }
     }
+
+    /// One of `stillRecordingMinuteChoices`, or 0 to never ask.
+    var stillRecordingMinutes: Int {
+        get {
+            guard let minutes = defaults.object(forKey: Key.stillRecordingMinutes) as? Int else { return 15 }
+            return minutes == 0 || Self.stillRecordingMinuteChoices.contains(minutes) ? minutes : 15
+        }
+        nonmutating set { defaults.set(newValue, forKey: Key.stillRecordingMinutes) }
+    }
+
+    /// What Settings offers for `stillRecordingMinutes`, besides never.
+    static let stillRecordingMinuteChoices = [5, 10, 15, 30, 60]
 
     /// Set with `@AppStorage`.
     var playsSounds: Bool {

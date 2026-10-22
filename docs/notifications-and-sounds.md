@@ -9,6 +9,8 @@ Mixdown uses notifications to:
 - confirm copying a transcript,
 - offer **Restore** after deleting a note,
 - ask about calls, or say it's recording one. See [Recording calls](calls.md#call-detection).
+- ask **Still Recording?** when no one has spoken for a while, with **Stop Recording** and **Keep
+  Recording**. See [Recording](recording.md#while-recording).
 
 To turn them all off, untick **Settings → Notifications → Show notifications**. Deleted notes can
 then only be restored from the Trash. Automatic call recording keeps working; the menu bar icon is

@@ -22,7 +22,7 @@ struct NoteListView<Footer: View>: View {
     /// Shown instead of the notes when there are none, e.g. an empty or error state.
     @ViewBuilder var footer: Footer
     @FocusState private var isFocused: Bool
-    /// The rows at least partly in view, top to bottom.
+    /// The rows at least partly in view, not necessarily top to bottom.
     @State private var visibleRows: [Row.ID] = []
     /// Where the headers in view sit, from the top of the list's visible area.
     @State private var headerOffsets: [NoteSection.Group: CGFloat] = [:]
@@ -191,7 +191,11 @@ struct NoteListView<Footer: View>: View {
     private func stickyHeaderPlacement(in rows: [Row]) -> (group: NoteSection.Group, push: CGFloat)? {
         // Stale for rows out of view, so only the offsets of headers in view count.
         // Folded rows count as in view at the top of their section, but take no room.
-        let shownRows = visibleRows.compactMap { id in rows.first { $0.id == id } }.filter { !isFolded($0) }
+        // In the list's order, as the visible rows don't come top to bottom: the pinned notes,
+        // drawn under the rest, come before their header, whose sticky copy would then cover it
+        // 1pt higher than it sits.
+        let visibleIDs = Set(visibleRows)
+        let shownRows = rows.filter { visibleIDs.contains($0.id) && !isFolded($0) }
         guard let top = shownRows.first, top.id != .header(top.group) || headerOffsets[top.group, default: 0] < 0
         else { return nil }
         let groups = sections.map(\.group)

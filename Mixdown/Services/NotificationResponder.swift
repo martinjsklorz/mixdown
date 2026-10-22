@@ -12,6 +12,8 @@ final class NotificationResponder: NSObject {
     private let noteReady: NoteReady
     /// Set right after launch; it needs the app environment, which needs this first.
     weak var callPrompt: CallPrompt?
+    /// Set right after launch, like `callPrompt`.
+    weak var stillRecordingPrompt: StillRecordingPrompt?
 
     init(noteTrash: NoteTrash, noteReady: NoteReady) {
         self.noteTrash = noteTrash
@@ -21,6 +23,7 @@ final class NotificationResponder: NSObject {
         center.delegate = self
         center.setNotificationCategories([
             NoteTrash.category, NoteReady.category, CallPrompt.startedCategory, CallPrompt.endedCategory,
+            StillRecordingPrompt.category,
         ])
     }
 }
@@ -46,6 +49,8 @@ extension NotificationResponder: UNUserNotificationCenterDelegate {
             await noteReady.respond(to: response)
         case CallPrompt.startedCategoryIdentifier, CallPrompt.endedCategoryIdentifier:
             await callPrompt?.respond(to: response)
+        case StillRecordingPrompt.categoryIdentifier:
+            await stillRecordingPrompt?.respond(to: response)
         default:
             break
         }

@@ -56,6 +56,7 @@ extension RecordingCoordinator {
             attach(started, to: addLane(kind: started.device.kind, to: session), in: session)
         }
         phase = .recording(startedAt: session.startedAt)
+        startStillRecordingCheck(for: session)
         let names = devices.map(\.name).joined(separator: " + ")
         logger.info("Recording started on \(names, privacy: .public)")
         // Catches devices that changed while the captures were starting.
@@ -265,6 +266,7 @@ extension RecordingCoordinator {
         liveCaptioning?.cancel()
         liveCaptioning = nil
         resetLevels()
+        stopStillRecordingCheck()
         let lanes = await endCaptures(of: session)
         let liveError = await finishLiveTranscription(of: session)
         await finish(session, lanes: lanes, interruption: interruption ?? liveError)

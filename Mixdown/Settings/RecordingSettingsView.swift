@@ -45,6 +45,31 @@ struct RecordingSettingsView: View {
             }
 
             Section {
+                Picker(
+                    "Ask if still recording after",
+                    selection: Binding(
+                        get: { environment.stillRecordingMinutes },
+                        set: { environment.setStillRecordingMinutes($0) }
+                    )
+                ) {
+                    ForEach(AppSettings.stillRecordingMinuteChoices, id: \.self) { minutes in
+                        Text("\(minutes) Minutes").tag(minutes)
+                    }
+                    Divider()
+                    Text("Never").tag(0)
+                }
+            } header: {
+                Text("Silence")
+            } footer: {
+                Caption(
+                    "When no one has spoken for this long, Mixdown asks whether you're still recording, "
+                        + "in a notification, on Record and in the menu bar, in case a meeting ended and the "
+                        + "recording was left running. Answer Stop Recording or Keep Recording, or just "
+                        + "speak. Time paused doesn't count."
+                )
+            }
+
+            Section {
                 CallsToggles()
             } header: {
                 Text("Calls")

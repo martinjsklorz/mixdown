@@ -81,6 +81,9 @@ struct RecorderView: View {
                 recordingControls(for: coordinator)
                 caption("Recording · click to stop")
                 InputLevelsView(coordinator: coordinator)
+                if coordinator.isAskingIfStillRecording {
+                    stillRecordingQuestion(for: coordinator)
+                }
                 summaryTemplatePicker(for: coordinator)
 
             case .paused(let recorded):
@@ -142,6 +145,28 @@ struct RecorderView: View {
         }
         .multilineTextAlignment(.center)
         .animation(.default, value: coordinator.isRecording)
+        .animation(.default, value: coordinator.isAskingIfStillRecording)
+    }
+
+    /// Asks whether the recording was left running, after a while without speech. Speaking
+    /// answers it too.
+    private func stillRecordingQuestion(for coordinator: RecordingCoordinator) -> some View {
+        VStack(spacing: 8) {
+            Label(
+                "Still recording? \(StillRecordingPrompt.message(for: coordinator.stillRecordingDelay))",
+                systemImage: "waveform.slash"
+            )
+            .foregroundStyle(.orange)
+            .font(.callout)
+            HStack {
+                Button("Stop Recording") {
+                    Task { await coordinator.stopRecording() }
+                }
+                Button("Keep Recording") { coordinator.keepRecording() }
+            }
+            .controlSize(.small)
+        }
+        .transition(.opacity)
     }
 
     /// Stop in the middle, as when starting, with Mark Moment on one side and Pause or Resume on
@@ -173,20 +198,24 @@ struct RecorderView: View {
         .frame(maxWidth: 320)
     }
 
-    /// The template this recording's summary gets, preselected from Settings → Transcription and
+    /// The template this recording's summary gets, preselected from Settings → Summary and
     /// changeable until the summary is begun.
     @ViewBuilder
     private func summaryTemplatePicker(for coordinator: RecordingCoordinator) -> some View {
         if environment.summarizesNotes, let template = coordinator.recordingSummaryTemplate {
+            // Still offered if it was deleted while recording, so the picker isn't blank.
+            let templates =
+                environment.summaryTemplates.contains { $0.id == template.id }
+                ? environment.summaryTemplates : environment.summaryTemplates + [template]
             Picker(
                 "Summary:",
                 selection: Binding(
-                    get: { template },
-                    set: { coordinator.chooseSummaryTemplate($0) }
+                    get: { template.id },
+                    set: { id in templates.first { $0.id == id }.map(coordinator.chooseSummaryTemplate) }
                 )
             ) {
-                ForEach(SummaryTemplate.allCases) { template in
-                    Text(template.displayName).tag(template)
+                ForEach(templates) { template in
+                    Text(template.displayName).tag(template.id)
                 }
             }
             .fixedSize()

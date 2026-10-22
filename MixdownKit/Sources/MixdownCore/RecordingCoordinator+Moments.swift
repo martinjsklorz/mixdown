@@ -21,6 +21,15 @@ extension RecordingCoordinator {
         isRecordingSummaryTemplateChosen = true
     }
 
+    /// Takes the user's edits to templates into the recording in progress: its template, if
+    /// `templates` has one with the same id, is replaced by that. A deleted template is kept.
+    public func updateRecordingSummaryTemplate(from templates: [SummaryTemplate]) {
+        guard let current = recordingSummaryTemplate,
+            let edited = templates.first(where: { $0.id == current.id }), edited != current
+        else { return }
+        recordingSummaryTemplate = edited
+    }
+
     /// How far the recording in progress has got, paused or not, in seconds not counting pauses:
     /// where a moment marked now goes. `nil` when not recording.
     public var momentTime: TimeInterval? {

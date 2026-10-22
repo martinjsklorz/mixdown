@@ -63,7 +63,9 @@ enum SystemModelSummary {
 
     static func summarize(_ transcript: MixdownCore.Transcript, template: SummaryTemplate) async throws -> NoteSummary {
         let language = TranscriptLanguage.code(of: transcript)
-        var summary = try await summarizeInPieces(transcript) { text, kind in
+        // The template's instructions are the user's to write, so they're reckoned with on top.
+        let instructionTokens = SummaryPrompt.focus(of: template).map { ChunkedSummarizer.estimatedTokens(in: $0) } ?? 0
+        var summary = try await summarizeInPieces(transcript, instructionTokens: instructionTokens) { text, kind in
             try await respond(to: text, kind: kind, template: template, language: language)
         }
         summary.language = language
@@ -87,14 +89,19 @@ enum SystemModelSummary {
     /// Throws `SummarizationError.unavailable` if the model can't be used.
     ///
     /// `estimatedTokens` guesses high, but the model's tokenizer can still disagree. A piece that
-    /// overflows the context is split again.
+    /// overflows the context is split again. `instructionTokens` are kept free on top of
+    /// `reservedTokens`, for instructions the user wrote.
     private static func summarizeInPieces(
         _ transcript: MixdownCore.Transcript,
+        instructionTokens: Int = 0,
         step: (_ text: String, _ kind: ChunkedSummarizer.Step) async throws -> NoteSummary
     ) async throws -> NoteSummary {
         if case .unavailable(let reason) = availability { throw SummarizationError.unavailable(reason) }
         let summarizer = ChunkedSummarizer(
-            maxTokens: max(SystemLanguageModel.default.contextSize - reservedTokens, minimumPieceTokens),
+            maxTokens: max(
+                SystemLanguageModel.default.contextSize - reservedTokens - instructionTokens,
+                minimumPieceTokens
+            ),
             minTokens: minimumPieceTokens
         )
         return try await summarizer.summarize(transcript) { text, kind in
@@ -204,7 +211,7 @@ struct GeneratedSummary {
 
 }
 
-/// A summary in the fixed sections of every template but `general`.
+/// A summary in the fixed sections of templates with the `sections` layout.
 @Generable
 struct GeneratedSectionedSummary {
     // Generated in this order, so the TL;DR and the title can draw on what comes before them.

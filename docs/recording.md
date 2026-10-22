@@ -91,6 +91,10 @@ To record both sides of a call, see [Recording calls](calls.md).
 - **Record** shows a level meter for each input.
 - If an input makes no sound for 10 seconds, Mixdown warns on Record and in the menu bar. See
   [Troubleshooting](troubleshooting.md#system-audio-is-silent).
+- If no one speaks for 15 minutes, Mixdown asks **Still Recording?** in a notification, on Record
+  and in the menu bar, in case a meeting ended and the recording was left running. Click **Stop
+  Recording** or **Keep Recording**, or just speak. Time paused doesn't count. Change how long, or
+  choose **Never**, under **Settings → Recording → Silence**.
 - Short sounds mark recording starting, pausing, resuming and stopping. See
   [Notifications and sounds](notifications-and-sounds.md).
 - To use another summary template for this recording only, pick it on Record while recording or
