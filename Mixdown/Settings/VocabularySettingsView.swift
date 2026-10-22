@@ -19,10 +19,13 @@ struct VocabularySettingsView: View {
                         .foregroundStyle(.secondary)
                 } else {
                     HStack {
+                        Text("Heard as")
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         Text("Write as")
                             .frame(width: 140, alignment: .leading)
-                        Text("Heard as")
-                        Spacer()
+                        // Stands in for the remove button, so the titles line up with the fields.
+                        Image(systemName: "minus.circle")
+                            .hidden()
                     }
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -88,11 +91,11 @@ struct VocabularySettingsView: View {
 
     private func row(for entry: Vocabulary.Entry) -> some View {
         HStack {
+            TextField("Heard as", text: soundsLikeBinding(for: entry.id), prompt: Text("cooper netties, kuber nettis"))
+                .labelsHidden()
             TextField("Write as", text: binding(for: entry.id, \.term), prompt: Text("Kubernetes"))
                 .labelsHidden()
                 .frame(width: 140)
-            TextField("Heard as", text: soundsLikeBinding(for: entry.id), prompt: Text("cooper netties, kuber nettis"))
-                .labelsHidden()
             Button("Remove", systemImage: "minus.circle") {
                 environment.vocabulary.entries.removeAll { $0.id == entry.id }
             }
