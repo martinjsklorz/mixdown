@@ -514,6 +514,23 @@ struct RecordingCoordinatorTests {
         #expect(coordinator.recordingSummaryTemplate == nil)
     }
 
+    @Test func editsToTheRecordingsTemplateReachItsSummary() async throws {
+        let summarizer = MockSummarizer()
+        var edited = SummaryTemplate.standup
+        edited.instructions = "Look out for blockers."
+        let other = SummaryTemplate(id: "custom-1", name: "Other")
+        _ = try await recordNote(
+            summarizer: summarizer,
+            configure: { $0.summaryTemplate = .standup },
+            whileRecording: { coordinator in
+                coordinator.updateRecordingSummaryTemplate(from: [other])
+                coordinator.updateRecordingSummaryTemplate(from: [.general, edited, other])
+            }
+        )
+
+        #expect(summarizer.receivedTemplates == [edited])
+    }
+
     @Test func noteIsSavedWithoutSummaryWhenSummarizingFails() async throws {
         let summarizer = MockSummarizer(error: SummarizationError.failed("guardrail"))
 

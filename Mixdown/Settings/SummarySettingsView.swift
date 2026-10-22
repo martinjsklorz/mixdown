@@ -6,6 +6,7 @@ import SwiftUI
 /// recordings and for detected calls.
 struct SummarySettingsView: View {
     @Environment(AppEnvironment.self) private var environment
+    @Environment(MainNavigation.self) private var navigation
     @State private var isConfirmingDelete = false
 
     var body: some View {
@@ -39,13 +40,13 @@ struct SummarySettingsView: View {
                         set: { environment.callSummaryTemplate = $0 }
                     )
                 )
+                Button("Edit Templates…") { navigation.settingsTab = .templates }
             } header: {
                 Text("Templates")
             } footer: {
                 Text(
-                    "1:1, Standup and Client Call always have TL;DR, Decisions, Action Items and Open "
-                        + "Questions. Detected calls are recordings started from a call notification or "
-                        + "automatically."
+                    "Detected calls are recordings started from a call notification or automatically. "
+                        + "Change what each template looks out for, or add your own, under Templates."
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -92,9 +93,15 @@ struct SummarySettingsView: View {
     }
 
     private func templatePicker(_ title: String, selection: Binding<SummaryTemplate>) -> some View {
-        Picker(title, selection: selection) {
-            ForEach(SummaryTemplate.allCases) { template in
-                Text(template.displayName).tag(template)
+        Picker(
+            title,
+            selection: Binding(
+                get: { selection.wrappedValue.id },
+                set: { id in environment.summaryTemplates.first { $0.id == id }.map { selection.wrappedValue = $0 } }
+            )
+        ) {
+            ForEach(environment.summaryTemplates) { template in
+                Text(template.displayName).tag(template.id)
             }
         }
     }

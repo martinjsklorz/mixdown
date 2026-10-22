@@ -62,9 +62,11 @@ enum SystemModelSummary {
         if case .unavailable(let reason) = availability { throw SummarizationError.unavailable(reason) }
 
         // `estimatedTokens` guesses high, but the model's tokenizer can still disagree. A piece
-        // that overflows the context is split again by `ChunkedSummarizer`.
+        // that overflows the context is split again by `ChunkedSummarizer`. The template's
+        // instructions are the user's to write, so they're reckoned with on top.
+        let instructionTokens = SummaryPrompt.focus(of: template).map { ChunkedSummarizer.estimatedTokens(in: $0) } ?? 0
         let summarizer = ChunkedSummarizer(
-            maxTokens: max(model.contextSize - reservedTokens, minimumPieceTokens),
+            maxTokens: max(model.contextSize - reservedTokens - instructionTokens, minimumPieceTokens),
             minTokens: minimumPieceTokens
         )
         let language = TranscriptLanguage.code(of: transcript)
@@ -160,7 +162,7 @@ struct GeneratedSummary {
 
 }
 
-/// A summary in the fixed sections of every template but `general`.
+/// A summary in the fixed sections of templates with the `sections` layout.
 @Generable
 struct GeneratedSectionedSummary {
     // Generated in this order, so the TL;DR and the title can draw on what comes before them.

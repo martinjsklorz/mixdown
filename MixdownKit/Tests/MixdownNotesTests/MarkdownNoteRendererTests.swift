@@ -64,6 +64,15 @@ struct MarkdownNoteRendererTests {
 
         let memo = frontmatterLines(MarkdownNoteRenderer.render(NoteFixtures.note(template: .general)))
         #expect(!memo.contains { $0.hasPrefix("call:") || $0.hasPrefix("template:") })
+
+        // A renamed built-in still goes by its id, the user's own templates by name.
+        var renamed = SummaryTemplate.oneOnOne
+        renamed.name = "Check-in"
+        let checkIn = frontmatterLines(MarkdownNoteRenderer.render(NoteFixtures.note(template: renamed)))
+        #expect(checkIn.contains("template: oneOnOne"))
+        let review = SummaryTemplate(id: "custom-1", name: "Sprint \"Review\"\n", layout: .sections)
+        let custom = frontmatterLines(MarkdownNoteRenderer.render(NoteFixtures.note(template: review)))
+        #expect(custom.contains(#"template: "Sprint \"Review\"""#))
         // Mixdown only records by itself for calls.
         #expect(
             frontmatterLines(MarkdownNoteRenderer.render(NoteFixtures.note(trigger: .automatic))).contains("call: true")
