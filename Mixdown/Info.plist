@@ -29,7 +29,7 @@
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>NSHumanReadableCopyright</key>
-	<string>Copyright © 2026 EverBright IT GmbH. MIT License.</string>
+	<string>MIT License.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Mixdown records your microphone to transcribe meetings and voice notes on this Mac.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
