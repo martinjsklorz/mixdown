@@ -36,6 +36,13 @@ struct MenuBarContent: View {
             notesFolder: environment.notesFolder.status,
             timeRemaining: coordinator.timeRemaining
         )
+        if coordinator.isAskingIfStillRecording {
+            Label(
+                "Still recording? \(StillRecordingPrompt.message(for: coordinator.stillRecordingDelay))",
+                systemImage: "waveform.slash"
+            )
+            Button("Keep Recording") { coordinator.keepRecording() }
+        }
         ForEach(coordinator.silentDevices) { device in
             Label(SilentInputWarning.title(for: device), systemImage: "speaker.slash")
         }
