@@ -45,7 +45,7 @@ struct SettingsView: View {
         switch tab {
         case .general: 620
         case .recording: 740
-        case .transcription: 460
+        case .transcription: 680
         case .summary: 580
         case .templates: 520
         case .translation: 400

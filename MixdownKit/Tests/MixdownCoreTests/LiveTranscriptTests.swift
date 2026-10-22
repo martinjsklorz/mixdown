@@ -44,6 +44,33 @@ struct LiveTranscriptTests {
         )
 
         #expect(transcript.lines.map(\.text) == ["Live transcription. Nice"])
+        // The revised word keeps its start and takes the later end.
+        #expect(
+            transcript.words(fromSource: 0) == [
+                [
+                    LiveWord(text: "Live", start: 0, end: 0.5),
+                    LiveWord(text: "transcription.", start: 1, end: 1.8),
+                    LiveWord(text: "Nice", start: 2, end: 2.5),
+                ]
+            ]
+        )
+    }
+
+    @Test func wordsAreGroupedAndTimedLikeTheSegments() {
+        var transcript = LiveTranscript(speakers: [nil, nil])
+        transcript.apply(update(["Hi"]), fromSource: 0, startHostTime: 100)
+        transcript.apply(update(["Hello", "there."]), fromSource: 1, startHostTime: 101)
+        transcript.apply(update(["Bye."], from: 5), fromSource: 1, startHostTime: 101)
+
+        #expect(transcript.segments(fromSource: 1).map(\.text) == ["Hello there.", "Bye."])
+        // From the input's own first sample, like the segments.
+        #expect(
+            transcript.words(fromSource: 1) == [
+                [LiveWord(text: "Hello", start: 0, end: 0.5), LiveWord(text: "there.", start: 1, end: 1.5)],
+                [LiveWord(text: "Bye.", start: 5, end: 5.5)],
+            ]
+        )
+        #expect(transcript.words(fromSource: 2).isEmpty)
     }
 
     @Test func revisionWithoutEarlierWordsAddsTheWord() {

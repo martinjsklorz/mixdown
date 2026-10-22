@@ -33,6 +33,9 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
     public var folder: String?
     /// Whether the note is listed above the others, from the frontmatter's `pinned: true`.
     public var isPinned: Bool
+    /// The transcript's speakers in order of first appearance, from the frontmatter's `speakers`
+    /// list. Empty for a transcript without labels.
+    public var speakers: [String]
     /// How long each side talked, minute by minute, from the frontmatter's `talk_microphone` and
     /// `talk_system_audio` lists. `nil` if they're missing or unusable.
     public var talkTimeline: TalkTimeline?
@@ -62,6 +65,7 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
         self.template = scalars["template"].flatMap { $0.isEmpty ? nil : $0 }
         // YAML's `true`, `True` and `TRUE`.
         self.isPinned = scalars["pinned"]?.lowercased() == "true"
+        self.speakers = (fields["speakers"].flatMap(Frontmatter.yamlFlowSequence) ?? []).filter { !$0.isEmpty }
         self.talkTimeline = Self.talkTimeline(fields: fields)
         self.snippet = Self.snippet(from: blocks)
         self.isCall =

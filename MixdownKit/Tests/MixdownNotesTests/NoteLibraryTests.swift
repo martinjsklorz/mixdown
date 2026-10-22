@@ -497,4 +497,76 @@ struct NoteLibraryTests {
         #expect(try contents(of: restored) == "# Standup")
         #expect(try fileNames(in: original.deletingLastPathComponent()) == ["Standup.markdown"])
     }
+
+    // MARK: - Speakers
+
+    private func speakerNote() -> Note {
+        NoteFixtures.note(
+            segments: [
+                TranscriptSegment(start: 0, end: 4, text: "Hi, I'm Anna.", speaker: "Others (Speaker 2)"),
+                TranscriptSegment(start: 5, end: 8, text: "Me too, Speaker 12.", speaker: "Me"),
+                TranscriptSegment(start: 9, end: 12, text: "Next topic.", speaker: "Others (Speaker 1)"),
+            ],
+            summary: NoteSummary(overview: "Others (Speaker 2) joined. Me and Others (Speaker 12) talked."),
+            moments: [Moment(time: 1, text: "Intro")],
+            talkTimeline: TalkTimeline(
+                microphoneLabel: "Me",
+                systemAudioLabel: "Others",
+                microphone: [3],
+                systemAudio: [7]
+            )
+        )
+    }
+
+    @Test func renamingASpeakerChangesTheirLabelsThroughoutTheNote() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = try await MarkdownNoteWriter(directory: directory).write(speakerNote())
+        #expect(try loadNotes(in: directory).first?.speakers == ["Others (Speaker 2)", "Me", "Others (Speaker 1)"])
+
+        #expect(try NoteLibrary.renameSpeaker("Others (Speaker 2)", to: "  Anna   Schmidt ", inNoteAt: url))
+
+        let renamed = try contents(of: url)
+        #expect(renamed.contains("speakers: [\"Anna Schmidt\", \"Me\", \"Others (Speaker 1)\"]"))
+        #expect(renamed.contains("**[00:00:00] Anna Schmidt:** Hi, I'm Anna."))
+        #expect(renamed.contains("_Anna Schmidt: “"))
+        // A label with a number is replaced in the summary too, but only whole.
+        #expect(renamed.contains("Anna Schmidt joined. Me and Others (Speaker 12) talked."))
+        #expect(renamed.contains("**[00:00:09] Others (Speaker 1):** Next topic."))
+        #expect(try loadNotes(in: directory).first?.speakers == ["Anna Schmidt", "Me", "Others (Speaker 1)"])
+
+        // Nothing to rename.
+        #expect(try !NoteLibrary.renameSpeaker("Others (Speaker 2)", to: "Tom", inNoteAt: url))
+        #expect(try !NoteLibrary.renameSpeaker("Me", to: " ", inNoteAt: url))
+        #expect(try contents(of: url) == renamed)
+    }
+
+    @Test func renamingASpeakerToAnothersNameMergesThem() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = try await MarkdownNoteWriter(directory: directory).write(speakerNote())
+
+        try NoteLibrary.renameSpeaker("Others (Speaker 2)", to: "Anna", inNoteAt: url)
+        try NoteLibrary.renameSpeaker("Others (Speaker 1)", to: "Anna", inNoteAt: url)
+
+        #expect(try loadNotes(in: directory).first?.speakers == ["Anna", "Me"])
+        #expect(try contents(of: url).contains("**[00:00:09] Anna:** Next topic."))
+    }
+
+    @Test func renamingAPlainLabelOnlyChangesWhereItNamesTheSpeaker() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = try await MarkdownNoteWriter(directory: directory).write(speakerNote())
+
+        try NoteLibrary.renameSpeaker("Me", to: "Martin_K", inNoteAt: url)
+
+        let renamed = try contents(of: url)
+        #expect(renamed.contains("**[00:00:05] Martin\\_K:** Me too, Speaker 12."))
+        #expect(renamed.contains("talk_labels: [\"Martin_K\", \"Others\"]"))
+        #expect(renamed.contains("**Martin\\_K** "))
+        #expect(renamed.contains("| Minute | Martin\\_K | Others |"))
+        // "Me" in the summary is a word, not the label.
+        #expect(renamed.contains("Others (Speaker 2) joined. Me and"))
+        #expect(try loadNotes(in: directory).first?.talkTimeline?.microphoneLabel == "Martin_K")
+    }
 }

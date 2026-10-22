@@ -139,6 +139,16 @@ public enum NoteLibrary {
         try rewrite(noteAt: url) { NoteDocument.pinned($0, isPinned) }
     }
 
+    /// Renames the speaker `old` in the note at `url` to `new`, which is trimmed and has runs of
+    /// whitespace collapsed. See `NoteDocument.renamingSpeaker(_:from:to:)` for how the contents
+    /// change. Returns whether the note changed; a blank name changes nothing. A note that isn't
+    /// valid UTF-8 is left alone, like by `rename(noteAt:to:)`.
+    @discardableResult
+    public static func renameSpeaker(_ old: String, to new: String, inNoteAt url: URL) throws -> Bool {
+        let new = new.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return try rewriteIfChanged(noteAt: url) { NoteDocument.renamingSpeaker($0, from: old, to: new) }
+    }
+
     /// Applies `vocabulary` to every note in `directory` and its subfolders, as listed by
     /// `loadNotes(in:cache:)`. See `NoteDocument.corrected(_:by:)` for what changes; file names
     /// stay as they are. A note that can't be read or written is skipped, and the others are

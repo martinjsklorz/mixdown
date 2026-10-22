@@ -27,6 +27,12 @@ struct DetailToolbar: CustomizableToolbarContent {
                     ) { actions.togglePinned(note) }
                     Button("Copy Transcript", systemImage: "doc.on.doc") { NoteActions.copyTranscript(of: note) }
                     Button("Rename", systemImage: "pencil") { actions.rename(note) }
+                    RenameSpeakerMenu(note: note, actions: actions) {
+                        Label("Rename Speaker", systemImage: "person.2")
+                    }
+                    .menuStyle(.button)
+                    .menuIndicator(.hidden)
+                    .help("Rename a speaker")
                     Button("Add to Vocabulary", systemImage: "character.book.closed") { actions.addToVocabulary() }
                         .help("Add the selected word to the vocabulary")
                     Button("Delete", systemImage: "trash") { actions.moveToTrash(note) }

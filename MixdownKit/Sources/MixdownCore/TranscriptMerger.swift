@@ -81,7 +81,7 @@ public enum TranscriptMerger {
         for (order, source) in sources.enumerated() {
             for var segment in source.transcript.segments {
                 if source.device.kind == .microphone, isEcho(segment, of: systemSegments) { continue }
-                segment.speaker = segment.speaker.map { "\(source.label) (\($0))" } ?? source.label
+                segment.speaker = label(of: segment, in: source)
                 merged.append((segment, order))
             }
         }
@@ -93,6 +93,12 @@ public enum TranscriptMerger {
             segments: merged.map(\.segment),
             language: sources.lazy.compactMap(\.transcript.language).first
         )
+    }
+
+    /// The label `merge(_:)` gives `segment` of `source`: the source's, followed by the engine's
+    /// speaker in parentheses if it has one.
+    public static func label(of segment: TranscriptSegment, in source: SourceTranscript) -> String {
+        segment.speaker.map { "\(source.label) (\($0))" } ?? source.label
     }
 
     /// Whether most of `segment`'s word pairs were said, in the same order, in `reference` at the

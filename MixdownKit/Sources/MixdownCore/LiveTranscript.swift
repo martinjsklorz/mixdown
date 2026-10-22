@@ -53,6 +53,8 @@ public struct LiveTranscript: Sendable, Equatable {
         var start: TimeInterval
         var end: TimeInterval
         var words: [String]
+        /// When each of `words` was said, on the recording's timeline.
+        var times: [ClosedRange<TimeInterval>]
     }
 
     private var sources: [Source]
@@ -158,6 +160,18 @@ public struct LiveTranscript: Sendable, Equatable {
         }
     }
 
+    /// The words of each of `segments(fromSource:)`, with their times in seconds from the input's
+    /// first sample.
+    public func words(fromSource index: Int) -> [[LiveWord]] {
+        guard sources.indices.contains(index) else { return [] }
+        let offset = sources[index].offset ?? 0
+        return sources[index].segments.map { segment in
+            zip(segment.words, segment.times).map { word, time in
+                LiveWord(text: word, start: time.lowerBound - offset, end: time.upperBound - offset)
+            }
+        }
+    }
+
     /// Adds what input `index` recognized.
     /// - Parameter startHostTime: Host time of the first sample of the audio the update's times
     ///   count from, which lines the inputs up with each other; `nil` if unknown.
@@ -171,8 +185,11 @@ public struct LiveTranscript: Sendable, Equatable {
             lines[open].words[lines[open].words.count - 1] = word.text
             lines[open].end = max(lines[open].end, offset + word.end)
             let last = sources[index].segments.count - 1
-            sources[index].segments[last].words[sources[index].segments[last].words.count - 1] = word.text
+            let lastWord = sources[index].segments[last].words.count - 1
+            sources[index].segments[last].words[lastWord] = word.text
             sources[index].segments[last].end = max(sources[index].segments[last].end, offset + word.end)
+            let time = sources[index].segments[last].times[lastWord]
+            sources[index].segments[last].times[lastWord] = time.lowerBound...max(time.upperBound, offset + word.end)
             words = words.dropFirst()
         }
         for word in words {
@@ -200,9 +217,10 @@ public struct LiveTranscript: Sendable, Equatable {
             !Self.isComplete(sources[index].segments[last].words)
         {
             sources[index].segments[last].words.append(word.text)
+            sources[index].segments[last].times.append(start...end)
             sources[index].segments[last].end = max(sources[index].segments[last].end, end)
         } else {
-            sources[index].segments.append(Segment(start: start, end: end, words: [word.text]))
+            sources[index].segments.append(Segment(start: start, end: end, words: [word.text], times: [start...end]))
             sources[index].breaksSegment = false
         }
 

@@ -40,7 +40,8 @@ extension RecordingCoordinator {
             startedAt: now(),
             options: options,
             echoReference: echoCancellation == nil ? nil : EchoReference(),
-            measuresTalkTime: measuresTalkTime
+            measuresTalkTime: measuresTalkTime,
+            diarizer: speakerDiarizer
         )
         self.session = session
         recordingStartedAt = session.startedAt
@@ -100,6 +101,7 @@ extension RecordingCoordinator {
         let transcribesLive = engine.transcribesLive
         let feed = transcribesLive ? AsyncStream<LiveFeed>.makeStream() : nil
         let kind = lane.kind
+        let keepsAudio = session.keepsAudio(of: kind, transcribesLive: transcribesLive)
         let echoReference = session.echoReference
         let echoCancellation = echoReference == nil ? nil : echoCancellation
         let deviceName = started.device.name
@@ -108,7 +110,7 @@ extension RecordingCoordinator {
             // Where the captured samples go, gaps filled; `track` gets them once their echo is
             // removed, in step with it.
             var timeline = AudioTrack(keepsSamples: false)
-            var track = AudioTrack(keepsSamples: !transcribesLive)
+            var track = AudioTrack(keepsSamples: keepsAudio)
             var echoRemover: EchoRemover?
             // Whether system audio recorded alongside, which tells why `echoRemover` never started.
             var sawSystemAudio = false
@@ -300,7 +302,8 @@ extension RecordingCoordinator {
         await Self.stop(session.takeCurrentCaptures().map(\.capture))
         var lanes: [LaneAudio] = []
         for lane in session.lanes {
-            var audio = LaneAudio(track: AudioTrack(keepsSamples: !engine.transcribesLive))
+            let keepsAudio = session.keepsAudio(of: lane.kind, transcribesLive: engine.transcribesLive)
+            var audio = LaneAudio(track: AudioTrack(keepsSamples: keepsAudio))
             for capture in lane.captures {
                 let result = await capture.consumer.value
                 let track = result.track

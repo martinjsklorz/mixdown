@@ -42,6 +42,9 @@ public final class RecordingCoordinator {
         case paused(recorded: TimeInterval)
         /// `progress` is 0...1 across all of the recording's sources.
         case transcribing(progress: Double)
+        /// Telling apart the people on the system audio, then naming them, before the transcript is
+        /// translated and summarized.
+        case identifyingSpeakers
         /// Translating the transcript into `translationLanguage` before it's summarized.
         case translating
         /// Summarizing the transcript before the note is saved.
@@ -133,6 +136,13 @@ public final class RecordingCoordinator {
     /// audio record, as `talkTime` and the note's `talkTimeline`. Changes apply to the next
     /// recording.
     public var measuresTalkTime = false
+    /// Tells apart the people on the system audio once a recording ends, labeling their lines
+    /// "Speaker 1", "Speaker 2" and so on; `nil` while that's off. With a live engine, the system
+    /// audio is kept for it while recording. Changes apply to the next recording.
+    public var speakerDiarizer: (any SpeakerDiarizer)?
+    /// Renames the speakers `speakerDiarizer` told apart after what's said, where it can tell who
+    /// they are; `nil` while that's off. Read once the recording is transcribed.
+    public var speakerNamer: (any Summarizer)?
 
     /// Each source's level while recording, by device ID. Changes about ten times a second, so
     /// only read it from views that draw meters.

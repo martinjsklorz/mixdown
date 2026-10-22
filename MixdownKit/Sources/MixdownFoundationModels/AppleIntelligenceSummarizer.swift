@@ -27,6 +27,13 @@ public struct AppleIntelligenceSummarizer: Summarizer {
     public func catchUp(on transcript: MixdownCore.Transcript, language: String?) async throws -> [String] {
         try await SystemModelSummary.catchUp(on: transcript, language: language)
     }
+
+    public func nameSpeakers(
+        _ speakers: [String],
+        in transcript: MixdownCore.Transcript
+    ) async throws -> [String: String] {
+        try await SystemModelSummary.nameSpeakers(speakers, in: transcript)
+    }
 }
 
 enum SystemModelSummary {
@@ -139,6 +146,31 @@ enum SystemModelSummary {
             prompt
         }
         return response.content.noteSummary(template: template)
+    }
+
+    /// Names for `speakers` after what's said in `transcript`; see `SpeakerNaming`. A piece that
+    /// overflows the context is left out.
+    static func nameSpeakers(
+        _ speakers: [String],
+        in transcript: MixdownCore.Transcript
+    ) async throws -> [String: String] {
+        if case .unavailable(let reason) = availability { throw SummarizationError.unavailable(reason) }
+        return try await SpeakerNaming.names(
+            for: speakers,
+            in: transcript,
+            maxTokens: max(SystemLanguageModel.default.contextSize - reservedTokens, minimumPieceTokens)
+        ) { text, speakers in
+            let session = makeSession(instructions: SpeakerNaming.instructions)
+            let prompt = SpeakerNaming.prompt(for: text, speakers: speakers)
+            // See `respond(to:kind:template:language:)`.
+            let response = try await session.respond(
+                generating: GeneratedSpeakerNames.self,
+                includeSchemaInPrompt: true
+            ) {
+                prompt
+            }
+            return response.content.guesses
+        }
     }
 
     /// One catch-up call, in a fresh session.
@@ -255,4 +287,24 @@ struct GeneratedCatchUp {
         .maximumCount(4)
     )
     var points: [String]
+}
+
+@Generable
+struct GeneratedSpeakerNames {
+    @Guide(description: "Only the labels whose speaker the transcript makes clear; empty if there are none")
+    var speakers: [GeneratedSpeakerName]
+
+    /// Names by label; the first for a label asked about twice.
+    var guesses: [String: String] {
+        Dictionary(speakers.map { ($0.label, $0.name) }, uniquingKeysWith: { first, _ in first })
+    }
+}
+
+@Generable
+struct GeneratedSpeakerName {
+    @Guide(description: "The label exactly as asked about, such as \"Speaker 2\"")
+    var label: String
+
+    @Guide(description: "The speaker's name, written as in the transcript")
+    var name: String
 }

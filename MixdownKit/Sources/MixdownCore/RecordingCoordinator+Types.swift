@@ -14,6 +14,8 @@ extension RecordingCoordinator {
         let echoReference: EchoReference?
         /// `measuresTalkTime` as the recording started.
         let measuresTalkTime: Bool
+        /// `speakerDiarizer` as the recording started.
+        let diarizer: (any SpeakerDiarizer)?
         /// Whether the recording was started for a call, from a notification or automatically.
         var isCall = false
         var trigger = RecordingTrigger.manual
@@ -40,11 +42,24 @@ extension RecordingCoordinator {
         /// captured afterwards, which leaves the pauses out of the tracks.
         var pausedDuration: TimeInterval = 0
 
-        init(startedAt: Date, options: TranscriptionOptions, echoReference: EchoReference?, measuresTalkTime: Bool) {
+        init(
+            startedAt: Date,
+            options: TranscriptionOptions,
+            echoReference: EchoReference?,
+            measuresTalkTime: Bool,
+            diarizer: (any SpeakerDiarizer)?
+        ) {
             self.startedAt = startedAt
             self.options = options
             self.echoReference = echoReference
             self.measuresTalkTime = measuresTalkTime
+            self.diarizer = diarizer
+        }
+
+        /// Whether a lane of `kind` keeps its audio: always for an offline engine, which transcribes
+        /// it once the recording ends, and for system audio whose speakers are told apart then.
+        func keepsAudio(of kind: AudioSourceKind, transcribesLive: Bool) -> Bool {
+            !transcribesLive || (diarizer != nil && kind == .systemAudio)
         }
 
         /// The devices recording right now.
@@ -150,7 +165,7 @@ extension RecordingCoordinator {
         let device: AudioInputDevice
         /// Which device recorded which part; more than one if the lane switched devices.
         let parts: [DevicePart]
-        /// Empty when the engine transcribes live.
+        /// Empty if the lane didn't keep its audio; see `Session.keepsAudio(of:transcribesLive:)`.
         let samples: [Float]
         /// When there was speech, in seconds from the track's first sample.
         let speech: [Range<TimeInterval>]
@@ -196,6 +211,14 @@ extension RecordingCoordinator {
         let device: AudioInputDevice
         let capture: any AudioCapturing
         let stream: CaptureStream
+    }
+
+    /// One track's transcript, on the recording's timeline.
+    struct TrackTranscript {
+        let track: RecordedTrack
+        var transcript: Transcript
+        /// Per segment, its words with their times, if the engine timed them.
+        var words: [[LiveWord]]?
     }
 
     /// Tracks of a recording that couldn't be transcribed, and why the first of them failed.

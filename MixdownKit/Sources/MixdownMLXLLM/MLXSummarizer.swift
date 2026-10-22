@@ -29,6 +29,8 @@ public final class MLXSummarizer: Summarizer {
     static let pieceTokens = 8000
     /// Most tokens of one answer. A summary of eight points per list takes well under half.
     static let maximumAnswerTokens = 1500
+    /// Most tokens of an answer naming speakers: a few labels and names.
+    static let maximumNamesTokens = 300
 
     public init(model: MLXLanguageModel) {
         self.model = model
@@ -136,6 +138,23 @@ public final class MLXSummarizer: Summarizer {
         } catch {
             summaryLogger.error("\(self.model.displayName, privacy: .public) gave no title: \(error, privacy: .public)")
             return ""
+        }
+    }
+
+    public func nameSpeakers(_ speakers: [String], in transcript: Transcript) async throws -> [String: String] {
+        if case .unavailable(let reason) = availability { throw SummarizationError.unavailable(reason) }
+        return try await SpeakerNaming.names(
+            for: speakers,
+            in: transcript,
+            maxTokens: Self.pieceTokens
+        ) { text, speakers in
+            try await parsedAnswer(
+                instructions: SpeakerNaming.instructions + "\n" + SpeakerNaming.jsonFormat,
+                prompt: SpeakerNaming.prompt(for: text, speakers: speakers),
+                maximumTokens: Self.maximumNamesTokens,
+                expecting: "speaker names",
+                parse: SpeakerNaming.guesses(fromJSON:)
+            )
         }
     }
 

@@ -9,6 +9,8 @@ struct NoteActions {
     var togglePinned: @MainActor (NoteDocument) -> Void
     /// Asks for a new title, then renames the note and its file.
     var rename: @MainActor (NoteDocument) -> Void
+    /// Asks for a new name for one of the note's `speakers`, then renames them throughout it.
+    var renameSpeaker: @MainActor (NoteDocument, String) -> Void
     /// Asks for confirmation unless the user turned that off, then moves the note to the Trash.
     var moveToTrash: @MainActor (NoteDocument) -> Void
     /// Asks how to write the text selected in the note, if any, and adds it to the vocabulary.
@@ -21,6 +23,24 @@ struct NoteActions {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(note.transcriptText, forType: .string)
         Task { await Notifications.post(title: "Transcript Copied", body: note.title) }
+    }
+}
+
+/// A menu of the note's speakers, each renaming that speaker; disabled for a note without any.
+struct RenameSpeakerMenu<Label: View>: View {
+    let note: NoteDocument
+    let actions: NoteActions
+    @ViewBuilder let label: () -> Label
+
+    var body: some View {
+        Menu {
+            ForEach(note.speakers, id: \.self) { speaker in
+                Button("\(speaker)…") { actions.renameSpeaker(note, speaker) }
+            }
+        } label: {
+            label()
+        }
+        .disabled(note.speakers.isEmpty)
     }
 }
 

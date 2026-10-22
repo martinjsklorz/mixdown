@@ -1285,6 +1285,111 @@ struct RecordingCoordinatorTests {
         )
     }
 
+    // MARK: - Speakers
+
+    @Test func tellsSystemAudioSpeakersApartAndNamesThem() async throws {
+        let microphone = MockCapture(chunks: [Fixtures.chunk(seconds: 2, hostTime: 100)])
+        let systemAudio = MockCapture(chunks: [Fixtures.chunk(seconds: 3, hostTime: 100)])
+        let engine = MockEngine(transcriptsBySampleCount: [
+            32_000: Transcript(segments: [TranscriptSegment(start: 0.2, end: 0.5, text: "Hello.")]),
+            48_000: Transcript(segments: [TranscriptSegment(start: 0, end: 3, text: "Hi, I'm Anna. And I'm Tom.")]),
+        ])
+        let diarizer = MockDiarizer(turnsBySampleCount: [
+            48_000: [SpeakerTurn(start: 0, end: 1.5, speaker: 0), SpeakerTurn(start: 1.5, end: 3, speaker: 1)]
+        ])
+        let namer = MockSummarizer(speakerNames: ["Others (Speaker 1)": "Anna"])
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            captures: [Fixtures.builtInMic.id: microphone, AudioInputDevice.systemAudioID: systemAudio],
+            engine: engine,
+            writer: writer,
+            preferredDeviceIDs: [Fixtures.builtInMic.id, AudioInputDevice.systemAudioID]
+        )
+        coordinator.speakerDiarizer = diarizer
+        coordinator.speakerNamer = namer
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        await coordinator.stopRecording()
+
+        #expect(coordinator.phase == .idle)
+        // Only the system audio.
+        #expect(diarizer.receivedSampleCounts == [48_000])
+        #expect(namer.receivedNamings.map(\.speakers) == [["Others (Speaker 1)", "Others (Speaker 2)"]])
+        let note = try #require(await writer.notes.first)
+        #expect(note.transcript.segments.map(\.text) == ["Hi, I'm Anna.", "Hello.", "And I'm Tom."])
+        #expect(note.transcript.segments.map(\.speaker) == ["Anna", "Me", "Others (Speaker 2)"])
+    }
+
+    @Test func liveTextIsSplitBetweenSpeakersByItsWordTimes() async throws {
+        // The system audio starts a second after the microphone, according to the host clock.
+        let live = MockLiveSession(updatesBySampleCount: [
+            32_000: LiveTranscriptUpdate(words: [LiveWord(text: "Morning.", start: 0.25, end: 0.75)]),
+            16_000: LiveTranscriptUpdate(words: [
+                LiveWord(text: "Hi!", start: 0, end: 0.25),
+                LiveWord(text: "Bye.", start: 0.5, end: 0.75),
+            ]),
+        ])
+        let diarizer = MockDiarizer(turnsBySampleCount: [
+            16_000: [SpeakerTurn(start: 0, end: 0.4, speaker: 0), SpeakerTurn(start: 0.4, end: 1, speaker: 1)]
+        ])
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            captures: [
+                Fixtures.builtInMic.id: MockCapture(chunks: [Fixtures.chunk(seconds: 2, hostTime: 100)]),
+                AudioInputDevice.systemAudioID: MockCapture(chunks: [Fixtures.chunk(seconds: 1, hostTime: 101)]),
+            ],
+            engine: MockEngine(liveSession: live),
+            writer: writer,
+            preferredDeviceIDs: [Fixtures.builtInMic.id, AudioInputDevice.systemAudioID]
+        )
+        coordinator.speakerDiarizer = diarizer
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        try await waitUntil { coordinator.liveTranscript.lines.count == 2 }
+        await coordinator.stopRecording()
+
+        // The system audio was kept for it; the microphone wasn't.
+        #expect(diarizer.receivedSampleCounts == [16_000])
+        #expect(
+            await writer.notes.first?.transcript.segments == [
+                TranscriptSegment(start: 0.25, end: 0.75, text: "Morning.", speaker: "Me"),
+                TranscriptSegment(start: 1, end: 1.25, text: "Hi!", speaker: "Others (Speaker 1)"),
+                TranscriptSegment(start: 1.5, end: 1.75, text: "Bye.", speaker: "Others (Speaker 2)"),
+            ]
+        )
+    }
+
+    @Test func noteIsSavedWithoutSpeakersWhenTellingThemApartFails() async throws {
+        let engine = MockEngine(transcriptsBySampleCount: [
+            32_000: Transcript(segments: [TranscriptSegment(start: 0.2, end: 0.5, text: "Hello.")]),
+            48_000: Transcript(segments: [TranscriptSegment(start: 0, end: 3, text: "Hi there.")]),
+        ])
+        let namer = MockSummarizer(speakerNames: ["Others": "Anna"])
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            captures: [
+                Fixtures.builtInMic.id: MockCapture(chunks: [Fixtures.chunk(seconds: 2, hostTime: 100)]),
+                AudioInputDevice.systemAudioID: MockCapture(chunks: [Fixtures.chunk(seconds: 3, hostTime: 100)]),
+            ],
+            engine: engine,
+            writer: writer,
+            preferredDeviceIDs: [Fixtures.builtInMic.id, AudioInputDevice.systemAudioID]
+        )
+        coordinator.speakerDiarizer = MockDiarizer(error: TranscriptionError.failed("broken"))
+        coordinator.speakerNamer = namer
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        await coordinator.stopRecording()
+
+        #expect(coordinator.phase == .idle)
+        // Without speakers told apart, "Others" may be several people.
+        #expect(namer.receivedNamings.isEmpty)
+        #expect(await writer.notes.first?.transcript.segments.map(\.speaker) == ["Others", "Me"])
+    }
+
     @Test func liveSessionFailingToStartEndsTheRecording() async throws {
         let error = TranscriptionError.modelUnavailable("broken")
         let writer = InMemoryNoteWriter()

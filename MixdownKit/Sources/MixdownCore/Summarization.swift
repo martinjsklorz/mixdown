@@ -251,6 +251,11 @@ public protocol Summarizer: Sendable {
     /// up. Written in `language`, a BCP 47 identifier, or with `nil` in the transcript's. Honors
     /// task cancellation.
     func catchUp(on transcript: Transcript, language: String?) async throws -> [String]
+
+    /// Names for `speakers`, labels in `transcript` such as "Speaker 2", after what's said in it,
+    /// by label; see `SpeakerNaming`. Labels the model can't name are left out. Honors task
+    /// cancellation.
+    func nameSpeakers(_ speakers: [String], in transcript: Transcript) async throws -> [String: String]
 }
 
 extension Summarizer {
@@ -261,6 +266,11 @@ extension Summarizer {
         let points = summary.keyPoints.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         let overview = summary.overview.trimmingCharacters(in: .whitespacesAndNewlines)
         return points.isEmpty && !overview.isEmpty ? [overview] : points
+    }
+
+    /// No names, for a backend that can't tell.
+    public func nameSpeakers(_ speakers: [String], in transcript: Transcript) async throws -> [String: String] {
+        [:]
     }
 }
 

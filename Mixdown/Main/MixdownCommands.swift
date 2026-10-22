@@ -114,6 +114,12 @@ private struct NotesFileMenuItems: View {
             if let shownNote { shownNote.actions.rename(shownNote.note) }
         }
         .disabled(shownNote == nil)
+        if let shownNote {
+            RenameSpeakerMenu(note: shownNote.note, actions: shownNote.actions) { Text("Rename Speaker") }
+        } else {
+            Menu("Rename Speaker") {}
+                .disabled(true)
+        }
         Button("Add to Vocabulary…") {
             shownNote?.actions.addToVocabulary()
         }
