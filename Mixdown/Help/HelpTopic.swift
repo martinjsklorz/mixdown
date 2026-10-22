@@ -315,6 +315,9 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
 
             Without Apple Intelligence, Chat still counts notes and shows the lines that match a \
             question best. **New Chat** in the toolbar starts over.
+
+            Turn Chat off under **Settings → General → Chat with your notes**; it leaves the \
+            sidebar and the View menu, and Mixdown stops reading your notes for it.
             """
         case .speechModels:
             """
