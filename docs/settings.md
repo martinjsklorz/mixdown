@@ -41,14 +41,15 @@ Press ⌘, or click the cog above the sidebar to open Settings. **Settings…** 
 
 - **Summarize recordings**: on by default. If summaries can't be made, e.g. because Apple
   Intelligence is off or the model isn't downloaded yet, the tab says why.
-- **Manual recordings** and **Detected calls**: the template for each.
+- **Templates**: **Manual recordings** and **Detected calls**, the template for each.
 - **Model**: Apple Intelligence, or an open model such as Qwen3 that runs on your Mac with MLX,
   with a **Download** button until it's downloaded. See [Summaries](summaries.md#models).
 
 ## Translation
 
-- **Translate to**: a language, or **Off**, and whether macOS has downloaded the languages to
-  translate your recordings, with a **Download** button.
+- **Translate recordings**: off by default.
+- **Translate to**: a language, and whether macOS has downloaded the languages to translate your
+  recordings, with a **Download** button.
 - **Translate live text while recording**: on by default, with a live model. Translates the live
   text as it's spoken. See [Translation](translation.md).
 

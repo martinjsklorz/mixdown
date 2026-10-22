@@ -43,8 +43,8 @@ struct SettingsView: View {
         case .general: 620
         case .recording: 540
         case .transcription: 460
-        case .summary: 280
-        case .translation: 360
+        case .summary: 580
+        case .translation: 400
         case .vocabulary: 520
         case .notifications: 590
         case .design: 570

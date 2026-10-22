@@ -1,7 +1,7 @@
 # Translation
 
-To get notes in another language, pick it under **Settings → Translation → Translate to**. Each
-note then gets a `## Translation` section above the original transcript, with the same times and
+To get notes in another language, turn on **Settings → Translation → Translate recordings** and
+pick the language under **Translate to**. Each note then gets a `## Translation` section above the original transcript, with the same times and
 speakers, and `translation_language` in its frontmatter. The summary and title are written from
 the translation, so they're in that language too. Recordings already in that language are left as
 they are.

@@ -18,28 +18,39 @@ struct SummarySettingsView: View {
                         set: { environment.summarizesNotes = $0 }
                     )
                 )
-                Group {
-                    templatePicker(
-                        "Manual recordings",
-                        selection: Binding(
-                            get: { environment.summaryTemplate },
-                            set: { environment.summaryTemplate = $0 }
-                        )
-                    )
-                    templatePicker(
-                        "Detected calls",
-                        selection: Binding(
-                            get: { environment.callSummaryTemplate },
-                            set: { environment.callSummaryTemplate = $0 }
-                        )
-                    )
-                }
-                .disabled(!environment.summarizesNotes)
             } footer: {
                 Text(footer)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            Section {
+                templatePicker(
+                    "Manual recordings",
+                    selection: Binding(
+                        get: { environment.summaryTemplate },
+                        set: { environment.summaryTemplate = $0 }
+                    )
+                )
+                templatePicker(
+                    "Detected calls",
+                    selection: Binding(
+                        get: { environment.callSummaryTemplate },
+                        set: { environment.callSummaryTemplate = $0 }
+                    )
+                )
+            } header: {
+                Text("Templates")
+            } footer: {
+                Text(
+                    "1:1, Standup and Client Call always have TL;DR, Decisions, Action Items and Open "
+                        + "Questions. Detected calls are recordings started from a call notification or "
+                        + "automatically."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+            .disabled(!environment.summarizesNotes)
 
             Section {
                 LabeledContent("Model") {
@@ -153,9 +164,7 @@ struct SummarySettingsView: View {
     private var footer: String {
         switch environment.summaryAvailability {
         case .available:
-            return "Adds a summary above the transcript and names the note after its topic. 1:1, Standup "
-                + "and Client Call always have TL;DR, Decisions, Action Items and Open Questions. Detected "
-                + "calls are recordings started from a call notification or automatically. "
+            return "Adds a summary above the transcript and names the note after its topic. "
                 + "\(environment.summarizer.info.displayName) makes summaries on this Mac."
         case .unavailable(let reason):
             return reason
