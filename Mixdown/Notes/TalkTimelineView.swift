@@ -1,3 +1,4 @@
+import Charts
 import MixdownCore
 import SwiftUI
 
@@ -5,37 +6,41 @@ import SwiftUI
 /// others' below it, under each side's share of the talking. Hover over a minute for its numbers.
 struct TalkTimelineView: View {
     /// Each side's bars reach this high for a minute of talking.
-    private static let barHeight: CGFloat = 22
-    private static let maxBarWidth: CGFloat = 12
-    /// A short call's columns widen to this, so the time labels under them still fit side by side.
-    private static let minBarsWidth: CGFloat = 96
+    private static let barHeight: CGFloat = 26
+    /// A long call's columns narrow to fit; a short call's widen to this at most.
+    private static let maxColumnWidth: CGFloat = 28
+    /// A call of a minute or two still gets room for its time labels.
+    private static let minChartWidth: CGFloat = 200
+    /// The gap between columns, as a part of a minute on each side.
+    private static let columnInset = 0.12
+    /// Shorter bars still show a word or two, in seconds: about 2 pt.
+    private static let minimumBarSeconds = TalkTimeline.interval * 2 / Double(barHeight)
+    /// Half a point, in seconds, which leaves a hairline between the two sides' bars.
+    private static let baselineGap = TalkTimeline.interval * 0.5 / Double(barHeight)
 
     let timeline: TalkTimeline
+
+    @State private var hoveredTime: Double?
 
     private let microphoneColor = Color.accentColor
     private let systemAudioColor = Color.secondary
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Talk Time", systemImage: "person.2.wave.2")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                Label("Talk Time", systemImage: "person.2.wave.2")
+                if let minute = hoveredMinute {
+                    Text(summary(forMinute: minute))
+                        .monospacedDigit()
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
             legend
                 .font(.callout)
-            VStack(alignment: .leading, spacing: 4) {
-                bars
-                HStack {
-                    Text(Self.minuteText(0))
-                    Spacer()
-                    Text(Self.minuteText(timeline.minuteCount))
-                }
-                .font(.caption2)
-                .monospacedDigit()
-                .lineLimit(1)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: barsWidth)
-            }
-            .accessibilityHidden(true)
+            chart
+                .frame(maxWidth: chartWidth, alignment: .leading)
+                .accessibilityHidden(true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
@@ -72,53 +77,80 @@ struct TalkTimelineView: View {
         .monospacedDigit()
     }
 
-    /// One column per minute, the user's bar above the others'. Narrower columns for longer calls,
-    /// so a long one still fits, and wider ones for a call of a minute or two.
-    private var bars: some View {
-        HStack(alignment: .center, spacing: columnSpacing) {
+    /// One column per minute, the user's bar above the line and the others' below it, with the
+    /// minutes marked underneath.
+    private var chart: some View {
+        Chart {
+            RuleMark(y: .value("Seconds", 0))
+                .foregroundStyle(Color(nsColor: .separatorColor))
+                .lineStyle(StrokeStyle(lineWidth: 1))
             ForEach(0..<timeline.minuteCount, id: \.self) { minute in
-                VStack(spacing: 1) {
-                    bar(timeline.microphone[minute], color: microphoneColor)
-                        .frame(height: Self.barHeight, alignment: .bottom)
-                    bar(timeline.systemAudio[minute], color: systemAudioColor)
-                        .frame(height: Self.barHeight, alignment: .top)
-                }
-                .frame(maxWidth: columnWidth)
-                .contentShape(Rectangle())
-                .help(help(forMinute: minute))
+                bar(minute: minute, seconds: timeline.microphone[minute], below: false, color: microphoneColor)
+                bar(minute: minute, seconds: timeline.systemAudio[minute], below: true, color: systemAudioColor)
             }
         }
-        .frame(maxWidth: barsWidth, alignment: .leading)
-        .background {
-            Rectangle()
-                .fill(.quaternary)
-                .frame(height: 1)
+        .chartXScale(domain: 0...Double(max(timeline.minuteCount, 1)))
+        .chartYScale(domain: -TalkTimeline.interval...TalkTimeline.interval)
+        .chartYAxis(.hidden)
+        .chartXAxis {
+            AxisMarks(values: tickMinutes.map(Double.init)) { _ in
+                AxisGridLine()
+                AxisTick(length: 4)
+            }
+            // Each label starts at its minute, so none sticks out past the first column; the end
+            // has none, as it would stick out past the last.
+            AxisMarks(values: tickMinutes.filter { $0 < timeline.minuteCount }.map(Double.init)) { value in
+                AxisValueLabel(anchor: .topLeading) {
+                    if let minute = value.as(Double.self) {
+                        Text(Self.minuteText(Int(minute)))
+                            .font(.caption2)
+                            .monospacedDigit()
+                    }
+                }
+            }
         }
+        .chartPlotStyle { plot in
+            plot.frame(height: 2 * Self.barHeight)
+        }
+        .chartXSelection(value: $hoveredTime)
     }
 
-    private func bar(_ seconds: TimeInterval, color: Color) -> some View {
-        let height = Self.barHeight * min(max(seconds / TalkTimeline.interval, 0), 1)
-        return RoundedRectangle(cornerRadius: 1.5)
-            .fill(color)
-            // Even a word or two shows.
-            .frame(height: seconds >= 0.5 ? max(height, 2) : 0)
+    private func bar(minute: Int, seconds: TimeInterval, below: Bool, color: Color) -> some ChartContent {
+        let length = seconds >= 0.5 ? max(min(seconds, TalkTimeline.interval), Self.minimumBarSeconds) : 0
+        let sign: Double = below ? -1 : 1
+        return RectangleMark(
+            xStart: .value("Minute", Double(minute) + Self.columnInset),
+            xEnd: .value("Minute", Double(minute + 1) - Self.columnInset),
+            yStart: .value("Seconds", sign * Self.baselineGap),
+            yEnd: .value("Seconds", sign * (Self.baselineGap + length))
+        )
+        .cornerRadius(1.5)
+        .foregroundStyle(color)
+        .opacity(hoveredMinute == nil || hoveredMinute == minute ? 1 : 0.4)
     }
 
-    private var columnSpacing: CGFloat { timeline.minuteCount > 60 ? 1 : 2 }
-
-    private var columnWidth: CGFloat {
-        let count = CGFloat(max(timeline.minuteCount, 1))
-        return max(Self.maxBarWidth, (Self.minBarsWidth - (count - 1) * columnSpacing) / count)
+    /// The minute under the pointer, if any.
+    private var hoveredMinute: Int? {
+        guard let hoveredTime, timeline.minuteCount > 0 else { return nil }
+        return min(max(Int(hoveredTime), 0), timeline.minuteCount - 1)
     }
 
-    /// As wide as the columns at their widest, so a short call's bars don't stretch across.
-    private var barsWidth: CGFloat {
-        let count = CGFloat(timeline.minuteCount)
-        return count * columnWidth + (count - 1) * columnSpacing
+    /// Where the axis marks a minute: every one for a short call, up to every two hours for a very
+    /// long one, so about half a dozen labels fit.
+    private var tickMinutes: [Int] {
+        let count = timeline.minuteCount
+        let step = [1, 2, 5, 10, 15, 30, 60, 120].first { count / $0 <= 6 } ?? 120
+        return Array(stride(from: 0, through: count, by: step))
     }
 
-    /// E.g. "12:00–13:00: Me 35 s, Others 12 s".
-    private func help(forMinute minute: Int) -> String {
+    /// Wide enough for a short call's time labels, and narrow enough that its columns don't
+    /// stretch across the note.
+    private var chartWidth: CGFloat {
+        max(Self.minChartWidth, CGFloat(timeline.minuteCount) * Self.maxColumnWidth)
+    }
+
+    /// E.g. "12:00–13:00: Me 35 sec, Others 12 sec".
+    private func summary(forMinute minute: Int) -> String {
         let range = "\(Self.minuteText(minute))–\(Self.minuteText(minute + 1))"
         let microphone = Self.durationText(timeline.microphone[minute])
         let systemAudio = Self.durationText(timeline.systemAudio[minute])
