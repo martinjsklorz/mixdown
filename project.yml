@@ -45,6 +45,7 @@ targets:
           - MixdownSpeechSwift
           - MixdownAppleSpeech
           - MixdownFoundationModels
+          - MixdownMLXLLM
           - MixdownAppleTranslation
           - MixdownNaturalLanguage
           - MixdownNotes

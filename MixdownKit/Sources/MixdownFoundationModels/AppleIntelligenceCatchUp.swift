@@ -1,6 +1,7 @@
 import Foundation
 import FoundationModels
 import MixdownCore
+import MixdownNaturalLanguage
 import os
 
 private let logger = Logger(subsystem: "app.mixdown", category: "summary")
@@ -29,7 +30,7 @@ enum SystemModelCatchUp {
             ),
             minTokens: SystemModelSummary.minimumPieceTokens
         )
-        let language = language ?? SystemModelSummary.languageCode(of: transcript)
+        let language = language ?? TranscriptLanguage.code(of: transcript)
         let summary = try await summarizer.summarize(transcript) { text, kind in
             do {
                 return NoteSummary(keyPoints: try await respond(to: text, kind: kind, model: model, language: language))
@@ -48,54 +49,25 @@ enum SystemModelCatchUp {
         model: SystemLanguageModel,
         language: String?
     ) async throws -> [String] {
-        let rules = instructions(for: kind, language: language)
+        let rules = SummaryPrompt.catchUpInstructions(for: kind, language: language)
         let session: LanguageModelSession
         if #available(macOS 27, *) {
             session = makeSession(model: model, instructions: rules)
         } else {
             session = LanguageModelSession(model: model) { rules }
         }
-        let prompt = kind == .transcript ? "Transcript:\n\(text)" : text
+        let prompt = SummaryPrompt.prompt(for: text, kind: kind)
         // See `SystemModelSummary.respond`.
         let response = try await session.respond(generating: GeneratedCatchUp.self, includeSchemaInPrompt: true) {
             prompt
         }
-        return response.content.points.map(GeneratedSummary.listItem)
+        return response.content.points.map(SummaryPrompt.listItem)
     }
 
     /// See `SystemModelSummary.makeSession(model:instructions:)`.
     @available(macOS 27, *)
     private static func makeSession<Model: LanguageModel>(model: Model, instructions: String) -> LanguageModelSession {
         LanguageModelSession(model: model) { instructions }
-    }
-
-    static func instructions(for kind: ChunkedSummarizer.Step, language: String?) -> String {
-        let task =
-            switch kind {
-            case .transcript:
-                """
-                Someone in a meeting or call that's still going on lost focus for a few minutes. The \
-                user gives you the transcript of those minutes. Lines may start with the speaker's \
-                name. Tell them what they missed, so they can follow again: the topics, what was \
-                decided, and anything they were asked or that's expected of them.
-                """
-            case .combine:
-                """
-                Someone in a meeting or call that's still going on lost focus for a few minutes. The \
-                user gives you short notes on consecutive parts of those minutes, in order. Merge \
-                them into one short list of what they missed, combining points that repeat.
-                """
-            }
-        // As in `SystemModelSummary.instructions`: without a firm rule, the model answers in the
-        // language of its input, which isn't the one asked for when the live text is translated.
-        let languageName = language.flatMap { Locale(identifier: "en").localizedString(forIdentifier: $0) }
-        let languageRule =
-            languageName.map { "You MUST write in \($0)." } ?? "You MUST write in the language of the transcript."
-        return """
-            \(task)
-            Only use what's in the text; don't add anything. Keep to what matters most, oldest first. \
-            Be brief and concrete. \(languageRule)
-            """
     }
 }
 

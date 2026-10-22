@@ -39,7 +39,7 @@ then. See [Notes](notes.md#moments).
 ## Catch up
 
 If you drifted off, press ⌃⌥⌘C in any app while recording, or choose **Recording → Catch Me Up**,
-also in the menu bar. Apple Intelligence sums up the last few minutes of the live text (5 unless
+also in the menu bar. The [summary model](summaries.md#models) sums up the last few minutes of the live text (5 unless
 you choose otherwise) in a few points, in a card under the notch (or the Dynamic Island, while it
 shows), for example:
 
@@ -56,8 +56,9 @@ takes a few seconds; longer stretches are summed up in parts first.
 - Otherwise it closes once you've had time to read it, but not while the pointer is over it.
 - It never takes the keyboard, so you can keep typing in the app you're in.
 
-It needs the live speech model, as that's the one with text while you record, and Apple
-Intelligence turned on; the card says so if either is missing. When the live text is
+It needs the live speech model, as that's the one with text while you record, and the summary
+model (Apple Intelligence turned on, or an open model downloaded); the card says so if either is
+missing. When the live text is
 [translated](translation.md), the catch-up is in that language too. It doesn't go into the note.
 
 Choose how many minutes it covers (1, 2, 5, 10 or 15) under **Settings → General → Global
