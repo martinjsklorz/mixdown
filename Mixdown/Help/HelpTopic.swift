@@ -198,6 +198,16 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             latest words scroll by in one line under the notch too. With an offline model, Mixdown \
             transcribes the recording when you stop and shows its progress on Record and in the \
             menu bar. Then the note opens.
+
+            ## Import a recording
+
+            Already have a recording, such as a voice memo or a video of a meeting? Click the \
+            import button next to Record, or choose **File → Import Audio…** (⇧⌘I), and pick the \
+            file. Mixdown transcribes it with the speech model, translates and summarizes it like \
+            a recording, and saves it as a note dated when the file was recorded. M4A, MP3, WAV, \
+            AIFF, FLAC, MP4, MOV and most other audio and video files work. The note is named after \
+            its summary, or after the file without one. Record shows the progress; **Cancel Import** \
+            stops it without a note. The file itself stays where it is.
             """
         case .calls:
             """
@@ -497,6 +507,7 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             - ⌘F: Search recordings
             - ⌘0: Open the Mixdown window
             - ⇧⌘O: Open the notes folder
+            - ⇧⌘I: Import an audio or video file as a note
             - ⌘⌫: Move the open note to the Trash
             - ⌘,: Open Settings
             - ⌘?: Open Mixdown Help

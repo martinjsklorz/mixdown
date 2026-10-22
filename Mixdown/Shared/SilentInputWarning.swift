@@ -10,7 +10,7 @@ enum SilentInputWarning {
         case .systemAudio:
             "No sound from system audio yet. If something is playing, allow Mixdown under "
                 + "Screen & System Audio Recording › System Audio Recording Only."
-        case .microphone:
+        case .microphone, .file:
             "No sound from \(device.name) yet. Check that it isn't muted."
         }
     }
@@ -19,7 +19,7 @@ enum SilentInputWarning {
     static func title(for device: AudioInputDevice) -> String {
         switch device.kind {
         case .systemAudio: "No sound from system audio"
-        case .microphone: "No sound from \(device.name)"
+        case .microphone, .file: "No sound from \(device.name)"
         }
     }
 

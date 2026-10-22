@@ -174,9 +174,13 @@ extension RecordingCoordinator {
         var fractions: [Double]
 
         init(sessionID: UUID, tracks: [RecordedTrack]) {
+            self.init(sessionID: sessionID, sampleCounts: tracks.map(\.samples.count))
+        }
+
+        init(sessionID: UUID, sampleCounts: [Int]) {
             self.sessionID = sessionID
-            sampleCounts = tracks.map(\.samples.count)
-            fractions = Array(repeating: 0, count: tracks.count)
+            self.sampleCounts = sampleCounts
+            fractions = Array(repeating: 0, count: sampleCounts.count)
         }
 
         var total: Double {

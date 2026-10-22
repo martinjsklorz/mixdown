@@ -100,6 +100,9 @@ private struct NotesFileMenuItems: View {
             .disabled(environment.notesFolder.directory == nil)
         Button("Reveal Last Note in Finder") { environment.revealLastNote() }
             .disabled(environment.coordinator.lastNoteURL == nil)
+        Button("Import Audio…") { environment.importAudio() }
+            .keyboardShortcut("i", modifiers: [.command, .shift])
+            .disabled(!environment.coordinator.canImportAudio)
 
         Divider()
 

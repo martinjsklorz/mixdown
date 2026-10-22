@@ -52,6 +52,7 @@ private struct TriggerIcon: View {
             switch trigger {
             case .manual: ("hand.tap", "Started manually")
             case .automatic: ("autostartstop", "Started automatically for a call")
+            case .imported: ("square.and.arrow.down", "Imported from an audio file")
             }
         Image(systemName: symbol)
             .font(.caption)

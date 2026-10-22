@@ -6,6 +6,8 @@ public enum AudioSourceKind: String, Sendable {
     case microphone
     /// Everything the Mac is playing back, captured via a Core Audio process tap.
     case systemAudio
+    /// An audio or video file the user imported. Never in a device list or recorded from.
+    case file
 }
 
 /// A selectable audio source shown in the menu bar device picker. Several can record at once.

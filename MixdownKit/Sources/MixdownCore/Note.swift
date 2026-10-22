@@ -14,7 +14,8 @@ public struct Note: Sendable, Equatable {
     public var translation: Transcript?
     /// `nil` when summaries are off, unavailable or failed.
     public var summary: NoteSummary?
-    /// Whether the user started the recording or Mixdown started it for a call by itself.
+    /// Whether the user started the recording, Mixdown started it for a call by itself, or it was
+    /// imported from a file.
     public var trigger: RecordingTrigger
     /// Whether the recording was started for a call, from the call notification or automatically.
     public var isCall: Bool
@@ -65,6 +66,8 @@ public enum RecordingTrigger: String, Sendable, Equatable {
     case manual
     /// By Mixdown, as a call started while it records calls automatically.
     case automatic
+    /// Not recorded by Mixdown: transcribed from an audio file the user imported.
+    case imported
 }
 
 /// Persists notes somewhere the user can find them.
