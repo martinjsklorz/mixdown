@@ -120,9 +120,12 @@ struct TranslationSettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                 case .installed:
-                    Label("Downloaded", systemImage: "checkmark.circle.fill")
-                        .symbolRenderingMode(.multicolor)
-                        .labelStyle(.titleAndIcon)
+                    Label {
+                        Text("Downloaded")
+                    } icon: {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    }
                 case .supported:
                     Button("Download", systemImage: "arrow.down.circle") {
                         requestDownload(from: source, to: target)
