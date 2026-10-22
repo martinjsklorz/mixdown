@@ -257,7 +257,7 @@ private struct TalkShareRing: View {
     }
 }
 
-/// One waveform for all inputs together that turns orange while any input stays silent.
+/// One waveform for all inputs together, naming the inputs that stay silent on hover.
 private struct LevelsWing: View {
     let coordinator: RecordingCoordinator
     let side: DynamicIsland.Side
@@ -265,7 +265,7 @@ private struct LevelsWing: View {
     var body: some View {
         let silent = coordinator.silentDevices
 
-        LevelWaveform(coordinator: coordinator, isSilent: !silent.isEmpty, color: .white.opacity(0.75))
+        LevelWaveform(coordinator: coordinator, color: .white.opacity(0.75))
             .help(silent.isEmpty ? "Input level" : "No sound from \(silent.map(\.name).formatted(.list(type: .and)))")
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Input level")
