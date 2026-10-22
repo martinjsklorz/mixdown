@@ -36,8 +36,13 @@ Press ⌘, or click the cog above the sidebar to open Settings. **Settings…** 
 - **Language**: **Automatic** or a specific language.
 - **Speaker Names**: the labels for the microphone (**Me**) and system audio (**Others**) when you
   record both.
-- **Summary**: **Summarize recordings**, and the templates for **Manual recordings** and
-  **Detected calls**. See [Summaries](summaries.md).
+
+## Summary
+
+- **Summarize recordings**: on by default. Summaries need Apple Intelligence; if it's off, the tab
+  says why.
+- **Manual recordings** and **Detected calls**: the template for each. See
+  [Summaries](summaries.md).
 
 ## Translation
 

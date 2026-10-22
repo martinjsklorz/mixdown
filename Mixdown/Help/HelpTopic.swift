@@ -383,7 +383,7 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
 
             ## Templates
 
-            Under **Settings → Transcription**, pick a summary template for manual recordings and \
+            Under **Settings → Summary**, pick a summary template for manual recordings and \
             one for detected calls (recordings started from the call notification or \
             automatically). **General** is the overview, key points and action items above. \
             **1:1**, **Standup** and **Client Call** always have the same four sections: TL;DR, \
@@ -394,8 +394,8 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             recording only, pick it on **Record** while recording or transcribing, until the \
             summary starts.
 
-            Turn summaries off under **Settings → Transcription → Summarize recordings**. That \
-            section also says why summaries aren't available on this Mac if they aren't.
+            Turn summaries off under **Settings → Summary → Summarize recordings**. That \
+            tab also says why summaries aren't available on this Mac if they aren't.
 
             ## Translation
 

@@ -86,39 +86,6 @@ struct TranscriptionSettingsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
-
-            Section {
-                Toggle(
-                    "Summarize recordings",
-                    isOn: Binding(
-                        get: { environment.summarizesNotes },
-                        set: { environment.summarizesNotes = $0 }
-                    )
-                )
-                Group {
-                    templatePicker(
-                        "Manual recordings",
-                        selection: Binding(
-                            get: { environment.summaryTemplate },
-                            set: { environment.summaryTemplate = $0 }
-                        )
-                    )
-                    templatePicker(
-                        "Detected calls",
-                        selection: Binding(
-                            get: { environment.callSummaryTemplate },
-                            set: { environment.callSummaryTemplate = $0 }
-                        )
-                    )
-                }
-                .disabled(!environment.summarizesNotes)
-            } header: {
-                Text("Summary")
-            } footer: {
-                Text(summaryFooter)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
         }
         .formStyle(.grouped)
         .task(id: environment.language) {
@@ -302,14 +269,6 @@ struct TranscriptionSettingsView: View {
         Task { await environment.coordinator.prepareEngine() }
     }
 
-    private func templatePicker(_ title: String, selection: Binding<SummaryTemplate>) -> some View {
-        Picker(title, selection: selection) {
-            ForEach(SummaryTemplate.allCases) { template in
-                Text(template.displayName).tag(template)
-            }
-        }
-    }
-
     private func footer(for model: TranscriptionModel) -> String {
         if model.isManagedBySystem {
             return "Apple's speech model is part of macOS. It's downloaded from Apple once per language and "
@@ -338,20 +297,6 @@ struct TranscriptionSettingsView: View {
     /// "Low · Qwen3-ASR 0.6B": what the model is for, then which it is.
     static func label(for model: TranscriptionModel) -> String {
         model.purpose.map { "\($0) · \(model.displayName)" } ?? model.displayName
-    }
-
-    /// What a summary is and who makes it, or why it can't be made right now.
-    private var summaryFooter: String {
-        let summarizer = environment.summarizer
-        switch summarizer.availability {
-        case .available:
-            return "Adds a summary above the transcript and names the note after its topic. 1:1, Standup "
-                + "and Client Call always have TL;DR, Decisions, Action Items and Open Questions. Detected "
-                + "calls are recordings started from a call notification or automatically. "
-                + "\(summarizer.info.displayName) makes summaries on this Mac."
-        case .unavailable(let reason):
-            return reason
-        }
     }
 
     static func displayName(for code: String) -> String {
