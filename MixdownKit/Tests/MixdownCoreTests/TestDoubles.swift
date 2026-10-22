@@ -472,3 +472,17 @@ final class MockTranslator: Translator {
         return translation
     }
 }
+
+/// Returns `audio` for every file, or throws `error`, after `gate` opens if there's one.
+struct MockAudioFileDecoder: AudioFileDecoding {
+    var audio = DecodedAudio(samples: [Float](repeating: 0.1, count: 16_000))
+    var error: (any Error)?
+    var gate: Gate?
+
+    func decode(_ url: URL) async throws -> DecodedAudio {
+        await gate?.wait()
+        try Task.checkCancellation()
+        if let error { throw error }
+        return audio
+    }
+}

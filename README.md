@@ -11,6 +11,7 @@ Everything happens on your Mac. Your audio never leaves it.
 ## Features
 
 - **Record anything**: your microphone, system audio, or both. Pause and resume in the same note.
+  Or import a recording you already have, from a voice memo to a video of a meeting.
 - **Both sides of a call**: lines from your microphone and from the call are labeled **Me** and
   **Others**, with echo filtered out. Optionally, a ring in the Dynamic Island shows who's doing
   the talking, and the note gets a minute-by-minute talk timeline.

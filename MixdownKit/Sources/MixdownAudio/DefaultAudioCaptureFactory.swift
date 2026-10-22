@@ -10,6 +10,8 @@ public struct DefaultAudioCaptureFactory: AudioCaptureFactory {
             try MicrophoneCapture(device: device)
         case .systemAudio:
             try SystemAudioCapture()
+        case .file:
+            throw AudioCaptureError.deviceUnavailable("“\(device.name)” is a file, not an input.")
         }
     }
 }

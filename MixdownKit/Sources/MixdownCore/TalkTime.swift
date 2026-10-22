@@ -31,6 +31,8 @@ public struct TalkTime: Sendable, Equatable {
         switch kind {
         case .microphone: microphone += seconds
         case .systemAudio: systemAudio += seconds
+        // Talk time is only measured while recording.
+        case .file: break
         }
     }
 }

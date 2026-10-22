@@ -34,6 +34,18 @@ struct NoteDocumentTests {
         #expect(unknown.trigger == nil)
     }
 
+    @Test func readsBackImportedFile() {
+        let file = URL(filePath: "/Users/me/Budget review.m4a")
+        let note = NoteFixtures.note(sources: [.importedFile(at: file)], trigger: .imported)
+        let rendered = MarkdownNoteRenderer.render(note)
+        let document = NoteDocument(url: url, contents: rendered, fileDate: fileDate)
+
+        #expect(rendered.contains("\nsource_kind: file\n"))
+        #expect(document.trigger == .imported)
+        #expect(document.sources == ["Budget review.m4a"])
+        #expect(!document.isCall)
+    }
+
     @Test func readsBackKindOfRecording() {
         let rendered = MarkdownNoteRenderer.render(NoteFixtures.note(isCall: true, template: .standup))
         let document = NoteDocument(url: url, contents: rendered, fileDate: fileDate)

@@ -94,16 +94,21 @@ struct RecorderView: View {
                 caption("Paused · nothing is recorded until you resume")
                 summaryTemplatePicker(for: coordinator)
 
-            // The live model only finishes its last fraction of a second, too quick to track.
-            case .transcribing where environment.model.isLive:
+            // The live model only finishes its last fraction of a second, too quick to track. An
+            // imported file it transcribes whole.
+            case .transcribing where environment.model.isLive && coordinator.importingFileName == nil:
                 headline("Finishing…", detail: "Your note appears in the sidebar in a moment.")
                 ProgressView()
                     .controlSize(.large)
 
             case .transcribing(let progress):
-                headline("Transcribing…", detail: "Your note appears in the sidebar when it's done.")
+                headline(
+                    coordinator.importingFileName.map { "Transcribing “\($0)”…" } ?? "Transcribing…",
+                    detail: "Your note appears in the sidebar when it's done."
+                )
                 progressBar(progress, for: coordinator)
                 summaryTemplatePicker(for: coordinator)
+                cancelImportButton(for: coordinator)
 
             case .translating:
                 headline(
@@ -114,6 +119,7 @@ struct RecorderView: View {
                 ProgressView()
                     .controlSize(.large)
                 summaryTemplatePicker(for: coordinator)
+                cancelImportButton(for: coordinator)
 
             case .summarizing:
                 headline(
@@ -122,6 +128,7 @@ struct RecorderView: View {
                 )
                 ProgressView()
                     .controlSize(.large)
+                cancelImportButton(for: coordinator)
 
             case .failed(let message):
                 Label(message, systemImage: "exclamationmark.triangle.fill")
@@ -184,6 +191,16 @@ struct RecorderView: View {
     private func stopButton(for coordinator: RecordingCoordinator) -> some View {
         RecordButton(isRecording: true) {
             Task { await coordinator.stopRecording() }
+        }
+    }
+
+    /// Stops an import without saving a note. A recording has no such button, as its audio
+    /// isn't kept anywhere else.
+    @ViewBuilder
+    private func cancelImportButton(for coordinator: RecordingCoordinator) -> some View {
+        if coordinator.importingFileName != nil {
+            Button("Cancel Import") { coordinator.cancelImport() }
+                .controlSize(.large)
         }
     }
 

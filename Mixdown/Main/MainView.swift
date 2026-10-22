@@ -3,7 +3,7 @@ import MixdownCore
 import MixdownNotes
 import SwiftUI
 
-/// The main window: search, Chat and Record at the top of the sidebar, the notes folder below it
+/// The main window: search, Chat, Import and Record at the top of the sidebar, the notes folder below it
 /// (pinned notes, then by date), and the recorder, the chat or the selected note on the right.
 /// Above the sidebar are Open Notes Folder and Settings.
 struct MainView: View {
@@ -160,6 +160,7 @@ struct MainView: View {
                         help: "Chat with Your Notes (⌘3)"
                     )
                 }
+                SidebarImportButton()
                 SidebarRecordButton(coordinator: environment.coordinator)
             }
             .padding(.horizontal, 10)

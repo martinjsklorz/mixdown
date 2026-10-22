@@ -13,6 +13,7 @@
 | ⌘F | Search recordings |
 | ⌘0 | Open the Mixdown window |
 | ⇧⌘O | Open the notes folder |
+| ⇧⌘I | Import an audio or video file as a note |
 | ⌘⌫ | Delete the open note (move it to the Trash) |
 | ⌘, | Open Settings |
 | ⌘? | Open Mixdown Help |
