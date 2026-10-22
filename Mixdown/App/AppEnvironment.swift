@@ -33,6 +33,9 @@ final class AppEnvironment {
     private(set) var isDeletingSummaryModel = false
     /// Translates transcripts, into the coordinator's `translationLanguage` when there is one.
     let translator: any Translator
+    /// The BCP 47 identifier of the language notes are translated into while `translatesNotes`;
+    /// kept while that's off.
+    private(set) var translationLanguage: String
     let notesFolder: NotesFolderStore
     let noteTrash: NoteTrash
     /// Chat across the notes, kept while the main window is closed.
@@ -116,6 +119,7 @@ final class AppEnvironment {
         self.summarizer = summarizer
         self.isSummaryModelDownloaded = (summarizer as? MLXSummarizer)?.isDownloaded ?? true
         self.translator = translator
+        self.translationLanguage = settings.translationLanguage
         self.notesFolder = notesFolder
         self.noteTrash = noteTrash
         self.noteReady = noteReady
@@ -175,7 +179,7 @@ final class AppEnvironment {
             summaryTemplate: settings.summaryTemplate,
             callSummaryTemplate: settings.callSummaryTemplate,
             translator: translator,
-            translationLanguage: settings.translationLanguage,
+            translationLanguage: settings.translatesNotes ? settings.translationLanguage : nil,
             options: TranscriptionOptions(language: settings.language),
             sourceLabels: settings.sourceLabels,
             preferredDeviceIDs: settings.selectedDeviceIDs,
@@ -810,14 +814,20 @@ final class AppEnvironment {
 
     // MARK: Translation
 
-    /// The BCP 47 identifier of the language notes are translated into, or `nil` for none. Takes
-    /// effect from the next note.
-    var translationLanguage: String? {
-        get { coordinator.translationLanguage }
+    /// Whether notes are translated into `translationLanguage`. Takes effect from the next note.
+    var translatesNotes: Bool {
+        get { coordinator.translationLanguage != nil }
         set {
-            settings.translationLanguage = newValue
-            coordinator.translationLanguage = newValue
+            settings.translatesNotes = newValue
+            coordinator.translationLanguage = newValue ? translationLanguage : nil
         }
+    }
+
+    /// Picks the language notes are translated into. Takes effect from the next note.
+    func setTranslationLanguage(_ language: String) {
+        settings.translationLanguage = language
+        translationLanguage = language
+        if translatesNotes { coordinator.translationLanguage = language }
     }
 
     /// Whether the live text is translated into `translationLanguage` while recording, too. Takes

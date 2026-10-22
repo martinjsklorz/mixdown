@@ -409,8 +409,8 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
 
             ## Translation
 
-            To get notes in another language, pick it under **Settings → Translation → \
-            Translate to**. Each note then has a translation above the original transcript, and \
+            To get notes in another language, turn on **Settings → Translation → Translate \
+            recordings** and pick the language under **Translate to**. Each note then has a translation above the original transcript, and \
             its summary and title are in that language. Recordings already in that language are \
             left as they are.
 

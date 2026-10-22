@@ -38,7 +38,10 @@ struct AppSettings {
         static let summaryTemplate = "summaryTemplate"
         /// A `SummaryTemplate` raw value for recordings started for a call. Absent means `.general`.
         static let callSummaryTemplate = "callSummaryTemplate"
-        /// BCP 47 identifier of the language notes are translated into; absent means no translation.
+        /// Whether notes are translated. Absent means yes if a `translationLanguage` was picked
+        /// before this setting existed, else no.
+        static let translatesNotes = "translatesNotes"
+        /// BCP 47 identifier of the language notes are translated into. Absent means the Mac's.
         static let translationLanguage = "translationLanguage"
         /// Whether the live text is translated into that language while recording, too. Absent
         /// means yes.
@@ -186,9 +189,17 @@ struct AppSettings {
         return name.isEmpty ? nil : name
     }
 
-    /// `nil` means notes aren't translated.
-    var translationLanguage: String? {
-        get { defaults.string(forKey: Key.translationLanguage) }
+    var translatesNotes: Bool {
+        get {
+            defaults.object(forKey: Key.translatesNotes) as? Bool
+                ?? (defaults.string(forKey: Key.translationLanguage) != nil)
+        }
+        nonmutating set { defaults.set(newValue, forKey: Key.translatesNotes) }
+    }
+
+    /// Kept while `translatesNotes` is off.
+    var translationLanguage: String {
+        get { defaults.string(forKey: Key.translationLanguage) ?? Locale.current.language.minimalIdentifier }
         nonmutating set { defaults.set(newValue, forKey: Key.translationLanguage) }
     }
 
