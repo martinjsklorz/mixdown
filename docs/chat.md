@@ -50,3 +50,9 @@ If Apple Intelligence is off or not available on this Mac, Chat says why. It sti
 exactly, and shows the lines that match a question best.
 
 **New Chat** in the toolbar starts over. The chat lasts until you quit Mixdown.
+
+## Turning Chat off
+
+Turn off **Settings → General → Chat with your notes** to take Chat out of the sidebar and the
+View menu. Mixdown then stops reading your notes for it. The passages it has read stay on your
+Mac, so turning it back on only reads the notes that changed meanwhile.

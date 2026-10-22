@@ -31,8 +31,8 @@ struct MixdownCommands: Commands {
             SectionMenuItem("Notes", destination: .notes)
                 .keyboardShortcut("2")
                 .environment(navigation)
-            SectionMenuItem("Chat", destination: .chat)
-                .keyboardShortcut("3")
+            ChatMenuItem()
+                .environment(environment)
                 .environment(navigation)
             Divider()
         }
@@ -62,6 +62,18 @@ private struct SectionMenuItem: View {
 
     var body: some View {
         Button(title) { navigation.show(destination, using: openWindow) }
+    }
+}
+
+/// Opens the main window at Chat, while it's turned on in Settings.
+private struct ChatMenuItem: View {
+    @Environment(AppEnvironment.self) private var environment
+
+    var body: some View {
+        if environment.isChatEnabled {
+            SectionMenuItem("Chat", destination: .chat)
+                .keyboardShortcut("3")
+        }
     }
 }
 

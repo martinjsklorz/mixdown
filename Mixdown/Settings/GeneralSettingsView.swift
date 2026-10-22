@@ -55,6 +55,23 @@ struct GeneralSettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            Section("Chat") {
+                Toggle(
+                    "Chat with your notes",
+                    isOn: Binding(
+                        get: { environment.isChatEnabled },
+                        set: { environment.setChatEnabled($0) }
+                    )
+                )
+                Text(
+                    "Ask questions across all your notes under Chat (⌘3). Apple Intelligence answers "
+                        + "on this Mac from the lines that match best. Off, Chat leaves the sidebar "
+                        + "and Mixdown stops reading your notes for it."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
             Section {
                 Toggle(
                     "Start and stop recording from any app",

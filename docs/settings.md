@@ -10,6 +10,8 @@ Press ⌘, or click the cog above the sidebar to open Settings. **Settings…** 
 - **Ask before deleting a note**: on by default.
 - **Show notes in Spotlight**: on by default. Each line of a note shows up in Spotlight; see
   [Searching in Spotlight](notes.md#searching-in-spotlight).
+- **Chat → Chat with your notes**: on by default. Off, Chat leaves the sidebar and the View menu,
+  and Mixdown stops reading your notes for it. See [Chat](chat.md).
 - **Global Shortcuts → Start and stop recording from any app**: on by default, with ⌃⌥⌘R. Click
   the shortcut and press new keys to change it.
 - **Global Shortcuts → Mark moment while recording**: ⌃⌥⌘M. Clear it to turn it off. See

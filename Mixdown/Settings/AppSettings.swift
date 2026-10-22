@@ -22,6 +22,8 @@ struct AppSettings {
         static let showsNotifications = "showsNotifications"
         /// Whether notes are added to Spotlight. Absent means yes.
         static let indexesNotesInSpotlight = "indexesNotesInSpotlight"
+        /// Whether Chat is offered. Absent means yes.
+        static let chatEnabled = "chatEnabled"
         /// Whether the sidebar's pinned notes are folded away. Absent means no. Read with
         /// `@AppStorage`.
         static let collapsesPinnedNotes = "collapsesPinnedNotes"
@@ -133,6 +135,11 @@ struct AppSettings {
     var indexesNotesInSpotlight: Bool {
         get { defaults.object(forKey: Key.indexesNotesInSpotlight) as? Bool ?? true }
         nonmutating set { defaults.set(newValue, forKey: Key.indexesNotesInSpotlight) }
+    }
+
+    var isChatEnabled: Bool {
+        get { defaults.object(forKey: Key.chatEnabled) as? Bool ?? true }
+        nonmutating set { defaults.set(newValue, forKey: Key.chatEnabled) }
     }
 
     var isRecordingShortcutEnabled: Bool {

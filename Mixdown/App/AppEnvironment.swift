@@ -63,6 +63,9 @@ final class AppEnvironment {
     private(set) var islandLayout: DynamicIsland.Layout
     /// Whether the notes are in Spotlight. See `NoteSpotlight`.
     private(set) var indexesNotesInSpotlight: Bool
+    /// Whether Chat is in the sidebar and the View menu. Off, it doesn't read the notes. See
+    /// `NoteChat`.
+    private(set) var isChatEnabled: Bool
     /// Whether the Dynamic Island is showing the recording time where it can always be seen, so
     /// the menu bar leaves it out. See `DynamicIsland.showsTimeAlone`.
     private(set) var dynamicIslandShowsTimeAlone = false
@@ -95,6 +98,8 @@ final class AppEnvironment {
     @ObservationIgnored private var catchingUp: Task<Void, Never>?
     /// Opens Record in the main window.
     private let showRecorder: () -> Void
+    /// Switches the main window from Chat to the notes, if it's showing Chat.
+    private let leaveChat: () -> Void
     /// The note `observeNewNotes` announced last.
     @ObservationIgnored private var notifiedNoteURL: URL?
     /// The phase `observePhaseForCues` saw last.
@@ -135,12 +140,16 @@ final class AppEnvironment {
             guard let navigation, let openWindow = navigation.openWindow else { return }
             navigation.show(.recorder, using: openWindow)
         }
+        self.leaveChat = { [weak navigation] in
+            if navigation?.destination == .chat { navigation?.destination = .notes }
+        }
         self.notifiesAboutCalls = settings.notifiesAboutCalls
         self.recordsCallsAutomatically = settings.recordsCallsAutomatically
         self.isRecordingShortcutEnabled = settings.isRecordingShortcutEnabled
         self.showsRecordingInDynamicIsland = settings.showsRecordingInDynamicIsland
         self.islandLayout = settings.islandLayout
         self.indexesNotesInSpotlight = settings.indexesNotesInSpotlight
+        self.isChatEnabled = settings.isChatEnabled
         self.catchUpMinutes = settings.catchUpMinutes
 
         startCoordinatorTasks()
@@ -872,6 +881,14 @@ final class AppEnvironment {
         settings.indexesNotesInSpotlight = enabled
         indexesNotesInSpotlight = enabled
         noteSpotlight.update(directory: notesFolder.directory, isEnabled: enabled)
+    }
+
+    func setChatEnabled(_ enabled: Bool) {
+        settings.isChatEnabled = enabled
+        isChatEnabled = enabled
+        guard !enabled else { return }
+        leaveChat()
+        noteChat.stop()
     }
 
     func chooseNotesFolder() {

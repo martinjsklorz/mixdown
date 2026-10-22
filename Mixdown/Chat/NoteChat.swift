@@ -121,6 +121,15 @@ final class NoteChat {
         answering?.cancel()
     }
 
+    /// Stops reading notes and answering, and starts a new chat, as Chat was turned off. The notes
+    /// read so far stay saved, so turning it on again only reads what changed meanwhile.
+    func stop() {
+        indexing?.cancel()
+        indexing = nil
+        indexProgress = nil
+        clear()
+    }
+
     /// Starts a new chat.
     func clear() {
         answering?.cancel()

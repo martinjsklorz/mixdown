@@ -151,7 +151,9 @@ struct MainView: View {
         return VStack(spacing: 0) {
             HStack(spacing: 8) {
                 SidebarSearchField(text: $searchText)
-                SidebarChatButton()
+                if environment.isChatEnabled {
+                    SidebarChatButton()
+                }
                 SidebarRecordButton(coordinator: environment.coordinator)
             }
             .padding(.horizontal, 10)
