@@ -39,7 +39,8 @@ extension RecordingCoordinator {
         let session = Session(
             startedAt: now(),
             options: options,
-            echoReference: echoCancellation == nil ? nil : EchoReference()
+            echoReference: echoCancellation == nil ? nil : EchoReference(),
+            measuresTalkTime: measuresTalkTime
         )
         self.session = session
         recordingStartedAt = session.startedAt
@@ -74,11 +75,13 @@ extension RecordingCoordinator {
     }
 
     /// Adds a lane to `session`, and a source for it to `liveTranscript`. Starts counting
-    /// `talkTime` once the session records both kinds of input.
+    /// `talkTime` once the session records both kinds of input, if it measures talk time.
     private func addLane(kind: AudioSourceKind, to session: Session) -> Lane {
         let lane = session.addLane(kind: kind)
         if showsLiveTranscript { liveTranscript.addSource() }
-        if talkTime == nil, Set(session.lanes.map(\.kind)).count > 1 { talkTime = TalkTime() }
+        if session.measuresTalkTime, talkTime == nil, Set(session.lanes.map(\.kind)).count > 1 {
+            talkTime = TalkTime()
+        }
         return lane
     }
 

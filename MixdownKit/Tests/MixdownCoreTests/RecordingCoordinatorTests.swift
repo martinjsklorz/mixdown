@@ -554,6 +554,7 @@ struct RecordingCoordinatorTests {
             preferredDeviceIDs: [Fixtures.builtInMic.id, AudioInputDevice.systemAudioID]
         )
         coordinator.sourceLabels = SourceLabels(microphone: "Martin", systemAudio: "Client")
+        coordinator.measuresTalkTime = true
         await coordinator.monitorDevices()
 
         await coordinator.startRecording()
@@ -567,6 +568,29 @@ struct RecordingCoordinatorTests {
         #expect(timeline.minuteCount == 1)
         #expect(abs(timeline.microphone[0] - 2) < 0.001)
         #expect(abs(timeline.systemAudio[0] - 2) < 0.001)
+    }
+
+    @Test func measuresNoTalkTimeByDefault() async throws {
+        let microphone = MockCapture(
+            chunks: [AudioChunk(samples: TalkFixtures.audio([true, false, true]), hostTime: 100)]
+        )
+        let systemAudio = MockCapture(
+            chunks: [AudioChunk(samples: TalkFixtures.audio([false, true, true]), hostTime: 101)]
+        )
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            captures: [Fixtures.builtInMic.id: microphone, AudioInputDevice.systemAudioID: systemAudio],
+            writer: writer,
+            preferredDeviceIDs: [Fixtures.builtInMic.id, AudioInputDevice.systemAudioID]
+        )
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        #expect(coordinator.talkTime == nil)
+        await coordinator.stopRecording()
+
+        let note = try #require(await writer.notes.first)
+        #expect(note.talkTimeline == nil)
     }
 
     // MARK: - Echo cancellation

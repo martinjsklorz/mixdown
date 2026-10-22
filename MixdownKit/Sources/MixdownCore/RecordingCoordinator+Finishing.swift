@@ -76,7 +76,7 @@ extension RecordingCoordinator {
                 // Described up to now, as the user may have still been typing when it stopped.
                 moments: moments.map { Moment(id: $0.id, time: min($0.time, duration), text: $0.text) }
                     .sorted { $0.time < $1.time },
-                talkTimeline: talkTimeline(of: tracks, duration: duration)
+                talkTimeline: session.measuresTalkTime ? talkTimeline(of: tracks, duration: duration) : nil
             )
             // Kept until it's saved: the folder can go away while recording or transcribing, e.g.
             // when its drive is disconnected or goes to sleep.

@@ -28,6 +28,8 @@ Press ⌘, or click the cog above the sidebar to open Settings. **Settings…** 
   while recording. See [Recording](recording.md#inputs).
 - **Echo**: **Remove echo from the microphone**: on by default. See
   [Recording calls](calls.md#echo).
+- **Talk Time**: **Measure talk time**: off by default. Shown with **Echo** when system audio can
+  be recorded. See [Recording calls](calls.md#talk-time).
 - **Silence**: **Ask if still recording after** 5, 10, 15 (the default), 30 or 60 minutes without
   speech, or **Never**. See [Recording](recording.md#while-recording).
 - **Calls**: **Notify when calls start and end** (on) and **Record calls automatically** (off).
@@ -75,4 +77,5 @@ Press ⌘, or click the cog above the sidebar to open Settings. **Settings…** 
 - **Appearance**: Auto, Light or Dark. Auto follows System Settings.
 - **Show recording in the Dynamic Island**: on by default, with which side the time goes on,
   **Show input levels**, **Show live text** and **Show talk share**. See
-  [Recording](recording.md#the-dynamic-island) and [Recording calls](calls.md#talk-time).
+  [Recording](recording.md#the-dynamic-island) and [Recording calls](calls.md#talk-time). **Show
+  talk share** needs **Measure talk time** on.

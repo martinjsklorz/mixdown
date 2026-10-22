@@ -215,11 +215,12 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
 
             ## Talk time
 
-            While both inputs record, a ring next to the time in the Dynamic Island shows your \
-            share of the talking in white and the others' in grey. The note ends with a **Talk \
-            Time** table of how long each side talked in every minute, shown as a chart under the \
-            note's date. Talk time goes by loudness, so music in the call counts as the others \
-            talking. Turn the ring off under **Settings → Design → Show talk share**.
+            Turn on **Settings → Recording → Talk Time** to time who talks. Then, while both \
+            inputs record, a ring next to the time in the Dynamic Island shows your share of the \
+            talking in white and the others' in grey. The note ends with a **Talk Time** table of \
+            how long each side talked in every minute, shown as a chart under the note's date. \
+            Talk time goes by loudness, so music in the call counts as the others talking. Turn \
+            the ring off under **Settings → Design → Show talk share**.
 
             ## When a call starts
 

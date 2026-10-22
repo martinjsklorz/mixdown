@@ -58,10 +58,11 @@ struct DesignSettingsView: View {
                     Toggle(
                         "Show talk share",
                         isOn: Binding(
-                            get: { environment.islandLayout.showsTalkShare },
+                            get: { environment.islandLayout.showsTalkShare && environment.measuresTalkTime },
                             set: { shows in environment.setIslandLayout(changedLayout { $0.showsTalkShare = shows }) }
                         )
                     )
+                    .disabled(!environment.measuresTalkTime)
                 }
                 .disabled(!environment.showsRecordingInDynamicIsland)
             } header: {
@@ -76,7 +77,7 @@ struct DesignSettingsView: View {
                         + "words by in one line under the notch, translated if the live text is. It needs a "
                         + "live model, chosen in Transcription settings.\n\nWhile you record both a microphone and system audio, "
                         + "a ring next to the time shows how much of the talking was yours, in white, "
-                        + "and the others', in grey."
+                        + "and the others', in grey. It needs talk time, turned on in Recording settings."
                 )
             }
         }

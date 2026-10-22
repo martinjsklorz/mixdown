@@ -203,6 +203,7 @@ final class AppEnvironment {
             echoCancellation: echoCancellation
         )
         coordinator.cancelsEcho = settings.cancelsEcho
+        coordinator.measuresTalkTime = settings.measuresTalkTime
         coordinator.stillRecordingDelay = stillRecordingDelay(minutes: settings.stillRecordingMinutes)
         coordinator.translatesLiveText = settings.translatesLiveText
         coordinator.vocabulary = settings.vocabulary
@@ -492,6 +493,16 @@ final class AppEnvironment {
         set {
             settings.cancelsEcho = newValue
             coordinator.cancelsEcho = newValue
+        }
+    }
+
+    /// Whether to time how long the user and the others talk while both a microphone and system
+    /// audio record. Takes effect from the next recording.
+    var measuresTalkTime: Bool {
+        get { coordinator.measuresTalkTime }
+        set {
+            settings.measuresTalkTime = newValue
+            coordinator.measuresTalkTime = newValue
         }
     }
 
