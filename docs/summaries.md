@@ -23,7 +23,7 @@ Without a summary, the note is titled with the date and time it was recorded.
 
 ## Templates
 
-Under **Settings → Transcription → Summary**, pick a template for **Manual recordings** and one
+Under **Settings → Summary**, pick a template for **Manual recordings** and one
 for **Detected calls** (recordings started from the call notification or automatically):
 
 - **General** (the default): overview, key points and action items, as above.
@@ -38,6 +38,6 @@ it on **Record** while recording or transcribing, until the summary starts.
 
 ## Turning summaries off
 
-Untick **Settings → Transcription → Summarize recordings**. That section also says why summaries
+Untick **Settings → Summary → Summarize recordings**. That tab also says why summaries
 aren't available on this Mac if they aren't. Without them, or if summarizing fails, the note is
 saved with just the transcript.
