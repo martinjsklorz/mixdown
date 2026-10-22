@@ -23,10 +23,12 @@ struct LevelWaveform: View {
 
     private var barWidth: CGFloat { Self.barWidth * scale }
     private var barSpacing: CGFloat { Self.barSpacing * scale }
-    private var maxBarHeight: CGFloat { 16 * scale }
+    private var maxBarHeight: CGFloat { Self.maxBarHeight * scale }
 
     private static let barWidth: CGFloat = 2.5
     private static let barSpacing: CGFloat = 1.5
+    /// Leaves a few points above and below in the Dynamic Island, which is as tall as the notch.
+    private static let maxBarHeight: CGFloat = 22
 
     /// How wide the waveform is at a `scale` of 1.
     static var width: CGFloat {

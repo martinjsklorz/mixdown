@@ -21,6 +21,9 @@ import os
 /// `liveTranscript`, and the note is written from that text. Their audio isn't kept, so a long
 /// recording takes no more memory than a short one.
 ///
+/// Audio and video files can be imported too, with `importAudio(from:)`. They're transcribed,
+/// translated and summarized like a recording, and saved as a note of their own.
+///
 /// All dependencies are protocols, so the coordinator is fully testable with doubles and
 /// knows nothing about CoreAudio or the speech model.
 @MainActor
@@ -214,6 +217,15 @@ public final class RecordingCoordinator {
         return !isPreparingModelForRecording && !isCancellingPreparation
     }
 
+    /// The name of the file `importAudio(from:)` is reading, transcribing or summarizing, until its
+    /// note is saved or it fails; `nil` otherwise.
+    public internal(set) var importingFileName: String?
+
+    /// Idle, there's an `audioFileDecoder`, the model is downloaded and there's a `noteWriter`.
+    public var canImportAudio: Bool {
+        audioFileDecoder != nil && isIdle && isModelDownloaded && noteWriter != nil
+    }
+
     /// True once `stopRecording()` was called while the captures were starting. The recording
     /// is then discarded as soon as they have, as nothing was recorded yet.
     public internal(set) var isStopPending = false
@@ -266,6 +278,8 @@ public final class RecordingCoordinator {
     let engine: any TranscriptionEngine
     let playbackMonitor: (any AudioPlaybackMonitoring)?
     let echoCancellation: (any EchoCancellation)?
+    /// Reads the files `importAudio(from:)` imports; without one, there's no importing.
+    let audioFileDecoder: (any AudioFileDecoding)?
     let now: @Sendable () -> Date
     let hostClock: @Sendable () -> TimeInterval
     let logger = Logger(subsystem: "app.mixdown", category: "coordinator")
@@ -290,6 +304,8 @@ public final class RecordingCoordinator {
         preferredDeviceIDs.isEmpty || preferredDeviceIDs.contains(AudioInputDevice.defaultMicrophoneID)
     }
     @ObservationIgnored var session: Session?
+    /// The import under way, kept so `cancelImport()` can stop it.
+    @ObservationIgnored var importing: Task<Void, Never>?
     /// The in-flight `engine.prepare` call, kept so `cancelPreparation()` can stop it.
     @ObservationIgnored var preparation: Task<Void, any Error>?
     /// True while the captures are starting; blocks a second start.
@@ -321,6 +337,7 @@ public final class RecordingCoordinator {
     ///     Without one, system audio is flagged like a microphone.
     ///   - echoCancellation: Takes the echo of the system audio out of the microphones. See
     ///     `cancelsEcho`.
+    ///   - audioFileDecoder: Reads files for `importAudio(from:)`.
     ///   - now: Clock used for recording start times. Injectable for tests.
     ///   - hostClock: Seconds on the clock of `AudioChunk.hostTime`, to measure pauses with.
     ///     `systemUptime` counts `mach_absolute_time` on macOS. Injectable for tests.
@@ -340,6 +357,7 @@ public final class RecordingCoordinator {
         preferredDeviceIDs: [String] = [],
         playbackMonitor: (any AudioPlaybackMonitoring)? = nil,
         echoCancellation: (any EchoCancellation)? = nil,
+        audioFileDecoder: (any AudioFileDecoding)? = nil,
         now: @escaping @Sendable () -> Date = { Date() },
         hostClock: @escaping @Sendable () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     ) {
@@ -360,6 +378,7 @@ public final class RecordingCoordinator {
         self.preferredDeviceIDs = preferredDeviceIDs
         self.playbackMonitor = playbackMonitor
         self.echoCancellation = echoCancellation
+        self.audioFileDecoder = audioFileDecoder
         self.now = now
         self.hostClock = hostClock
         self.pendingNotes = pendingNotes

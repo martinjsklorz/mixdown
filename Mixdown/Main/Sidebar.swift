@@ -89,23 +89,60 @@ struct SidebarSectionButton<Badge: View>: View {
         Button {
             navigation.destination = destination
         } label: {
-            HStack(spacing: 6) {
-                Image(systemName: systemImage)
-                    .font(.headline)
-                badge
-            }
-            .padding(.horizontal, 10)
-            .frame(minWidth: SidebarControl.height, minHeight: SidebarControl.height)
-            .background(
-                isSelected ? AnyShapeStyle(Color("NoteSelection")) : AnyShapeStyle(.quaternary),
-                in: Capsule()
-            )
-            .contentShape(Capsule())
+            SidebarCapsule(systemImage: systemImage, isSelected: isSelected) { badge }
         }
         .buttonStyle(.plain)
         .accessibilityLabel(title)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .help(help)
+    }
+}
+
+/// Imports an audio or video file as a note. Only while Mixdown could record, as it's
+/// transcribed the same way.
+struct SidebarImportButton: View {
+    @Environment(AppEnvironment.self) private var environment
+
+    var body: some View {
+        Button {
+            environment.importAudio()
+        } label: {
+            SidebarCapsule(systemImage: "square.and.arrow.down", isSelected: false) { EmptyView() }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Import Audio")
+        .help("Import Audio (⇧⌘I)")
+        .disabled(!environment.coordinator.canImportAudio)
+    }
+}
+
+/// The look of the sidebar's buttons: an icon in a capsule, with `badge` beside it.
+private struct SidebarCapsule<Badge: View>: View {
+    @Environment(\.isEnabled) private var isEnabled
+    let systemImage: String
+    let isSelected: Bool
+    let badge: Badge
+
+    init(systemImage: String, isSelected: Bool, @ViewBuilder badge: () -> Badge) {
+        self.systemImage = systemImage
+        self.isSelected = isSelected
+        self.badge = badge()
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: systemImage)
+                .font(.headline)
+                .opacity(isEnabled ? 1 : 0.4)
+            badge
+        }
+        .padding(.horizontal, 10)
+        .frame(minWidth: SidebarControl.height, minHeight: SidebarControl.height)
+        .background(
+            isSelected ? AnyShapeStyle(Color("NoteSelection")) : AnyShapeStyle(.quaternary),
+            in: Capsule()
+        )
+        .contentShape(Capsule())
     }
 }
 

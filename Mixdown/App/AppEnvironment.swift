@@ -9,6 +9,7 @@ import MixdownNaturalLanguage
 import MixdownNotes
 import MixdownSpeechSwift
 import Observation
+import UniformTypeIdentifiers
 
 /// Composition root: wires concrete implementations into the `RecordingCoordinator` and keeps
 /// app preferences in sync with it.
@@ -215,7 +216,8 @@ final class AppEnvironment {
             sourceLabels: settings.sourceLabels,
             preferredDeviceIDs: settings.selectedDeviceIDs,
             playbackMonitor: CoreAudioPlaybackMonitor(),
-            echoCancellation: echoCancellation
+            echoCancellation: echoCancellation,
+            audioFileDecoder: AudioFileDecoder()
         )
         coordinator.cancelsEcho = settings.cancelsEcho
         coordinator.measuresTalkTime = settings.measuresTalkTime
@@ -1104,5 +1106,30 @@ final class AppEnvironment {
     func revealLastNote() {
         guard let url = coordinator.lastNoteURL else { return }
         NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    // MARK: Import
+
+    /// Asks for an audio or video file, then shows the recorder while it's transcribed into a
+    /// note. Ignored unless the coordinator `canImportAudio`.
+    func importAudio() {
+        guard coordinator.canImportAudio, let url = Self.chooseAudioFile() else { return }
+        showRecorder()
+        Task { [coordinator] in
+            await coordinator.importAudio(from: url)
+        }
+    }
+
+    private static func chooseAudioFile() -> URL? {
+        let panel = NSOpenPanel()
+        // Audio and video files; a video's sound is transcribed.
+        panel.allowedContentTypes = [.audiovisualContent]
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Import"
+        panel.message = "Choose a recording to transcribe into a note. A video's sound works too."
+        NSApp.activate()
+        guard panel.runModal() == .OK else { return nil }
+        return panel.url
     }
 }

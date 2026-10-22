@@ -53,58 +53,32 @@ extension RecordingCoordinator {
             }
             let diarizedLanes: Set<Int>
             (transcripts, diarizedLanes) = try await identifySpeakers(in: transcripts, using: session.diarizer)
-            var transcript: Transcript
-            let namable: [String]
-            (transcript, namable) = merged(transcripts, of: tracks, diarizedLanes: diarizedLanes)
+            let (transcript, namable) = merged(transcripts, of: tracks, diarizedLanes: diarizedLanes)
             // With no speech from the tracks that worked, the note would only be empty, so the
             // recording fails as a whole.
             if let trackFailure, transcript.isEmpty { throw trackFailure.error }
-            transcript = vocabulary.apply(to: transcript)
-            transcript = await nameSpeakers(namable, in: transcript)
-            let (translation, translationError) = await translate(transcript)
-            let template = recordingSummaryTemplate ?? (session.isCall ? callSummaryTemplate : summaryTemplate)
-            // The template can't change once the summary is under way.
-            recordingSummaryTemplate = nil
-            let summary = await summarize(translation ?? transcript, template: template)
-            let note = Note(
-                title: NoteTitle.make(
-                    for: session.startedAt,
-                    summaryTitle: summary?.title,
-                    isCall: session.isCall,
-                    language: summary?.language ?? (translation ?? transcript).language
-                ),
-                createdAt: session.startedAt,
-                duration: duration,
-                sources: session.devices,
-                engine: engine.info,
+            let messages = try await saveNote(
                 transcript: transcript,
-                translation: translation,
-                summary: summary,
-                trigger: session.trigger,
-                isCall: session.isCall,
-                template: summarizer == nil ? nil : template,
-                // Described up to now, as the user may have still been typing when it stopped.
-                moments: moments.map { Moment(id: $0.id, time: min($0.time, duration), text: $0.text) }
-                    .sorted { $0.time < $1.time },
-                talkTimeline: session.measuresTalkTime ? talkTimeline(of: tracks, duration: duration) : nil
+                namingSpeakers: namable,
+                template: session.isCall ? callSummaryTemplate : summaryTemplate,
+                details: NoteDetails(
+                    startedAt: session.startedAt,
+                    duration: duration,
+                    sources: session.devices,
+                    trigger: session.trigger,
+                    isCall: session.isCall,
+                    // Described up to now, as the user may have still been typing when it stopped.
+                    moments: moments.map { Moment(id: $0.id, time: min($0.time, duration), text: $0.text) }
+                        .sorted { $0.time < $1.time },
+                    talkTimeline: session.measuresTalkTime ? talkTimeline(of: tracks, duration: duration) : nil
+                )
             )
-            // Kept until it's saved: the folder can go away while recording or transcribing, e.g.
-            // when its drive is disconnected or goes to sleep.
-            pendingNotes.append(note)
-            let saveError = await savePendingNotes()
-            let messages = [
-                interruption.map(Self.interruptedMessage(for:)),
-                trackFailure.map { Self.untranscribedMessage(for: $0.devices, error: $0.error) },
-                translationError.map(Self.untranslatedMessage(for:)),
-                pendingNotes.isEmpty ? nil : Self.unsavedMessage(for: saveError ?? NoteWritingError.noFolder),
-            ].compactMap { $0 }
-            if messages.isEmpty {
-                phase = .idle
-            } else {
-                let message = messages.joined(separator: " ")
-                unsavedNoteMessage = pendingNotes.isEmpty ? nil : message
-                phase = .failed(message: message)
-            }
+            show(
+                [
+                    interruption.map(Self.interruptedMessage(for:)),
+                    trackFailure.map { Self.untranscribedMessage(for: $0.devices, error: $0.error) },
+                ].compactMap { $0 } + messages
+            )
             // A live model that failed to load needs the same retry as an offline one.
             if let interruption, case TranscriptionError.modelUnavailable = interruption {
                 modelError = interruption.localizedDescription
@@ -119,6 +93,87 @@ extension RecordingCoordinator {
             } else {
                 phase = .failed(message: error.localizedDescription)
             }
+        }
+    }
+
+    /// What a note says besides its transcript, translation and summary.
+    struct NoteDetails {
+        var startedAt: Date
+        var duration: TimeInterval
+        var sources: [AudioInputDevice]
+        var trigger: RecordingTrigger
+        var isCall: Bool
+        /// The title without a summary to name the note after; `nil` for one after the time recorded.
+        var untitledName: String?
+        var moments: [Moment] = []
+        var talkTimeline: TalkTimeline?
+    }
+
+    /// Corrects `transcript` with the vocabulary, names its speakers, translates and summarizes
+    /// it, and saves it as a note, or keeps it in `pendingNotes` if it can't be saved yet. Returns
+    /// what to tell the user about, e.g. a translation that failed; the note is saved either way.
+    /// Throws only if the task is cancelled, in which case nothing is saved.
+    /// - Parameters:
+    ///   - speakers: The speakers `nameSpeakers(_:in:)` may rename, told apart by diarization.
+    ///   - template: The summary template unless the user chose one, as
+    ///     `recordingSummaryTemplate`.
+    func saveNote(
+        transcript: Transcript,
+        namingSpeakers speakers: [String] = [],
+        template: SummaryTemplate,
+        details: NoteDetails
+    ) async throws -> [String] {
+        var transcript = vocabulary.apply(to: transcript)
+        transcript = await nameSpeakers(speakers, in: transcript)
+        try Task.checkCancellation()
+        let (translation, translationError) = await translate(transcript)
+        try Task.checkCancellation()
+        let template = recordingSummaryTemplate ?? template
+        // The template can't change once the summary is under way.
+        recordingSummaryTemplate = nil
+        let summary = await summarize(translation ?? transcript, template: template)
+        try Task.checkCancellation()
+        let summaryTitle = summary.map(\.title).flatMap {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0
+        }
+        let note = Note(
+            title: NoteTitle.make(
+                for: details.startedAt,
+                summaryTitle: summaryTitle ?? details.untitledName,
+                isCall: details.isCall,
+                language: summary?.language ?? (translation ?? transcript).language
+            ),
+            createdAt: details.startedAt,
+            duration: details.duration,
+            sources: details.sources,
+            engine: engine.info,
+            transcript: transcript,
+            translation: translation,
+            summary: summary,
+            trigger: details.trigger,
+            isCall: details.isCall,
+            template: summarizer == nil ? nil : template,
+            moments: details.moments,
+            talkTimeline: details.talkTimeline
+        )
+        // Kept until it's saved: the folder can go away while recording or transcribing, e.g.
+        // when its drive is disconnected or goes to sleep.
+        pendingNotes.append(note)
+        let saveError = await savePendingNotes()
+        return [
+            translationError.map(Self.untranslatedMessage(for:)),
+            pendingNotes.isEmpty ? nil : Self.unsavedMessage(for: saveError ?? NoteWritingError.noFolder),
+        ].compactMap { $0 }
+    }
+
+    /// Ends a finished recording or import as idle, or with `messages` as its failure.
+    func show(_ messages: [String]) {
+        if messages.isEmpty {
+            phase = .idle
+        } else {
+            let message = messages.joined(separator: " ")
+            unsavedNoteMessage = pendingNotes.isEmpty ? nil : message
+            phase = .failed(message: message)
         }
     }
 
@@ -410,7 +465,7 @@ extension RecordingCoordinator {
     }
 
     /// Forwards one track's progress to `updateTranscriptionProgress` from any thread.
-    private func progressHandler(track index: Int, sessionID: UUID) -> @Sendable (Double) -> Void {
+    func progressHandler(track index: Int, sessionID: UUID) -> @Sendable (Double) -> Void {
         { [weak self] progress in
             Task { @MainActor [weak self] in
                 self?.updateTranscriptionProgress(progress, track: index, sessionID: sessionID)
@@ -418,7 +473,7 @@ extension RecordingCoordinator {
         }
     }
 
-    private func updateTranscriptionProgress(_ progress: Double, track index: Int, sessionID: UUID) {
+    func updateTranscriptionProgress(_ progress: Double, track index: Int, sessionID: UUID) {
         // Updates still in flight when the transcription ends are dropped.
         guard case .transcribing = phase, var transcriptionProgress, transcriptionProgress.sessionID == sessionID,
             transcriptionProgress.fractions.indices.contains(index), progress.isFinite

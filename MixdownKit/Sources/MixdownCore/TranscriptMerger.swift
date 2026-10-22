@@ -28,7 +28,8 @@ public struct SourceLabels: Sendable, Equatable {
     public func label(for kind: AudioSourceKind) -> String {
         switch kind {
         case .systemAudio: Self.nonBlank(systemAudio) ?? Self.defaultSystemAudio
-        case .microphone: Self.nonBlank(microphone) ?? Self.defaultMicrophone
+        // An imported file is a note's only source, so it's never labeled.
+        case .microphone, .file: Self.nonBlank(microphone) ?? Self.defaultMicrophone
         }
     }
 

@@ -30,6 +30,11 @@ extension RecordingCoordinator {
         "The note has no translation. \(error.localizedDescription)"
     }
 
+    /// Shown for an imported file with less audio than a recording needs.
+    nonisolated static func tooShortImportMessage(for name: String) -> String {
+        "“\(name)” is too short to transcribe. It needs at least half a second of audio."
+    }
+
     nonisolated static let tooShortMessage =
         "The recording was too short to save. Record for at least half a second."
 }
