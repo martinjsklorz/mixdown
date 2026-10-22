@@ -42,6 +42,24 @@ struct RecordingSettingsView: View {
                             + "aren't transcribed twice. Applies from the next recording."
                     )
                 }
+
+                Section {
+                    Toggle(
+                        "Measure talk time",
+                        isOn: Binding(
+                            get: { environment.measuresTalkTime },
+                            set: { environment.measuresTalkTime = $0 }
+                        )
+                    )
+                } header: {
+                    Text("Talk Time")
+                } footer: {
+                    Caption(
+                        "While your microphone and system audio both record, Mixdown times how long you "
+                            + "and the others talk. The note gets a chart of each minute, and the Dynamic "
+                            + "Island can show your share as a ring. Applies from the next recording."
+                    )
+                }
             }
 
             Section {

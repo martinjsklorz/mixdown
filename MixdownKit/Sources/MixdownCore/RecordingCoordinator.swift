@@ -126,13 +126,17 @@ public final class RecordingCoordinator {
     /// Whether to take the echo of the system audio out of the microphones while both record, if
     /// there's an `echoCancellation`. Changes apply to the next recording.
     public var cancelsEcho = true
+    /// Whether to time how long the user and the others talk while both a microphone and system
+    /// audio record, as `talkTime` and the note's `talkTimeline`. Changes apply to the next
+    /// recording.
+    public var measuresTalkTime = false
 
     /// Each source's level while recording, by device ID. Changes about ten times a second, so
     /// only read it from views that draw meters.
     public internal(set) var inputLevels: [String: InputLevel] = [:]
 
     /// How long the user and the others have talked so far, while recording both a microphone and
-    /// system audio; `nil` otherwise. Changes about ten times a second, so only read it from views
+    /// system audio with `measuresTalkTime`; `nil` otherwise. Changes about ten times a second, so only read it from views
     /// that show it.
     public internal(set) var talkTime: TalkTime?
 

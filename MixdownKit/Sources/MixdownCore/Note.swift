@@ -23,8 +23,8 @@ public struct Note: Sendable, Equatable {
     public var template: SummaryTemplate?
     /// Points the user marked while recording, in order of time.
     public var moments: [Moment]
-    /// How long the user and the others talked, minute by minute. `nil` unless both microphone and
-    /// system audio were recorded and someone talked.
+    /// How long the user and the others talked, minute by minute. `nil` unless talk time was
+    /// measured, both microphone and system audio were recorded and someone talked.
     public var talkTimeline: TalkTimeline?
 
     public init(

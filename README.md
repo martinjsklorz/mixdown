@@ -12,8 +12,8 @@ Everything happens on your Mac. Your audio never leaves it.
 
 - **Record anything**: your microphone, system audio, or both. Pause and resume in the same note.
 - **Both sides of a call**: lines from your microphone and from the call are labeled **Me** and
-  **Others**, with echo filtered out. A ring in the Dynamic Island shows who's doing the talking,
-  and the note gets a minute-by-minute talk timeline.
+  **Others**, with echo filtered out. Optionally, a ring in the Dynamic Island shows who's doing
+  the talking, and the note gets a minute-by-minute talk timeline.
 - **Call detection**: notices calls in Zoom, Teams, FaceTime, Slack, browsers and more, and offers
   to record them, or records them automatically.
 - **On-device speech models**: a live model that shows the text as you speak, more accurate

@@ -8,10 +8,13 @@ Each input is recorded and transcribed on its own, then the lines are merged by 
 
 ## Talk time
 
+Talk time is off by default; turn it on under **Settings → Recording → Talk Time**. It applies
+from the next recording.
+
 Your microphone and the call are separate tracks, so Mixdown knows exactly whose turn it was and
 only has to tell talking from silence on each. While recording, a ring next to the time in the
 Dynamic Island shows your share of the talking in white and the others' in grey; hover over it for
-the numbers. Turn it off under **Settings → Design → Show talk share**.
+the numbers. Turn the ring off under **Settings → Design → Show talk share**.
 
 The note ends with a `## Talk Time` section: each side's share, and a table of how long each
 talked in every minute. Mixdown shows it as a chart under the note's date and duration. Talking at

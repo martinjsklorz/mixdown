@@ -12,6 +12,8 @@ extension RecordingCoordinator {
         /// The system audio, for the microphones to take its echo out; `nil` without echo
         /// cancellation.
         let echoReference: EchoReference?
+        /// `measuresTalkTime` as the recording started.
+        let measuresTalkTime: Bool
         /// Whether the recording was started for a call, from a notification or automatically.
         var isCall = false
         var trigger = RecordingTrigger.manual
@@ -38,10 +40,11 @@ extension RecordingCoordinator {
         /// captured afterwards, which leaves the pauses out of the tracks.
         var pausedDuration: TimeInterval = 0
 
-        init(startedAt: Date, options: TranscriptionOptions, echoReference: EchoReference?) {
+        init(startedAt: Date, options: TranscriptionOptions, echoReference: EchoReference?, measuresTalkTime: Bool) {
             self.startedAt = startedAt
             self.options = options
             self.echoReference = echoReference
+            self.measuresTalkTime = measuresTalkTime
         }
 
         /// The devices recording right now.

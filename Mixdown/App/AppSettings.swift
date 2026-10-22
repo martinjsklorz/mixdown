@@ -64,6 +64,9 @@ struct AppSettings {
         static let stillRecordingMinutes = "stillRecordingMinutes"
         /// Whether to take the system audio's echo out of the microphone. Absent means yes.
         static let cancelsEcho = "cancelsEcho"
+        /// Whether to time how long the user and the others talk while both a microphone and
+        /// system audio record. Absent means no.
+        static let measuresTalkTime = "measuresTalkTime"
         /// An `Appearance` raw value. Absent means `.auto`. Read with `@AppStorage`.
         static let appearance = "appearance"
         /// Whether a recording's time and input levels show in the Dynamic Island instead of in the
@@ -213,6 +216,11 @@ struct AppSettings {
     var cancelsEcho: Bool {
         get { defaults.object(forKey: Key.cancelsEcho) as? Bool ?? true }
         nonmutating set { defaults.set(newValue, forKey: Key.cancelsEcho) }
+    }
+
+    var measuresTalkTime: Bool {
+        get { defaults.bool(forKey: Key.measuresTalkTime) }
+        nonmutating set { defaults.set(newValue, forKey: Key.measuresTalkTime) }
     }
 
     /// One of `stillRecordingMinuteChoices`, or 0 to never ask.
