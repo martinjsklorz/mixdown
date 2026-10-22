@@ -1,12 +1,11 @@
 import MixdownNotes
 import SwiftUI
 
-/// A rendered preview of one note. The text is read-only; the toolbar pins, renames, copies,
+/// A rendered preview of one note. The text is read-only; `DetailToolbar` pins, renames, copies,
 /// shares and trashes the note. Scrolls to a line picked in Spotlight and highlights it for a
 /// moment.
 struct NoteDetailView: View {
     let note: NoteDocument
-    let actions: NoteActions
     @Environment(MainNavigation.self) private var navigation
     /// The block `MainNavigation.blockToShow` asked for, while it's highlighted. Kept with its
     /// note, as this view stays when another note is selected.
@@ -23,24 +22,6 @@ struct NoteDetailView: View {
                 .task(id: highlight) { await scrollToHighlight(using: proxy) }
         }
         .navigationTitle(note.title)
-        // Editing and sharing in separate groups; otherwise they'd all share one glass background.
-        .toolbar {
-            ToolbarItemGroup {
-                Button(
-                    note.isPinned ? "Unpin" : "Pin",
-                    systemImage: note.isPinned ? "pin.slash" : "pin"
-                ) { actions.togglePinned(note) }
-                Button("Copy Transcript", systemImage: "doc.on.doc") { NoteActions.copyTranscript(of: note) }
-                Button("Rename", systemImage: "pencil") { actions.rename(note) }
-                Button("Add to Vocabulary", systemImage: "character.book.closed") { actions.addToVocabulary() }
-                    .help("Add the selected word to the vocabulary")
-                Button("Delete", systemImage: "trash") { actions.moveToTrash(note) }
-            }
-            ToolbarSpacer(.fixed)
-            ToolbarItem {
-                ShareLink(item: note.url, preview: SharePreview(note.title))
-            }
-        }
     }
 
     private func content(_ blocks: [MarkdownBlock]) -> some View {
