@@ -78,8 +78,10 @@ private final class LocalVQEFrameCanceller: EchoCanceller, @unchecked Sendable {
             let directory = try ModelCache.directory(for: repositoryID, base: SpeechSwiftEngine.modelDirectory())
             let canceller = try await ModelCache.loadPreferringCache(
                 repositoryID,
-                cacheLooksComplete: ["config.json", "LocalVQEAECResidualMask.mlmodelc", "LocalVQEAECFrontend.npz"]
-                    .allSatisfy { FileManager.default.fileExists(atPath: directory.appendingPathComponent($0).path) },
+                cacheLooksComplete: ModelCache.contains(
+                    ["config.json", "LocalVQEAECResidualMask.mlmodelc", "LocalVQEAECFrontend.npz"],
+                    in: directory
+                ),
                 progress: { _ in }
             ) { offline, _ in
                 try await LocalVQEEchoCanceller.fromPretrained(cacheDir: directory, offlineMode: offline)

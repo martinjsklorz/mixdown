@@ -9,7 +9,8 @@ struct ChatView: View {
     let chat: NoteChat
     let notes: [NoteDocument]
     @State private var draft = ""
-    @FocusState private var isFieldFocused: Bool
+    /// The question field's focus. `DetailToolbar`'s New Chat focuses it too.
+    let isFieldFocused: FocusState<Bool>.Binding
 
     /// Questions shown before the first one is asked.
     private static let suggestions = [
@@ -29,19 +30,9 @@ struct ChatView: View {
             inputField
         }
         .navigationTitle("Chat")
-        .toolbar {
-            ToolbarItem {
-                Button("New Chat", systemImage: "square.and.pencil") {
-                    chat.clear()
-                    isFieldFocused = true
-                }
-                .help("New Chat")
-                .disabled(chat.messages.isEmpty)
-            }
-        }
         // Reads notes recorded or changed while the chat is shown.
         .task(id: notes) { chat.update(notes: notes) }
-        .onAppear { isFieldFocused = true }
+        .onAppear { isFieldFocused.wrappedValue = true }
     }
 
     // MARK: Messages
@@ -121,7 +112,7 @@ struct ChatView: View {
             TextField("Ask about your notes", text: $draft, axis: .vertical)
                 .textFieldStyle(.plain)
                 .lineLimit(1...6)
-                .focused($isFieldFocused)
+                .focused(isFieldFocused)
                 .onSubmit(send)
                 .padding(.vertical, 7)
             if chat.isAnswering {

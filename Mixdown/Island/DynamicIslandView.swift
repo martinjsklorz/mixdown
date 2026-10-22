@@ -11,7 +11,7 @@ struct DynamicIslandView: View {
     /// A wing's margin next to the notch.
     fileprivate static let innerPadding: CGFloat = 6
     /// The rounding of the island's bottom corners.
-    fileprivate static let cornerRadius: CGFloat = 10
+    fileprivate nonisolated static let cornerRadius: CGFloat = 10
     /// How far the input levels reach out from the notch.
     static let levelsWingWidth = LevelWaveform.width + outerPadding + innerPadding
     /// The height of the live text's line under the notch.
@@ -193,7 +193,7 @@ private struct ElapsedWing: View {
                     }
                 }
                 .font(.system(size: 8))
-                Text(MenuBarLabel.elapsedText(elapsed))
+                Text(ProgressText.elapsed(elapsed))
                     .font(.system(size: 13, weight: .semibold))
                     .monospacedDigit()
                     .foregroundStyle(.white)
@@ -257,7 +257,7 @@ private struct TalkShareRing: View {
     }
 }
 
-/// One waveform for all inputs together that turns orange while any input stays silent.
+/// One waveform for all inputs together, naming the inputs that stay silent on hover.
 private struct LevelsWing: View {
     let coordinator: RecordingCoordinator
     let side: DynamicIsland.Side
@@ -265,7 +265,7 @@ private struct LevelsWing: View {
     var body: some View {
         let silent = coordinator.silentDevices
 
-        LevelWaveform(coordinator: coordinator, isSilent: !silent.isEmpty, color: .white.opacity(0.75))
+        LevelWaveform(coordinator: coordinator, color: .white.opacity(0.75))
             .help(silent.isEmpty ? "Input level" : "No sound from \(silent.map(\.name).formatted(.list(type: .and)))")
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Input level")

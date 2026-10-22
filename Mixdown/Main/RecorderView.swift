@@ -81,10 +81,13 @@ struct RecorderView: View {
                 recordingControls(for: coordinator)
                 caption("Recording · click to stop")
                 InputLevelsView(coordinator: coordinator)
+                if coordinator.isAskingIfStillRecording {
+                    stillRecordingQuestion(for: coordinator)
+                }
                 summaryTemplatePicker(for: coordinator)
 
             case .paused(let recorded):
-                Text(MenuBarLabel.elapsedText(Int(recorded)))
+                Text(ProgressText.elapsed(Int(recorded)))
                     .font(.system(size: 48, weight: .light).monospacedDigit())
                     .foregroundStyle(.secondary)
                 recordingControls(for: coordinator)
@@ -142,6 +145,28 @@ struct RecorderView: View {
         }
         .multilineTextAlignment(.center)
         .animation(.default, value: coordinator.isRecording)
+        .animation(.default, value: coordinator.isAskingIfStillRecording)
+    }
+
+    /// Asks whether the recording was left running, after a while without speech. Speaking
+    /// answers it too.
+    private func stillRecordingQuestion(for coordinator: RecordingCoordinator) -> some View {
+        VStack(spacing: 8) {
+            Label(
+                "Still recording? \(StillRecordingPrompt.message(for: coordinator.stillRecordingDelay))",
+                systemImage: "waveform.slash"
+            )
+            .foregroundStyle(.orange)
+            .font(.callout)
+            HStack {
+                Button("Stop Recording") {
+                    Task { await coordinator.stopRecording() }
+                }
+                Button("Keep Recording") { coordinator.keepRecording() }
+            }
+            .controlSize(.small)
+        }
+        .transition(.opacity)
     }
 
     /// Stop in the middle, as when starting, with Mark Moment on one side and Pause or Resume on
@@ -173,20 +198,24 @@ struct RecorderView: View {
         .frame(maxWidth: 320)
     }
 
-    /// The template this recording's summary gets, preselected from Settings → Transcription and
+    /// The template this recording's summary gets, preselected from Settings → Summary and
     /// changeable until the summary is begun.
     @ViewBuilder
     private func summaryTemplatePicker(for coordinator: RecordingCoordinator) -> some View {
         if environment.summarizesNotes, let template = coordinator.recordingSummaryTemplate {
+            // Still offered if it was deleted while recording, so the picker isn't blank.
+            let templates =
+                environment.summaryTemplates.contains { $0.id == template.id }
+                ? environment.summaryTemplates : environment.summaryTemplates + [template]
             Picker(
                 "Summary:",
                 selection: Binding(
-                    get: { template },
-                    set: { coordinator.chooseSummaryTemplate($0) }
+                    get: { template.id },
+                    set: { id in templates.first { $0.id == id }.map(coordinator.chooseSummaryTemplate) }
                 )
             ) {
-                ForEach(SummaryTemplate.allCases) { template in
-                    Text(template.displayName).tag(template)
+                ForEach(templates) { template in
+                    Text(template.displayName).tag(template.id)
                 }
             }
             .fixedSize()
@@ -277,7 +306,7 @@ struct RecorderView: View {
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 8) {
                 row("mic", "Microphone", microphoneName)
                 row("speaker.wave.2", "System audio", environment.recordsSystemAudio ? "On" : "Off")
-                row("waveform", "Model", TranscriptionSettingsView.label(for: environment.model))
+                row("waveform", "Model", environment.model.menuLabel)
                 row("globe", "Language", languageName)
                 row("sparkles", "Summary", summaryName)
                 row("folder", "Notes folder", notesFolderName, help: environment.notesFolder.status.path)
@@ -336,103 +365,6 @@ struct RecorderView: View {
         guard environment.model.supportsLanguageSelection, let code = environment.language else {
             return "Automatic"
         }
-        return TranscriptionSettingsView.displayName(for: code)
-    }
-}
-
-/// A round record button in the style of Voice Memos: a red dot that becomes a stop square.
-private struct RecordButton: View {
-    let isRecording: Bool
-    let action: @MainActor () -> Void
-    @Environment(\.isEnabled) private var isEnabled
-
-    var body: some View {
-        Button(action: action) {
-            ZStack {
-                Circle()
-                    .strokeBorder(.secondary.opacity(0.4), lineWidth: 4)
-                RoundedRectangle(cornerRadius: isRecording ? 6 : 28)
-                    .fill(.red)
-                    .frame(width: isRecording ? 28 : 56, height: isRecording ? 28 : 56)
-            }
-            .frame(width: 72, height: 72)
-            .contentShape(Circle())
-            .opacity(isEnabled ? 1 : 0.35)
-        }
-        .buttonStyle(.plain)
-        .animation(.snappy, value: isRecording)
-        .accessibilityLabel(isRecording ? "Stop Recording" : "Start Recording")
-        .help(isRecording ? "Stop Recording" : "Start Recording")
-    }
-}
-
-/// A smaller round button beside Stop: a pause sign while recording, and a red dot to record
-/// again while paused.
-private struct PauseButton: View {
-    static let size: CGFloat = 44
-
-    let isPaused: Bool
-    let action: @MainActor () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            ZStack {
-                Circle()
-                    .strokeBorder(.secondary.opacity(0.4), lineWidth: 3)
-                if isPaused {
-                    Circle()
-                        .fill(.red)
-                        .frame(width: 18, height: 18)
-                } else {
-                    Image(systemName: "pause.fill")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(width: Self.size, height: Self.size)
-            .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(isPaused ? "Resume Recording" : "Pause Recording")
-        .help(isPaused ? "Resume Recording (⇧⌘P)" : "Pause Recording (⇧⌘P)")
-    }
-}
-
-/// A round button on the other side of Stop from Pause, to mark a moment. Shows how many are
-/// marked so far.
-private struct MomentButton: View {
-    let momentCount: Int
-    let action: @MainActor () -> Void
-
-    var body: some View {
-        let shortcut = KeyboardShortcuts.getShortcut(for: .markMoment).map { " (\($0.description))" } ?? ""
-
-        Button(action: action) {
-            ZStack {
-                Circle()
-                    .strokeBorder(.secondary.opacity(0.4), lineWidth: 3)
-                Image(systemName: momentCount > 0 ? "bookmark.fill" : "bookmark")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(.secondary)
-            }
-            .frame(width: PauseButton.size, height: PauseButton.size)
-            .contentShape(Circle())
-            .overlay(alignment: .topTrailing) {
-                if momentCount > 0 {
-                    Text(momentCount, format: .number)
-                        .font(.caption2.weight(.semibold))
-                        .monospacedDigit()
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 4)
-                        .frame(minWidth: 16, minHeight: 16)
-                        .background(.orange, in: Capsule())
-                        .offset(x: 4, y: -4)
-                }
-            }
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Mark Moment")
-        .accessibilityValue(momentCount == 1 ? "1 moment marked" : "\(momentCount) moments marked")
-        .help("Mark Moment\(shortcut)")
+        return LanguagePicker.displayName(for: code)
     }
 }

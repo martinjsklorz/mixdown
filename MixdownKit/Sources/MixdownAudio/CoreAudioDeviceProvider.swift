@@ -139,25 +139,18 @@ private final class DeviceListWatcher: @unchecked Sendable {
             audioLogger.error("\(error.localizedDescription, privacy: .public)")
             return
         }
-        for (deviceID, listener) in deviceListeners where !deviceIDs.contains(deviceID) {
-            listener.remove(logsFailures: false)
-            deviceListeners[deviceID] = nil
-        }
-        for deviceID in deviceIDs where deviceListeners[deviceID] == nil {
-            let listener = HALPropertyListener(
-                objectID: deviceID,
-                selectors: [
-                    kAudioDevicePropertyStreams,
-                    kAudioDevicePropertyStreamConfiguration,
-                    kAudioObjectPropertyName,
-                    kAudioDevicePropertyDeviceIsAlive,
-                ],
-                scope: kAudioObjectPropertyScopeWildcard
-            ) { [weak self] in
-                self?.scheduleRefresh()
-            }
-            listener.install()
-            deviceListeners[deviceID] = listener
+        HALPropertyListener.sync(
+            &deviceListeners,
+            to: deviceIDs,
+            selectors: [
+                kAudioDevicePropertyStreams,
+                kAudioDevicePropertyStreamConfiguration,
+                kAudioObjectPropertyName,
+                kAudioDevicePropertyDeviceIsAlive,
+            ],
+            scope: kAudioObjectPropertyScopeWildcard
+        ) { [weak self] in
+            self?.scheduleRefresh()
         }
     }
 }

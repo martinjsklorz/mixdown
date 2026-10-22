@@ -18,6 +18,9 @@ public enum MarkdownNoteRenderer {
     static let momentExcerptWordCount = 20
     /// The heading of the talk timeline's section, which the app shows as a chart instead.
     public static let talkTimeHeading = "Talk Time"
+    /// The headings of the transcript's and its translation's sections.
+    static let transcriptHeading = "Transcript"
+    static let translationHeading = "Translation"
     /// The talk timeline's bars are this many blocks long for a minute of talking.
     static let talkBarLength = 10
 
@@ -46,9 +49,11 @@ public enum MarkdownNoteRenderer {
         lines.append("engine: \(yamlQuoted(note.engine.displayName))")
         lines.append("trigger: \(note.trigger.rawValue)")
         if note.isCall { lines.append("call: true") }
-        // `general` says nothing about the kind of recording.
-        if let template = note.template, template != .general {
-            lines.append("template: \(template.rawValue)")
+        // `general` says nothing about the kind of recording. Built-ins go by their id, so a note
+        // still counts as a 1:1 after the user renames that template; the user's own by name.
+        if let template = note.template, template.id != SummaryTemplate.general.id {
+            let value = template.isBuiltIn ? template.id : yamlQuoted(singleLine(template.displayName))
+            lines.append("template: \(value)")
         }
         if let language = note.transcript.language, !language.isEmpty {
             // Quoted so codes like `no` (Norwegian) aren't read as YAML booleans.
@@ -87,9 +92,9 @@ public enum MarkdownNoteRenderer {
             sections.append(section("Moments", body: moments))
         }
         if let translation = note.translation {
-            sections.append(section("Translation", body: transcriptBody(translation)))
+            sections.append(section(translationHeading, body: transcriptBody(translation)))
         }
-        sections.append(section("Transcript", body: transcriptBody(note.transcript)))
+        sections.append(section(transcriptHeading, body: transcriptBody(note.transcript)))
         if let timeline = note.talkTimeline {
             sections.append(section(talkTimeHeading, body: talkTimeBody(timeline)))
         }
@@ -100,9 +105,10 @@ public enum MarkdownNoteRenderer {
         "## \(heading)\n\n\(body)"
     }
 
-    /// Templates with fixed sections get `###` TL;DR, Decisions, Action Items and Open Questions,
-    /// each shown even when empty, so every note of a kind reads the same. The `general` template
-    /// gets the overview, then `###` lists of key points and action items, leaving out empty parts.
+    /// Templates with the `sections` layout get `###` TL;DR, Decisions, Action Items and Open
+    /// Questions, each shown even when empty, so every note of a kind reads the same. The
+    /// `overview` layout gets the overview, then `###` lists of key points and action items,
+    /// leaving out empty parts.
     /// Action items are `- [ ]` task items to tick off. `nil` if the summary has nothing to show.
     static func summaryBody(_ summary: NoteSummary) -> String? {
         let overview = escapedMarkdown(singleLine(summary.overview))

@@ -9,18 +9,18 @@ import MixdownCore
 /// hatte ich letzte Woche?".
 public struct NoteQuestion: Sendable, Equatable {
     /// A kind of recording a question can ask about.
-    public enum Kind: String, Sendable, CaseIterable {
+    public enum Kind: Sendable {
         case oneOnOne
         case standup
         case clientCall
         case call
 
-        /// The template that makes a note this kind, if one does.
-        var template: SummaryTemplate? {
+        /// The id of the built-in template that makes a note this kind, if one does.
+        var templateID: String? {
             switch self {
-            case .oneOnOne: .oneOnOne
-            case .standup: .standup
-            case .clientCall: .clientCall
+            case .oneOnOne: SummaryTemplate.oneOnOne.id
+            case .standup: SummaryTemplate.standup.id
+            case .clientCall: SummaryTemplate.clientCall.id
             case .call: nil
             }
         }
@@ -112,7 +112,7 @@ public struct NoteQuestion: Sendable, Equatable {
         case .call:
             return note.isCall
         case .oneOnOne, .standup, .clientCall:
-            if let template = note.template { return template == kind.template }
+            if let template = note.template { return template == kind.templateID }
             return Patterns.kinds.first { $0.kind == kind }.map { note.title.firstRange(of: $0.pattern) != nil }
                 ?? false
         }

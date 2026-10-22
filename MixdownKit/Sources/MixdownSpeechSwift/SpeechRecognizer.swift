@@ -76,8 +76,13 @@ enum ModelCache {
     /// Whether `directory` holds weights (all shards, if indexed) and every one of `files`.
     /// Weights alone are all speech-swift's offline mode checks for.
     static func contains(weightsAnd files: [String], in directory: URL) -> Bool {
-        HuggingFaceDownloader.weightsExist(in: directory)
-            && files.allSatisfy { FileManager.default.fileExists(atPath: directory.appendingPathComponent($0).path) }
+        HuggingFaceDownloader.weightsExist(in: directory) && contains(files, in: directory)
+    }
+
+    /// Whether `directory` holds every one of `files`, for models whose weights aren't in the
+    /// files `contains(weightsAnd:in:)` looks for.
+    static func contains(_ files: [String], in directory: URL) -> Bool {
+        files.allSatisfy { FileManager.default.fileExists(atPath: directory.appendingPathComponent($0).path) }
     }
 
     /// Loads from disk without touching the network first, then falls back to an online load.

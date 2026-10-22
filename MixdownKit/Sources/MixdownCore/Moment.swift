@@ -17,15 +17,18 @@ public struct Moment: Sendable, Equatable, Identifiable {
 }
 
 extension Transcript {
+    /// How long after a segment is over a moment still counts as being about it, in seconds.
+    private static let momentMaxGap: TimeInterval = 10
+
     /// What was being said at `time`: the last segment that started by then, if it hasn't been
-    /// over for longer than `maxGap` seconds. A moment is usually marked just after what it's
-    /// about was said.
-    public func segment(at time: TimeInterval, maxGap: TimeInterval = 10) -> TranscriptSegment? {
+    /// over for longer than `momentMaxGap` seconds. A moment is usually marked just after what
+    /// it's about was said.
+    public func segment(at time: TimeInterval) -> TranscriptSegment? {
         guard
             let segment = segments.last(where: {
                 $0.start <= time && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             }),
-            time - segment.end <= maxGap
+            time - segment.end <= Self.momentMaxGap
         else { return nil }
         return segment
     }

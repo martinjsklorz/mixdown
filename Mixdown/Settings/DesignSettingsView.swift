@@ -15,9 +15,7 @@ struct DesignSettingsView: View {
                 }
                 .pickerStyle(.segmented)
             } footer: {
-                Text("Auto follows Appearance in System Settings.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Caption("Auto follows Appearance in System Settings.")
             }
 
             Section {
@@ -69,7 +67,7 @@ struct DesignSettingsView: View {
             } header: {
                 Text("Recording")
             } footer: {
-                Text(
+                Caption(
                     "While recording, the time and input levels appear in a Dynamic Island around the "
                         + "camera notch instead of the time in the menu bar. The levels go on the other side "
                         + "from the time. Without a notch, the island appears at the top center of the "
@@ -80,8 +78,6 @@ struct DesignSettingsView: View {
                         + "a ring next to the time shows how much of the talking was yours, in white, "
                         + "and the others', in grey."
                 )
-                .font(.caption)
-                .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)

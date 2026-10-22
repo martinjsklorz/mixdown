@@ -40,7 +40,7 @@ final class CatchUpCard {
     /// The Dynamic Island's frame while it's shown, to go under it.
     private let islandFrame: () -> NSRect?
     /// Created on the first `show(_:)`, as windows shouldn't be made before the app has launched.
-    private var panel: CatchUpPanel?
+    private var panel: NotchPanel?
     /// The request the card is showing, if it's open.
     private var shownRequest: CatchUpRequest?
     /// As tall as the view last measured itself, which changes once the catch-up is in.
@@ -83,8 +83,13 @@ final class CatchUpCard {
         panel.contentView = nil
     }
 
-    private func makePanel() -> CatchUpPanel {
-        let panel = CatchUpPanel()
+    private func makePanel() -> NotchPanel {
+        let panel = NotchPanel(
+            // Over every Space and full-screen app, as a catch-up can be asked for from any of
+            // them. Never takes focus from the app in front.
+            showsOverFullScreenApps: true,
+            isDark: true
+        )
         self.panel = panel
         return panel
     }
@@ -97,7 +102,7 @@ final class CatchUpCard {
     }
 
     /// Centers the card under the notch, or under the island while it's shown.
-    private func place(_ panel: CatchUpPanel) {
+    private func place(_ panel: NotchPanel) {
         guard let screen = DynamicIsland.screen else { return }
         let notch = DynamicIsland.notch(on: screen)
         let top = (islandFrame()?.minY ?? notch.minY) - Self.spacing
@@ -105,33 +110,6 @@ final class CatchUpCard {
             NSRect(x: notch.midX - Self.width / 2, y: top - height, width: Self.width, height: height),
             display: true
         )
-    }
-}
-
-/// A panel over every Space and full-screen app, as a catch-up can be asked for from any of them,
-/// that never takes focus from the app in front.
-private final class CatchUpPanel: NSPanel {
-    convenience init() {
-        self.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
-        isFloatingPanel = true
-        level = .statusBar
-        backgroundColor = .clear
-        isOpaque = false
-        hasShadow = false
-        hidesOnDeactivate = false
-        isMovable = false
-        isExcludedFromWindowsMenu = true
-        isReleasedWhenClosed = false
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
-        appearance = NSAppearance(named: .darkAqua)
-    }
-
-    override var canBecomeKey: Bool { false }
-    override var canBecomeMain: Bool { false }
-
-    /// Keeps the panel up by the menu bar, where AppKit would otherwise move a window out from.
-    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
-        frameRect
     }
 }
 

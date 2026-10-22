@@ -1,4 +1,3 @@
-import AppKit
 import MixdownAppleSpeech
 import MixdownCore
 import SwiftUI
@@ -53,9 +52,7 @@ struct TranscriptionSettingsView: View {
             } header: {
                 Text("Settings")
             } footer: {
-                Text(footer(for: environment.model))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Caption(footer(for: environment.model))
             }
 
             Section {
@@ -78,13 +75,11 @@ struct TranscriptionSettingsView: View {
             } header: {
                 Text("Speaker Names")
             } footer: {
-                Text(
+                Caption(
                     "With more than one input, each is transcribed on its own and its lines are labeled "
                         + "with these names. Use headphones so your microphone doesn't pick up the other "
                         + "people; otherwise Mixdown drops lines your microphone only heard from the speakers."
                 )
-                .font(.caption)
-                .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
@@ -99,17 +94,7 @@ struct TranscriptionSettingsView: View {
     private func modelStatus(for phase: RecordingCoordinator.Phase) -> some View {
         switch phase {
         case .preparingModel(let progress):
-            ProgressView(value: progress) {
-                Text("Downloading \(environment.model.displayName)…")
-            } currentValueLabel: {
-                Text(
-                    ProgressText.detail(
-                        progress: progress,
-                        remaining: environment.coordinator.timeRemaining
-                    )
-                )
-                .monospacedDigit()
-            }
+            ModelDownloadProgress(progress: progress)
         default:
             // Other failures, such as a missing microphone permission, aren't the model's; the main
             // window shows those.
@@ -127,89 +112,10 @@ struct TranscriptionSettingsView: View {
             model == environment.model
             ? environment.coordinator.isModelDownloaded
             : model.isDownloaded ?? isAppleSpeechInstalled
-        let label = Self.label(for: model)
+        let label = model.menuLabel
         guard isDownloaded else { return Text(label) }
-        return Text("\(label)  \(Image(nsImage: Self.downloadedImage))")
+        return Text("\(label)  \(Image(nsImage: DownloadedBadge.image))")
             .accessibilityLabel("\(label), downloaded")
-    }
-
-    /// `checkmark.circle.fill` in green. Menus draw SF Symbols as monochrome templates, so the
-    /// colors are baked into a non-template image. Menus also put a plain image's bottom on the
-    /// baseline and ignore a baseline offset, so the symbol's padding is cropped off and the circle
-    /// sized to the menu font's cap height: it then spans baseline to cap height, like the digits.
-    /// The crop is to the drawn circle, not the `alignmentRect`, which is shorter and cuts it off.
-    /// Also marks downloaded summary models.
-    static let downloadedImage: NSImage = {
-        let font = NSFont.menuFont(ofSize: 0)
-        let configuration = NSImage.SymbolConfiguration(pointSize: font.pointSize, weight: .regular)
-            .applying(NSImage.SymbolConfiguration(paletteColors: [.white, .systemGreen]))
-        guard
-            let symbol = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: nil)?
-                .withSymbolConfiguration(configuration)
-        else { return NSImage() }
-        symbol.isTemplate = false
-        guard let glyph = inkBounds(of: symbol), glyph.height > 0 else { return symbol }
-        let scale = font.capHeight / glyph.height
-        let size = NSSize(width: (glyph.width * scale).rounded(.up), height: font.capHeight)
-        let image = NSImage(size: size, flipped: false) { _ in
-            symbol.draw(
-                in: NSRect(
-                    x: -glyph.minX * scale,
-                    y: -glyph.minY * scale,
-                    width: symbol.size.width * scale,
-                    height: symbol.size.height * scale
-                )
-            )
-            return true
-        }
-        image.accessibilityDescription = "Downloaded"
-        return image
-    }()
-
-    /// The part of `image` that isn't transparent, in points from its bottom left; nil if none is.
-    private static func inkBounds(of image: NSImage) -> NSRect? {
-        let pixelsPerPoint = 8.0
-        let width = Int((image.size.width * pixelsPerPoint).rounded(.up))
-        let height = Int((image.size.height * pixelsPerPoint).rounded(.up))
-        guard
-            width > 0, height > 0,
-            let bitmap = NSBitmapImageRep(
-                bitmapDataPlanes: nil,
-                pixelsWide: width,
-                pixelsHigh: height,
-                bitsPerSample: 8,
-                samplesPerPixel: 4,
-                hasAlpha: true,
-                isPlanar: false,
-                colorSpaceName: .deviceRGB,
-                bytesPerRow: 0,
-                bitsPerPixel: 0
-            ),
-            let context = NSGraphicsContext(bitmapImageRep: bitmap),
-            let pixels = bitmap.bitmapData
-        else { return nil }
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = context
-        image.draw(in: NSRect(x: 0, y: 0, width: width, height: height))
-        NSGraphicsContext.restoreGraphicsState()
-
-        // Rows run top to bottom; alpha is each pixel's last byte.
-        var minX = width, maxX = -1, minRow = height, maxRow = -1
-        for row in 0..<height {
-            for x in 0..<width where pixels[row * bitmap.bytesPerRow + x * 4 + 3] > 0 {
-                minX = min(minX, x)
-                maxX = max(maxX, x)
-                minRow = min(minRow, row)
-                maxRow = max(maxRow, row)
-            }
-        }
-        guard maxX >= minX else { return nil }
-        return NSRect(
-            x: Double(minX) / pixelsPerPoint,
-            y: Double(height - 1 - maxRow) / pixelsPerPoint,
-            width: Double(maxX - minX + 1) / pixelsPerPoint,
-            height: Double(maxRow - minRow + 1) / pixelsPerPoint
-        )
     }
 
     /// Download next to the model menu while the model isn't on disk, Delete once it is; recording
@@ -293,40 +199,5 @@ struct TranscriptionSettingsView: View {
         }
         lines.append("Models are downloaded once from Hugging Face; transcription always runs on this Mac.")
         return lines.joined(separator: " ")
-    }
-
-    /// "Low · Qwen3-ASR 0.6B": what the model is for, then which it is.
-    static func label(for model: TranscriptionModel) -> String {
-        model.purpose.map { "\($0) · \(model.displayName)" } ?? model.displayName
-    }
-
-    static func displayName(for code: String) -> String {
-        Locale.current.localizedString(forLanguageCode: code) ?? code
-    }
-}
-
-/// The language to transcribe in, or Automatic. Disabled for models that detect it themselves.
-/// Also in the setup assistant.
-struct LanguagePicker: View {
-    @Environment(AppEnvironment.self) private var environment
-
-    /// ISO 639-1 codes offered besides "Automatic". The models support many more.
-    private static let languages = ["en", "de", "fr", "es", "it", "pt", "nl", "pl", "ja", "zh"]
-
-    var body: some View {
-        Picker(
-            "Language",
-            selection: Binding(
-                get: { environment.language },
-                set: { environment.setLanguage($0) }
-            )
-        ) {
-            Text("Automatic").tag(String?.none)
-            Divider()
-            ForEach(Self.languages, id: \.self) { code in
-                Text(TranscriptionSettingsView.displayName(for: code)).tag(Optional(code))
-            }
-        }
-        .disabled(!environment.model.supportsLanguageSelection)
     }
 }

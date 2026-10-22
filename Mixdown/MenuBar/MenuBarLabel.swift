@@ -24,7 +24,7 @@ struct MenuBarLabel: View {
                     .monospacedDigit()
             default:
                 if coordinator.isRecording, let recordingElapsed {
-                    Text(Self.elapsedText(recordingElapsed))
+                    Text(ProgressText.elapsed(recordingElapsed))
                         .monospacedDigit()
                 }
             }
@@ -41,7 +41,7 @@ struct MenuBarLabel: View {
     }
 
     /// The app's mark while idle; a status symbol otherwise.
-    static func icon(for phase: RecordingCoordinator.Phase) -> Image {
+    private static func icon(for phase: RecordingCoordinator.Phase) -> Image {
         switch phase {
         case .idle: Image("MenuBarIcon").renderingMode(.template)
         case .preparingModel: Image(systemName: "arrow.down.circle")
@@ -53,15 +53,7 @@ struct MenuBarLabel: View {
         }
     }
 
-    /// "0:16", "12:05", "1:02:03".
-    static func elapsedText(_ seconds: Int) -> String {
-        let duration = Duration.seconds(seconds)
-        return seconds >= 3600
-            ? duration.formatted(.time(pattern: .hourMinuteSecond))
-            : duration.formatted(.time(pattern: .minuteSecond))
-    }
-
-    static func accessibilityLabel(
+    private static func accessibilityLabel(
         for phase: RecordingCoordinator.Phase,
         remaining: TimeInterval?,
         elapsed: Int?

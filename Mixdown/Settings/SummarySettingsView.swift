@@ -6,6 +6,7 @@ import SwiftUI
 /// recordings and for detected calls.
 struct SummarySettingsView: View {
     @Environment(AppEnvironment.self) private var environment
+    @Environment(MainNavigation.self) private var navigation
     @State private var isConfirmingDelete = false
 
     var body: some View {
@@ -19,9 +20,7 @@ struct SummarySettingsView: View {
                     )
                 )
             } footer: {
-                Text(footer)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Caption(footer)
             }
 
             Section {
@@ -39,16 +38,14 @@ struct SummarySettingsView: View {
                         set: { environment.callSummaryTemplate = $0 }
                     )
                 )
+                Button("Edit Templates…") { navigation.settingsTab = .templates }
             } header: {
                 Text("Templates")
             } footer: {
-                Text(
-                    "1:1, Standup and Client Call always have TL;DR, Decisions, Action Items and Open "
-                        + "Questions. Detected calls are recordings started from a call notification or "
-                        + "automatically."
+                Caption(
+                    "Detected calls are recordings started from a call notification or automatically. "
+                        + "Change what each template looks out for, or add your own, under Templates."
                 )
-                .font(.caption)
-                .foregroundStyle(.secondary)
             }
             .disabled(!environment.summarizesNotes)
 
@@ -83,18 +80,22 @@ struct SummarySettingsView: View {
             } header: {
                 Text("Model")
             } footer: {
-                Text(modelFooter)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Caption(modelFooter)
             }
         }
         .formStyle(.grouped)
     }
 
     private func templatePicker(_ title: String, selection: Binding<SummaryTemplate>) -> some View {
-        Picker(title, selection: selection) {
-            ForEach(SummaryTemplate.allCases) { template in
-                Text(template.displayName).tag(template)
+        Picker(
+            title,
+            selection: Binding(
+                get: { selection.wrappedValue.id },
+                set: { id in environment.summaryTemplates.first { $0.id == id }.map { selection.wrappedValue = $0 } }
+            )
+        ) {
+            ForEach(environment.summaryTemplates) { template in
+                Text(template.displayName).tag(template.id)
             }
         }
     }
@@ -108,7 +109,7 @@ struct SummarySettingsView: View {
             case .appleIntelligence: false
             }
         guard isDownloaded else { return Text(model.label) }
-        return Text("\(model.label)  \(Image(nsImage: TranscriptionSettingsView.downloadedImage))")
+        return Text("\(model.label)  \(Image(nsImage: DownloadedBadge.image))")
             .accessibilityLabel("\(model.label), downloaded")
     }
 

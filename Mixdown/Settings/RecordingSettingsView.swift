@@ -12,27 +12,16 @@ struct RecordingSettingsView: View {
         Form {
             Section {
                 MicrophonePicker()
-
-                if hasSystemAudio {
-                    Toggle(
-                        "Record system audio",
-                        isOn: Binding(
-                            get: { environment.recordsSystemAudio },
-                            set: { environment.setRecordsSystemAudio($0) }
-                        )
-                    )
-                }
+                SystemAudioToggle()
             } header: {
                 Text("Inputs")
             } footer: {
-                Text(
+                Caption(
                     "Record your microphone and system audio together to capture both sides of a call. "
                         + "At least one input stays on. Changes apply right away, even while recording, "
                         + "and if the microphone is disconnected, recording continues with the default one. "
                         + "System Default always uses the Mac's input, so connecting AirPods switches to them."
                 )
-                .font(.caption)
-                .foregroundStyle(.secondary)
             }
 
             if hasSystemAudio {
@@ -47,42 +36,50 @@ struct RecordingSettingsView: View {
                 } header: {
                     Text("Echo")
                 } footer: {
-                    Text(
+                    Caption(
                         "Without headphones, your microphone also hears the system audio from your speakers. "
                             + "While both record, Mixdown takes that echo out of the microphone, so the others "
                             + "aren't transcribed twice. Applies from the next recording."
                     )
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
                 }
             }
 
             Section {
-                Toggle(
-                    "Notify when calls start and end",
-                    isOn: Binding(
-                        get: { environment.notifiesAboutCalls },
-                        set: { environment.setNotifiesAboutCalls($0) }
+                Picker(
+                    "Ask if still recording after",
+                    selection: Binding(
+                        get: { environment.stillRecordingMinutes },
+                        set: { environment.setStillRecordingMinutes($0) }
                     )
+                ) {
+                    ForEach(AppSettings.stillRecordingMinuteChoices, id: \.self) { minutes in
+                        Text("\(minutes) Minutes").tag(minutes)
+                    }
+                    Divider()
+                    Text("Never").tag(0)
+                }
+            } header: {
+                Text("Silence")
+            } footer: {
+                Caption(
+                    "When no one has spoken for this long, Mixdown asks whether you're still recording, "
+                        + "in a notification, on Record and in the menu bar, in case a meeting ended and the "
+                        + "recording was left running. Answer Stop Recording or Keep Recording, or just "
+                        + "speak. Time paused doesn't count."
                 )
-                Toggle(
-                    "Record calls automatically",
-                    isOn: Binding(
-                        get: { environment.recordsCallsAutomatically },
-                        set: { environment.setRecordsCallsAutomatically($0) }
-                    )
-                )
+            }
+
+            Section {
+                CallsToggles()
             } header: {
                 Text("Calls")
             } footer: {
-                Text(
+                Caption(
                     "A call is a call app such as Zoom, Teams, FaceTime or Discord, or a browser, using a "
                         + "microphone. Without automatic recording, the notifications ask whether to record and "
                         + "whether to stop; with it, they say that recording started and stopped. Recording "
                         + "turns on system audio."
                 )
-                .font(.caption)
-                .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)

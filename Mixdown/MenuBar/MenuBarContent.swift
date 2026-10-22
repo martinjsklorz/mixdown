@@ -36,11 +36,18 @@ struct MenuBarContent: View {
             notesFolder: environment.notesFolder.status,
             timeRemaining: coordinator.timeRemaining
         )
+        if coordinator.isAskingIfStillRecording {
+            Label(
+                "Still recording? \(StillRecordingPrompt.message(for: coordinator.stillRecordingDelay))",
+                systemImage: "waveform.slash"
+            )
+            Button("Keep Recording") { coordinator.keepRecording() }
+        }
         ForEach(coordinator.silentDevices) { device in
             Label(SilentInputWarning.title(for: device), systemImage: "speaker.slash")
         }
         if SilentInputWarning.needsPermission(coordinator.silentDevices) {
-            Button("Open Privacy Settings…") { SilentInputWarning.openPrivacySettings() }
+            Button("Open Privacy Settings…") { SystemSettings.open(.screenAndSystemAudioRecording) }
         }
         if environment.notesFolder.directory == nil && !coordinator.isRecording {
             Button("Choose Notes Folder…") { environment.chooseNotesFolder() }

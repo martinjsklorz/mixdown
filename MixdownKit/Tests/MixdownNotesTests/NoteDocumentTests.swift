@@ -38,7 +38,16 @@ struct NoteDocumentTests {
         let rendered = MarkdownNoteRenderer.render(NoteFixtures.note(isCall: true, template: .standup))
         let document = NoteDocument(url: url, contents: rendered, fileDate: fileDate)
         #expect(document.isCall)
-        #expect(document.template == .standup)
+        #expect(document.template == "standup")
+
+        let review = SummaryTemplate(id: "custom-1", name: "Sprint Review")
+        let custom = NoteDocument(
+            url: url,
+            contents: MarkdownNoteRenderer.render(NoteFixtures.note(template: review)),
+            fileDate: fileDate
+        )
+        #expect(custom.template == "Sprint Review")
+        #expect(!custom.isCall)
 
         let memo = NoteDocument(
             url: url,

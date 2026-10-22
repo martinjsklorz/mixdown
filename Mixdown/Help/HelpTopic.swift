@@ -187,6 +187,11 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             island to open Record. With the setting off, the time shows in the menu bar.
             - If an input makes no sound for 10 seconds, Mixdown warns on Record and in the menu \
             bar. See [Troubleshooting](mixdown-help:troubleshooting).
+            - If no one speaks for 15 minutes, Mixdown asks **Still Recording?** in a \
+            notification, on Record and in the menu bar, in case a meeting ended and the recording \
+            was left running. Click **Stop Recording** or **Keep Recording**, or just speak. Time \
+            paused doesn't count. Change how long, or choose **Never**, under **Settings → \
+            Recording → Silence**.
 
             With the live model (the default), Record shows the words as you speak, and the note is \
             ready moments after you stop. Turn on **Settings → Design → Show live text** to see the \
@@ -403,6 +408,13 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             Decisions, Action Items (as checkboxes) and Open Questions. A section with nothing in \
             it says _None._
 
+            Under **Settings → Templates**, change a template or add your own with **+**. A \
+            template has a name, its sections (either of the two layouts above) and \
+            instructions: what kind of recording it's for and what to look out for, e.g. "The \
+            recording is a sprint review. Look out for what was shown and the feedback on it." \
+            **Restore Default** undoes your changes to a built-in template. Deleting one of \
+            yours leaves the notes summarized with it as they are.
+
             That template is preselected for each recording. To use another one for this \
             recording only, pick it on **Record** while recording or transcribing, until the \
             summary starts.
@@ -437,7 +449,8 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             """
             Mixdown uses notifications to say a note is ready (with **Open** and **Show in \
             Finder**), to confirm copying a transcript, to offer **Restore** after moving a note to \
-            the Trash, and about calls. To turn them all off, untick **Settings → Notifications → \
+            the Trash, about calls, and to ask **Still Recording?** when no one has spoken for a \
+            while. To turn them all off, untick **Settings → Notifications → \
             Show notifications**.
 
             If notifications are off for Mixdown in System Settings, Settings says so and has a \

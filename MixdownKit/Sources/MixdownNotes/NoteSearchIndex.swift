@@ -65,7 +65,8 @@ public enum NoteSearchIndex {
         return [noteItem]
             + lines.enumerated().map { number, line in
                 // The time says it's from the transcript; a translation's lines still say so.
-                let section = line.time != nil && line.section == "Transcript" ? nil : line.section
+                let section =
+                    line.time != nil && line.section == MarkdownNoteRenderer.transcriptHeading ? nil : line.section
                 return Item(
                     id: itemID(for: note.url, line: number),
                     title: String(line.text.prefix(maxTitleLength)),

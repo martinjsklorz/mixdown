@@ -39,15 +39,13 @@ struct VocabularySettingsView: View {
             } header: {
                 Text("Vocabulary")
             } footer: {
-                Text(
+                Caption(
                     "Names and jargon the speech model gets wrong. Wherever a transcript has what's under "
                         + "Heard as, ignoring case, it gets the word under Write as instead. Separate the ways "
                         + "a word is heard with commas. You can also select a word in a note and choose "
                         + "File › Add to Vocabulary…. Recordings from now on are corrected as they're "
                         + "transcribed."
                 )
-                .font(.caption)
-                .foregroundStyle(.secondary)
             }
 
             Section {
@@ -67,9 +65,7 @@ struct VocabularySettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             } footer: {
-                Text("Makes the same corrections in the notes already in your notes folder, changing their files.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Caption("Makes the same corrections in the notes already in your notes folder, changing their files.")
             }
         }
         .formStyle(.grouped)

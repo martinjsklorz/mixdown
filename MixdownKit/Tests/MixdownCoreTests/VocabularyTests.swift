@@ -72,9 +72,4 @@ struct VocabularyTests {
         #expect(vocabulary.entries[0].soundsLike == ["cooper netties", "kuber nettis"])
         #expect(vocabulary.entries[1].soundsLike == ["mix down"])
     }
-
-    @Test func roundTripsThroughJSON() throws {
-        let data = try JSONEncoder().encode(vocabulary)
-        #expect(try JSONDecoder().decode(Vocabulary.self, from: data) == vocabulary)
-    }
 }

@@ -10,14 +10,12 @@ enum ModelFiles {
     /// Files the loader reads besides the weights: configuration, tokenizer and chat template.
     private static let supportFiles = ["*.json", "*.jinja"]
 
-    /// `Application Support/Mixdown/Models`, inside the container when sandboxed. Shared with the
-    /// speech models.
+    /// `ModelDirectory.url`, shared with the speech models.
     static func baseDirectory() throws -> URL {
-        guard let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-        else {
+        guard let url = ModelDirectory.url else {
             throw SummarizationError.unavailable("Application Support directory not found")
         }
-        return support.appendingPathComponent("Mixdown/Models", isDirectory: true)
+        return url
     }
 
     /// The model's directory below `baseDirectory()`. Created if missing.

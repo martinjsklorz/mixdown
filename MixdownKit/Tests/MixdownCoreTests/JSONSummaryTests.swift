@@ -82,6 +82,26 @@ struct JSONSummaryTests {
         #expect(catchUp.contains("You MUST write in the language of the transcript."))
     }
 
+    @Test func instructionsIncludeTheTemplatesOwn() {
+        let review = SummaryTemplate(id: "custom-1", name: "Review", instructions: "  Look out for demos.\n")
+        let instructions = SummaryPrompt.instructions(for: .transcript, template: review, language: nil)
+        #expect(instructions.contains("name.\nLook out for demos.\nOnly use what's in the text"))
+        #expect(!SummaryPrompt.instructions(for: .combine, template: .general, language: nil).contains("\n\n"))
+
+        let long = SummaryTemplate(id: "custom-2", name: "Long", instructions: String(repeating: "a", count: 5000))
+        #expect(SummaryPrompt.focus(of: long)?.count == SummaryTemplate.maximumInstructionsLength)
+        #expect(SummaryPrompt.focus(of: SummaryTemplate(id: "custom-3", name: "Blank", instructions: " \n")) == nil)
+    }
+
+    @Test func formatFollowsTheLayout() {
+        let custom = SummaryTemplate(id: "custom-1", name: "Review", layout: .sections)
+        #expect(JSONSummary.format(for: custom, language: nil).contains("\"tldr\""))
+        var general = SummaryTemplate.general
+        general.layout = .sections
+        let answer = #"{"tldr": "Short.", "decisions": ["Ship"]}"#
+        #expect(JSONSummary.summary(from: answer, template: general)?.decisions == ["Ship"])
+    }
+
     @Test func readsATitleAnswer() {
         #expect(SummaryPrompt.title(from: "\"May Launch Plan\"") == "May Launch Plan")
         #expect(SummaryPrompt.title(from: "Title: Budget review.\nMore text") == "Budget review")

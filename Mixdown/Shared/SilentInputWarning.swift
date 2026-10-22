@@ -1,8 +1,8 @@
-import AppKit
+import Foundation
 import MixdownCore
 
-/// Wording and the fix for inputs that stay silent while recording, shared by the Record view and
-/// the menu. System audio is usually silent for want of permission; a microphone for being muted.
+/// Wording for inputs that stay silent while recording, and whether the fix is a permission,
+/// shared by the Record view and the menu. System audio is usually silent for want of permission; a microphone for being muted.
 enum SilentInputWarning {
     /// One line per silent input. "No sound from system audio yet. …"
     static func message(for device: AudioInputDevice) -> String {
@@ -23,16 +23,8 @@ enum SilentInputWarning {
         }
     }
 
+    /// Whether the fix is in System Settings: `SystemSettings.Pane.screenAndSystemAudioRecording`.
     static func needsPermission(_ devices: [AudioInputDevice]) -> Bool {
         devices.contains { $0.kind == .systemAudio }
-    }
-
-    /// Opens Privacy & Security › Screen & System Audio Recording, which holds the "System Audio
-    /// Recording Only" list.
-    static func openPrivacySettings() {
-        guard
-            let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
-        else { return }
-        NSWorkspace.shared.open(url)
     }
 }

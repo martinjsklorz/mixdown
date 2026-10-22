@@ -1,4 +1,3 @@
-import AppKit
 import MixdownCore
 import SwiftUI
 
@@ -14,22 +13,18 @@ struct NotificationsSettingsView: View {
                 Toggle("Show notifications", isOn: $showsNotifications)
                 if showsNotifications, notificationsDeniedBySystem {
                     HStack {
-                        Text("Turned off for Mixdown in System Settings.")
-                            .font(.caption)
-                            .foregroundStyle(.red)
+                        Caption("Turned off for Mixdown in System Settings.", isWarning: true)
                         Spacer()
-                        Button("Open System Settings") { Notifications.openSystemSettings() }
+                        Button("Open System Settings") { SystemSettings.open(.notifications) }
                     }
                 }
             } header: {
                 Text("Notifications")
             } footer: {
-                Text(
+                Caption(
                     "Say when a note is ready, ask about calls, confirm copying a transcript, and offer "
                         + "Restore after deleting a note."
                 )
-                .font(.caption)
-                .foregroundStyle(.secondary)
             }
 
             Section {
@@ -41,9 +36,7 @@ struct NotificationsSettingsView: View {
             } header: {
                 Text("Sounds")
             } footer: {
-                Text("Choosing a sound plays it. Without headphones, the microphone can pick up the start sound.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Caption("Choosing a sound plays it. Without headphones, the microphone can pick up the start sound.")
             }
         }
         .formStyle(.grouped)
@@ -51,9 +44,7 @@ struct NotificationsSettingsView: View {
         // switching to this tab, and whenever a window of ours comes back to the front: on reopening
         // Settings (which keeps this view alive) and on returning from System Settings.
         .onAppear { refresh() }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
-            refresh()
-        }
+        .onWindowBecomesKey { refresh() }
     }
 
     private func refresh() {

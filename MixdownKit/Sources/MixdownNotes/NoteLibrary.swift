@@ -245,33 +245,26 @@ public enum NoteLibrary {
         let name = url.lastPathComponent
         let source = url.deletingLastPathComponent().standardizedFileURL.path(percentEncoded: false)
         let isSameDirectory = source == directory.standardizedFileURL.path(percentEncoded: false)
-        for index in 1...MarkdownNoteWriter.maxCollisionSuffix {
-            var candidate = index == 1 ? stem : "\(stem) \(index)"
-            if !pathExtension.isEmpty { candidate += ".\(pathExtension)" }
+        return try MarkdownNoteWriter.withFreeName(stem: stem, pathExtension: pathExtension) { candidate in
             if isSameDirectory && candidate == name { return url }
             let destination = directory.appending(path: candidate, directoryHint: .notDirectory)
             // On a case-insensitive volume, a name that differs only in case is the file itself.
             let changesCaseOnly = isSameDirectory && candidate.caseInsensitiveCompare(name) == .orderedSame
-            if !changesCaseOnly, fileManager.fileExists(atPath: destination.path(percentEncoded: false)) { continue }
-            do {
-                if changesCaseOnly {
-                    // Moving straight to the new name may count as overwriting the file itself.
-                    let temporaryURL = MarkdownNoteWriter.temporaryURL(in: directory)
-                    try fileManager.moveItem(at: url, to: temporaryURL)
-                    do {
-                        try fileManager.moveItem(at: temporaryURL, to: destination)
-                    } catch {
-                        try? fileManager.moveItem(at: temporaryURL, to: url)
-                        throw error
-                    }
-                } else {
-                    try fileManager.moveItem(at: url, to: destination)
+            if !changesCaseOnly, fileManager.fileExists(atPath: destination.path(percentEncoded: false)) { return nil }
+            if changesCaseOnly {
+                // Moving straight to the new name may count as overwriting the file itself.
+                let temporaryURL = MarkdownNoteWriter.temporaryURL(in: directory)
+                try fileManager.moveItem(at: url, to: temporaryURL)
+                do {
+                    try fileManager.moveItem(at: temporaryURL, to: destination)
+                } catch {
+                    try? fileManager.moveItem(at: temporaryURL, to: url)
+                    throw error
                 }
-                return destination
-            } catch let error as CocoaError where error.code == .fileWriteFileExists {
-                continue  // Lost a race with another file; try the next suffix.
+            } else {
+                try fileManager.moveItem(at: url, to: destination)
             }
+            return destination
         }
-        throw CocoaError(.fileWriteFileExists)
     }
 }

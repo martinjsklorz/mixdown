@@ -20,17 +20,16 @@ final class MainNavigation {
         var index: Int
     }
 
-    enum SettingsTab: String, CaseIterable, Identifiable {
+    enum SettingsTab: String {
         case general = "General"
         case recording = "Recording"
         case transcription = "Transcription"
         case summary = "Summary"
+        case templates = "Templates"
         case translation = "Translation"
         case vocabulary = "Vocabulary"
         case notifications = "Notifications"
         case design = "Design"
-
-        var id: Self { self }
 
         var systemImage: String {
             switch self {
@@ -38,6 +37,7 @@ final class MainNavigation {
             case .recording: "mic"
             case .transcription: "waveform"
             case .summary: "list.bullet.rectangle"
+            case .templates: "doc.text"
             case .translation: "translate"
             case .vocabulary: "character.book.closed"
             case .notifications: "bell.badge"
