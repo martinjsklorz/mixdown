@@ -26,7 +26,7 @@ public struct TextEmbedding: Sendable, Equatable {
     }
 
     /// `vector` scaled to unit length; all zeros stays all zeros.
-    public static func normalized(_ vector: [Float]) -> [Float] {
+    private static func normalized(_ vector: [Float]) -> [Float] {
         let length = vector.reduce(0) { $0 + $1 * $1 }.squareRoot()
         guard length > 0, length.isFinite else { return vector }
         return vector.map { $0 / length }

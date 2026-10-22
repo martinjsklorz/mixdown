@@ -35,7 +35,8 @@ public actor AppleSpeechEngine: TranscriptionEngine {
 
     /// Outside the actor, so `isDownloaded` can be read from the main actor without waiting.
     private nonisolated let state = Mutex(State())
-    private var lastTranscription: Task<Void, Never>?
+    /// Transcriptions run one after another, as macOS only allows a few analyses at once.
+    private let transcriptions = SerialTaskQueue()
 
     public init() {}
 
@@ -88,7 +89,7 @@ public actor AppleSpeechEngine: TranscriptionEngine {
             progress?(1)
             return Transcript(segments: [], language: options.language)
         }
-        let transcript = try await oneAtATime {
+        let transcript = try await transcriptions.run {
             try await AppleSpeech.transcribe(samples, language: options.language, progress: progress)
         }
         progress?(1)
@@ -104,27 +105,10 @@ public actor AppleSpeechEngine: TranscriptionEngine {
     private nonisolated func setInstalled(_ installed: Bool, for language: String?) {
         state.withLock {
             if installed {
-                $0.installedLanguages.insert(language)
+                _ = $0.installedLanguages.insert(language)
             } else {
-                $0.installedLanguages.remove(language)
+                _ = $0.installedLanguages.remove(language)
             }
-        }
-    }
-
-    /// Runs `operation` after every earlier transcription has finished, as macOS only allows a few
-    /// analyses at once. Cancelling the caller cancels its job.
-    private func oneAtATime<T: Sendable>(_ operation: @escaping @Sendable () async throws -> T) async throws -> T {
-        let previous = lastTranscription
-        let job = Task {
-            await previous?.value
-            try Task.checkCancellation()
-            return try await operation()
-        }
-        lastTranscription = Task { _ = await job.result }
-        return try await withTaskCancellationHandler {
-            try await job.value
-        } onCancel: {
-            job.cancel()
         }
     }
 }
@@ -161,7 +145,7 @@ private enum AppleSpeech {
             }
         } catch {
             try Task.checkCancellation()
-            throw unavailable(error)
+            throw TranscriptionError.unavailable(error)
         }
         try Task.checkCancellation()
         let locale = transcriber.selectedLocales.first?.identifier ?? "?"
@@ -283,11 +267,6 @@ private enum AppleSpeech {
             throw TranscriptionError.modelUnavailable("Apple's speech model doesn't support \(name).")
         }
         return locale
-    }
-
-    private static func unavailable(_ error: any Error) -> TranscriptionError {
-        if let error = error as? TranscriptionError { return error }
-        return .modelUnavailable(error.localizedDescription)
     }
 }
 

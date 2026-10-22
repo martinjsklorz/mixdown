@@ -43,19 +43,19 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
     static let maxDuration: TimeInterval = 1_000_000_000
 
     public init(url: URL, contents: String, fileDate: Date) {
-        let (fields, body) = Self.splitFrontmatter(contents)
-        let scalars = fields.mapValues(Self.yamlScalar)
+        let (fields, body) = Frontmatter.split(contents)
+        let scalars = fields.mapValues(Frontmatter.yamlScalar)
         let blocks = MarkdownBlock.parse(body)
 
         self.url = url
         self.body = body
         self.title = Self.title(fields: scalars, blocks: blocks, url: url)
-        self.createdAt = scalars["created"].flatMap(Self.date(fromYAML:)) ?? fileDate
+        self.createdAt = scalars["created"].flatMap(Frontmatter.date(fromYAML:)) ?? fileDate
         // `nan` fails the range check too.
         self.duration = scalars["duration"].flatMap(TimeInterval.init).flatMap {
             (0...Self.maxDuration).contains($0) ? $0 : nil
         }
-        let sources = fields["sources"].flatMap(Self.yamlFlowSequence) ?? scalars["source"].map { [$0] } ?? []
+        let sources = fields["sources"].flatMap(Frontmatter.yamlFlowSequence) ?? scalars["source"].map { [$0] } ?? []
         self.sources = sources.filter { !$0.isEmpty }
         self.trigger = scalars["trigger"].flatMap(RecordingTrigger.init(rawValue:))
         self.template = scalars["template"].flatMap(SummaryTemplate.init(rawValue:))
@@ -99,7 +99,7 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
 
     private static func talkTimeline(fields: [String: String]) -> TalkTimeline? {
         let seconds = { (key: String) -> [TimeInterval]? in
-            guard let items = fields[key].flatMap(Self.yamlFlowSequence), !items.isEmpty else { return nil }
+            guard let items = fields[key].flatMap(Frontmatter.yamlFlowSequence), !items.isEmpty else { return nil }
             let values = items.compactMap(TimeInterval.init)
             // `nan` fails the range check too.
             guard values.count == items.count, values.allSatisfy({ (0...TalkTimeline.interval).contains($0) })
@@ -109,7 +109,7 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
         guard let microphone = seconds("talk_microphone"), let systemAudio = seconds("talk_system_audio") else {
             return nil
         }
-        let labels = fields["talk_labels"].flatMap(Self.yamlFlowSequence) ?? []
+        let labels = fields["talk_labels"].flatMap(Frontmatter.yamlFlowSequence) ?? []
         return TalkTimeline(
             microphoneLabel: labels.count == 2 ? labels[0] : SourceLabels.defaultMicrophone,
             systemAudioLabel: labels.count == 2 ? labels[1] : SourceLabels.defaultSystemAudio,
@@ -147,7 +147,9 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
         let blocks = MarkdownBlock.parse(body)
         // Without its heading.
         let section =
-            Self.section("Transcript", in: blocks).map { blocks[($0.lowerBound + 1)..<$0.upperBound] } ?? blocks[...]
+            Self.section(MarkdownNoteRenderer.transcriptHeading, in: blocks).map {
+                blocks[($0.lowerBound + 1)..<$0.upperBound]
+            } ?? blocks[...]
 
         var text = ""
         var previous: MarkdownBlock?
@@ -175,326 +177,5 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
             previous = block
         }
         return text
-    }
-
-    // MARK: - Renaming
-
-    /// `contents` of the note at `url` with its title changed to `title`, a single line with no
-    /// runs of whitespace.
-    ///
-    /// Sets the frontmatter `title`, adding it if missing, and the first `#` heading if it shows
-    /// the current title, escaping Markdown so the heading reads as `title`. A note with neither
-    /// frontmatter nor such a heading gets frontmatter.
-    /// Line endings become `\n`.
-    static func retitled(_ contents: String, url: URL, to title: String) -> String {
-        // Collapsed like the heading's plain text, so a title with runs of spaces still matches.
-        let currentTitle = NoteDocument(url: url, contents: contents, fileDate: .distantPast).title
-            .split(whereSeparator: \.isWhitespace).joined(separator: " ")
-        var lines = normalizedLines(contents)
-        let titleLine = "title: \(MarkdownNoteRenderer.yamlQuoted(title))"
-
-        var bodyStart = 0
-        let frontmatter = frontmatterEnd(lines)
-        if let end = frontmatter {
-            if let field = fieldLines("title", in: lines, frontmatterEnd: end) {
-                lines.replaceSubrange(field, with: [titleLine])
-            } else {
-                lines.insert(titleLine, at: 1)
-            }
-            bodyStart = (frontmatterEnd(lines) ?? 0) + 1
-        }
-
-        var renamedHeading = false
-        var fence: Substring?
-        for index in lines.indices.dropFirst(bodyStart) {
-            if let open = fence {
-                if Parser.isClosingFence(lines[index], for: open) { fence = nil }
-                continue
-            }
-            let trimmed = lines[index].trimmingCharacters(in: .whitespaces)
-            if let (open, _) = Parser.openingFence(trimmed) {
-                fence = open
-            } else if let (level, text) = Parser.atxHeading(trimmed), level == 1 {
-                guard MarkdownBlock.plainText(text) == currentTitle else { continue }
-                lines[index] = "# \(MarkdownNoteRenderer.headingText(title))"
-                renamedHeading = true
-                break
-            }
-        }
-
-        if frontmatter == nil && !renamedHeading {
-            lines.insert(contentsOf: ["---", titleLine, "---", ""], at: 0)
-        }
-        return lines.joined(separator: "\n")
-    }
-
-    // MARK: - Pinning
-
-    /// `contents` with the frontmatter's `pinned` field set to `true`, or removed when unpinning.
-    /// A note without frontmatter gets some when pinned, and loses frontmatter that held nothing
-    /// else when unpinned. Line endings become `\n`.
-    static func pinned(_ contents: String, _ isPinned: Bool) -> String {
-        var lines = normalizedLines(contents)
-        let pinnedLines = isPinned ? ["pinned: true"] : []
-
-        guard let end = frontmatterEnd(lines) else {
-            if isPinned { lines.insert(contentsOf: ["---"] + pinnedLines + ["---", ""], at: 0) }
-            return lines.joined(separator: "\n")
-        }
-        if let field = fieldLines("pinned", in: lines, frontmatterEnd: end) {
-            lines.replaceSubrange(field, with: pinnedLines)
-        } else {
-            lines.insert(contentsOf: pinnedLines, at: end)
-        }
-        // Frontmatter left empty goes, with the blank line pinning added after it.
-        if !isPinned, frontmatterEnd(lines) == 1 {
-            lines.removeFirst(lines.count > 2 && lines[2].isEmpty ? 3 : 2)
-        }
-        return lines.joined(separator: "\n")
-    }
-
-    // MARK: - Vocabulary
-
-    /// What `corrected(_:by:)` replaces with, made once for many notes: one replacer for the
-    /// frontmatter's title, one for Markdown, where both what's matched and what's put in are
-    /// escaped the way `MarkdownNoteRenderer` escapes the transcript.
-    struct VocabularyCorrection {
-        let plain: Vocabulary.Replacer
-        let markdown: Vocabulary.Replacer
-
-        init(_ vocabulary: Vocabulary) {
-            plain = Vocabulary.Replacer(vocabulary)
-            markdown = Vocabulary.Replacer(vocabulary, escaping: MarkdownNoteRenderer.escapedMarkdown)
-        }
-
-        var isEmpty: Bool { plain.isEmpty }
-    }
-
-    /// `contents` with the vocabulary applied to the frontmatter's `title` and to the body, or
-    /// `nil` if nothing changes. Headings of level 2 and below are left alone, as they name the
-    /// sections Mixdown and other apps look for, like `## Transcript`; so are code blocks. Line
-    /// endings become `\n`.
-    static func corrected(_ contents: String, by correction: VocabularyCorrection) -> String? {
-        var lines = normalizedLines(contents)
-        var isChanged = false
-        let replace = { (index: Int, line: String) in
-            guard line != lines[index] else { return }
-            lines[index] = line
-            isChanged = true
-        }
-
-        var bodyStart = 0
-        if let end = frontmatterEnd(lines) {
-            if let field = fieldLines("title", in: lines, frontmatterEnd: end), field.count == 1,
-                let colon = lines[field.lowerBound].firstIndex(of: ":")
-            {
-                let raw = lines[field.lowerBound][lines[field.lowerBound].index(after: colon)...]
-                    .trimmingCharacters(in: .whitespaces)
-                let title = yamlScalar(raw)
-                let corrected = correction.plain.replace(in: title)
-                if corrected != title {
-                    replace(field.lowerBound, "title: \(MarkdownNoteRenderer.yamlQuoted(corrected))")
-                }
-            }
-            bodyStart = end + 1
-        }
-
-        var fence: Substring?
-        for index in lines.indices.dropFirst(bodyStart) {
-            if let open = fence {
-                if Parser.isClosingFence(lines[index], for: open) { fence = nil }
-                continue
-            }
-            let trimmed = lines[index].trimmingCharacters(in: .whitespaces)
-            if let (open, _) = Parser.openingFence(trimmed) {
-                fence = open
-            } else if let (level, _) = Parser.atxHeading(trimmed), level > 1 {
-                continue
-            } else {
-                replace(index, correction.markdown.replace(in: lines[index]))
-            }
-        }
-        return isChanged ? lines.joined(separator: "\n") : nil
-    }
-
-    // MARK: - Frontmatter
-
-    /// Splits off a leading `---` … `---` block and reads its top-level `key: value` lines.
-    /// Values are kept as written; decode them with `yamlScalar(_:)` or `yamlFlowSequence(_:)`.
-    static func splitFrontmatter(_ contents: String) -> (fields: [String: String], body: String) {
-        let text = normalized(contents)
-        let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
-        guard let end = frontmatterEnd(lines) else { return ([:], text) }
-
-        var fields: [String: String] = [:]
-        for line in lines[1..<end] {
-            guard let key = frontmatterKey(line), let colon = line.firstIndex(of: ":") else { continue }
-            let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
-            fields[key] = value
-        }
-        return (fields, lines[(end + 1)...].joined(separator: "\n"))
-    }
-
-    /// `contents` with `\n` line endings and without a byte order mark.
-    private static func normalized(_ contents: String) -> String {
-        var text = contents.replacingOccurrences(of: "\r\n", with: "\n")
-        if text.hasPrefix("\u{FEFF}") { text.removeFirst() }
-        return text
-    }
-
-    private static func normalizedLines(_ contents: String) -> [String] {
-        normalized(contents).split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-    }
-
-    /// The lines of the top-level `key` field in the frontmatter closed at `end`, including the
-    /// lines a multi-line value continues on, up to the next key.
-    private static func fieldLines(_ key: String, in lines: [String], frontmatterEnd end: Int) -> Range<Int>? {
-        guard let index = lines[1..<end].firstIndex(where: { frontmatterKey($0) == key }) else { return nil }
-        let next = lines[(index + 1)..<end].firstIndex { $0.first.map { !$0.isWhitespace } ?? false }
-        return index..<(next ?? end)
-    }
-
-    /// The index of the line closing the frontmatter, if `lines` start with frontmatter.
-    static func frontmatterEnd<Line: StringProtocol>(_ lines: [Line]) -> Int? {
-        guard lines.first?.trimmingCharacters(in: .whitespaces) == "---" else { return nil }
-        return lines.dropFirst().firstIndex {
-            let line = $0.trimmingCharacters(in: .whitespaces)
-            return line == "---" || line == "..."
-        }
-    }
-
-    /// The key of a top-level `key: value` frontmatter line.
-    static func frontmatterKey<Line: StringProtocol>(_ line: Line) -> String? {
-        guard let first = line.first, !first.isWhitespace, first != "#",
-            let colon = line.firstIndex(of: ":")
-        else { return nil }
-        return line[..<colon].trimmingCharacters(in: .whitespaces)
-    }
-
-    /// The value of a YAML scalar: quotes removed and escapes resolved, comments dropped.
-    /// An unterminated quoted value is kept as written.
-    static func yamlScalar(_ raw: String) -> String {
-        if raw.first == "\"" || raw.first == "'" {
-            return quotedScalar(raw[...])?.value ?? raw
-        }
-        guard let comment = raw.range(of: " #") else { return raw }
-        return raw[..<comment.lowerBound].trimmingCharacters(in: .whitespaces)
-    }
-
-    /// The items of a YAML flow sequence like `["a", 'b', c]`, or `nil` if `raw` isn't a
-    /// complete one. Empty items are dropped.
-    static func yamlFlowSequence(_ raw: String) -> [String]? {
-        guard raw.first == "[" else { return nil }
-        var items: [String] = []
-        var rest = raw.dropFirst()
-        while true {
-            rest = rest.drop(while: \.isWhitespace)
-            guard let first = rest.first else { return nil }
-            // Also ends `[]` and a trailing comma.
-            if first == "]" { return items }
-            let item: String
-            if first == "\"" || first == "'" {
-                guard let quoted = quotedScalar(rest) else { return nil }
-                item = quoted.value
-                rest = rest[quoted.end...]
-            } else {
-                let end = rest.firstIndex { $0 == "," || $0 == "]" } ?? rest.endIndex
-                item = rest[..<end].trimmingCharacters(in: .whitespaces)
-                rest = rest[end...]
-            }
-            if !item.isEmpty { items.append(item) }
-            rest = rest.drop(while: \.isWhitespace)
-            if rest.first == "," {
-                rest = rest.dropFirst()
-            } else if rest.first != "]" {
-                return nil
-            }
-        }
-    }
-
-    /// The value of the single- or double-quoted scalar `raw` starts with, and the index after
-    /// its closing quote. `nil` if `raw` doesn't start with a quote or it's unterminated.
-    private static func quotedScalar(_ raw: Substring) -> (value: String, end: Substring.Index)? {
-        switch raw.first {
-        case "\"":
-            var isEscaped = false
-            for index in raw.indices.dropFirst() {
-                if isEscaped {
-                    isEscaped = false
-                } else if raw[index] == "\\" {
-                    isEscaped = true
-                } else if raw[index] == "\"" {
-                    let value = unescapeDoubleQuoted(raw[raw.index(after: raw.startIndex)..<index])
-                    return (value, raw.index(after: index))
-                }
-            }
-            return nil
-        case "'":
-            // The only escape in single quotes is `''` for a quote.
-            var value = ""
-            var index = raw.index(after: raw.startIndex)
-            while index < raw.endIndex {
-                let character = raw[index]
-                index = raw.index(after: index)
-                guard character == "'" else {
-                    value.append(character)
-                    continue
-                }
-                guard index < raw.endIndex, raw[index] == "'" else { return (value, index) }
-                value.append("'")
-                index = raw.index(after: index)
-            }
-            return nil
-        default:
-            return nil
-        }
-    }
-
-    /// Resolves the escapes `MarkdownNoteRenderer.yamlQuoted(_:)` writes, plus the other common
-    /// YAML ones. Unknown escapes keep the escaped character.
-    static func unescapeDoubleQuoted(_ value: Substring) -> String {
-        var result = String.UnicodeScalarView()
-        var scalars = value.unicodeScalars.makeIterator()
-        while let scalar = scalars.next() {
-            guard scalar == "\\", let escaped = scalars.next() else {
-                result.append(scalar)
-                continue
-            }
-            switch escaped {
-            case "n": result.append("\n")
-            case "r": result.append("\r")
-            case "t": result.append("\t")
-            case "0": result.append("\0")
-            case "x", "u", "U":
-                let length = escaped == "x" ? 2 : escaped == "u" ? 4 : 8
-                var hex = String.UnicodeScalarView()
-                for _ in 0..<length {
-                    if let digit = scalars.next() { hex.append(digit) }
-                }
-                if let code = UInt32(String(hex), radix: 16), let decoded = Unicode.Scalar(code) {
-                    result.append(decoded)
-                }
-            default:
-                result.append(escaped)
-            }
-        }
-        return String(result)
-    }
-
-    /// An ISO 8601 date-time, with or without fractional seconds, or a plain `yyyy-MM-dd` date.
-    static func date(fromYAML value: String) -> Date? {
-        let formatter = ISO8601DateFormatter()
-        // Only matters for date-only values: midnight local time, not UTC.
-        formatter.timeZone = .current
-        let variants: [ISO8601DateFormatter.Options] = [
-            [.withInternetDateTime],
-            [.withInternetDateTime, .withFractionalSeconds],
-            [.withFullDate],
-        ]
-        for options in variants {
-            formatter.formatOptions = options
-            if let date = formatter.date(from: value) { return date }
-        }
-        return nil
     }
 }

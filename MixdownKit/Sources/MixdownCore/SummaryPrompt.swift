@@ -32,7 +32,7 @@ public enum SummaryPrompt {
     }
 
     /// What kind of recording `template` is for, and what matters in one.
-    public static func focus(of template: SummaryTemplate) -> String? {
+    private static func focus(of template: SummaryTemplate) -> String? {
         switch template {
         case .general:
             nil

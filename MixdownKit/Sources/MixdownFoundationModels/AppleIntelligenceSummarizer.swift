@@ -23,6 +23,10 @@ public struct AppleIntelligenceSummarizer: Summarizer {
     public func summarize(_ transcript: MixdownCore.Transcript, template: SummaryTemplate) async throws -> NoteSummary {
         try await SystemModelSummary.summarize(transcript, template: template)
     }
+
+    public func catchUp(on transcript: MixdownCore.Transcript, language: String?) async throws -> [String] {
+        try await SystemModelSummary.catchUp(on: transcript, language: language)
+    }
 }
 
 enum SystemModelSummary {
@@ -58,26 +62,49 @@ enum SystemModelSummary {
     }
 
     static func summarize(_ transcript: MixdownCore.Transcript, template: SummaryTemplate) async throws -> NoteSummary {
-        let model = SystemLanguageModel.default
-        if case .unavailable(let reason) = availability { throw SummarizationError.unavailable(reason) }
+        let language = TranscriptLanguage.code(of: transcript)
+        var summary = try await summarizeInPieces(transcript) { text, kind in
+            try await respond(to: text, kind: kind, template: template, language: language)
+        }
+        summary.language = language
+        return summary
+    }
 
-        // `estimatedTokens` guesses high, but the model's tokenizer can still disagree. A piece
-        // that overflows the context is split again by `ChunkedSummarizer`.
+    /// What was said in the last few minutes of a recording under way, in a few points, for
+    /// someone who drifted off. Runs on the Mac like the summaries, so it costs nothing and
+    /// nothing is sent anywhere.
+    static func catchUp(on transcript: MixdownCore.Transcript, language: String?) async throws -> [String] {
+        let language = language ?? TranscriptLanguage.code(of: transcript)
+        // Minutes of fast talking can still overflow the context; they're caught up on in parts,
+        // then those combined, like a long recording's summary.
+        let summary = try await summarizeInPieces(transcript) { text, kind in
+            NoteSummary(keyPoints: try await catchUpPoints(for: text, kind: kind, language: language))
+        }
+        return summary.keyPoints
+    }
+
+    /// `transcript` summarized by `ChunkedSummarizer`, in pieces that fit the model's context.
+    /// Throws `SummarizationError.unavailable` if the model can't be used.
+    ///
+    /// `estimatedTokens` guesses high, but the model's tokenizer can still disagree. A piece that
+    /// overflows the context is split again.
+    private static func summarizeInPieces(
+        _ transcript: MixdownCore.Transcript,
+        step: (_ text: String, _ kind: ChunkedSummarizer.Step) async throws -> NoteSummary
+    ) async throws -> NoteSummary {
+        if case .unavailable(let reason) = availability { throw SummarizationError.unavailable(reason) }
         let summarizer = ChunkedSummarizer(
-            maxTokens: max(model.contextSize - reservedTokens, minimumPieceTokens),
+            maxTokens: max(SystemLanguageModel.default.contextSize - reservedTokens, minimumPieceTokens),
             minTokens: minimumPieceTokens
         )
-        let language = TranscriptLanguage.code(of: transcript)
-        var summary = try await summarizer.summarize(transcript) { text, kind in
+        return try await summarizer.summarize(transcript) { text, kind in
             do {
-                return try await respond(to: text, kind: kind, template: template, model: model, language: language)
+                return try await step(text, kind)
             } catch let error where isContextOverflow(error) {
                 logger.info("A piece of \(text.count) characters overflowed the context")
                 throw SummarizationError.tooLong
             }
         }
-        summary.language = language
-        return summary
     }
 
     /// One model call, in a fresh session so earlier pieces don't take up the context.
@@ -85,16 +112,10 @@ enum SystemModelSummary {
         to text: String,
         kind: ChunkedSummarizer.Step,
         template: SummaryTemplate,
-        model: SystemLanguageModel,
         language: String?
     ) async throws -> NoteSummary {
         let rules = SummaryPrompt.instructions(for: kind, template: template, language: language)
-        let session: LanguageModelSession
-        if #available(macOS 27, *) {
-            session = makeSession(model: model, instructions: rules)
-        } else {
-            session = LanguageModelSession(model: model) { rules }
-        }
+        let session = makeSession(instructions: rules)
         let prompt = SummaryPrompt.prompt(for: text, kind: kind)
         // The explicit `includeSchemaInPrompt` picks the macOS 26 overload over macOS 27's
         // metadata one, whose other parameters have defaults too.
@@ -111,6 +132,29 @@ enum SystemModelSummary {
             prompt
         }
         return response.content.noteSummary(template: template)
+    }
+
+    /// One catch-up call, in a fresh session.
+    private static func catchUpPoints(
+        for text: String,
+        kind: ChunkedSummarizer.Step,
+        language: String?
+    ) async throws -> [String] {
+        let session = makeSession(instructions: SummaryPrompt.catchUpInstructions(for: kind, language: language))
+        let prompt = SummaryPrompt.prompt(for: text, kind: kind)
+        // See `respond(to:kind:template:language:)`.
+        let response = try await session.respond(generating: GeneratedCatchUp.self, includeSchemaInPrompt: true) {
+            prompt
+        }
+        return response.content.points.map(SummaryPrompt.listItem)
+    }
+
+    /// A new session with the system model and `instructions`.
+    static func makeSession(instructions: String) -> LanguageModelSession {
+        if #available(macOS 27, *) {
+            return makeSession(model: SystemLanguageModel.default, instructions: instructions)
+        }
+        return LanguageModelSession(model: .default) { instructions }
     }
 
     /// A session with `instructions`. Generic because macOS 27 adds an initializer for any
@@ -195,4 +239,13 @@ struct GeneratedSectionedSummary {
             openQuestions: openQuestions.map(SummaryPrompt.listItem)
         )
     }
+}
+
+@Generable
+struct GeneratedCatchUp {
+    @Guide(
+        description: "What was missed, oldest first, one short sentence each, naming who said what where it matters",
+        .maximumCount(4)
+    )
+    var points: [String]
 }

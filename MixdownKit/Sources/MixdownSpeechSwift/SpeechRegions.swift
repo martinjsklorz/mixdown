@@ -21,11 +21,8 @@ enum SpeechRegions {
         static let silero = Configuration(onset: 0.5, offset: 0.35, minSilenceDuration: 0.1, minSpeechDuration: 0.1)
     }
 
-    static func detect(
-        in probabilities: [Float],
-        frameDuration: TimeInterval,
-        configuration: Configuration = .silero
-    ) -> [TimeSpan] {
+    static func detect(in probabilities: [Float], frameDuration: TimeInterval) -> [TimeSpan] {
+        let configuration = Configuration.silero
         var raw: [TimeSpan] = []
         var start: Int?
         for (index, probability) in probabilities.enumerated() {

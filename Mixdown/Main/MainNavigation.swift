@@ -20,7 +20,7 @@ final class MainNavigation {
         var index: Int
     }
 
-    enum SettingsTab: String, CaseIterable, Identifiable {
+    enum SettingsTab: String {
         case general = "General"
         case recording = "Recording"
         case transcription = "Transcription"
@@ -29,8 +29,6 @@ final class MainNavigation {
         case vocabulary = "Vocabulary"
         case notifications = "Notifications"
         case design = "Design"
-
-        var id: Self { self }
 
         var systemImage: String {
             switch self {

@@ -82,8 +82,9 @@ let package = Package(
         ),
 
         // Translation framework implementation of `Translator`: Apple's on-device translation
-        // models, which macOS downloads per language.
-        .target(name: "MixdownAppleTranslation", dependencies: ["MixdownCore"]),
+        // models, which macOS downloads per language. Tells which language a transcript is in with
+        // MixdownNaturalLanguage.
+        .target(name: "MixdownAppleTranslation", dependencies: ["MixdownCore", "MixdownNaturalLanguage"]),
 
         // NaturalLanguage implementation of `TextEmbedder`: Apple's on-device contextual
         // embedding models, which macOS downloads per script, for finding notes to answer from.

@@ -53,7 +53,7 @@ final class DynamicIsland {
     /// Told whether the island is the only place the time needs to be; see `showsTimeAlone`.
     private let showsTimeAloneChanged: (Bool) -> Void
     /// Created on the first `show(_:)`, as windows shouldn't be made before the app has launched.
-    private var panel: IslandPanel?
+    private var panel: NotchPanel?
     private var isShown = false
     private var layout = Layout()
     private let presence = Presence()
@@ -93,12 +93,12 @@ final class DynamicIsland {
     }
 
     func hide() {
-        guard isShown, let panel else { return }
+        guard isShown, panel != nil else { return }
         isShown = false
         showsTimeAloneChanged(false)
         withAnimation(Self.collapseAnimation) {
             presence.isExpanded = false
-        } completion: {
+        } completion: { [weak self] in
             Task { @MainActor [weak self] in
                 // Shown again while collapsing.
                 guard let self, !self.isShown, let panel = self.panel else { return }
@@ -110,8 +110,13 @@ final class DynamicIsland {
         }
     }
 
-    private func makePanel() -> IslandPanel {
-        let panel = IslandPanel()
+    private func makePanel() -> NotchPanel {
+        let panel = NotchPanel(
+            // Never takes focus from the app in front. `place(_:)` decides whether it also shows
+            // over full-screen apps.
+            showsOverFullScreenApps: false,
+            isDark: false
+        )
         self.panel = panel
         // Follows displays being connected, rearranged or changing resolution.
         _ = NotificationCenter.default.addObserver(
@@ -148,7 +153,7 @@ final class DynamicIsland {
     }
 
     /// Gives `panel` a view laid out for the notch and `layout`, and sizes it around the notch.
-    private func place(_ panel: IslandPanel) {
+    private func place(_ panel: NotchPanel) {
         guard let screen = Self.screen else { return }
         let notch = Self.notch(on: screen)
         let hostingView = NSHostingView(
@@ -223,32 +228,5 @@ final class DynamicIsland {
         let menuBarHeight = frame.maxY - screen.visibleFrame.maxY
         let height = menuBarHeight > 0 ? menuBarHeight : NSStatusBar.system.thickness
         return NSRect(x: frame.midX, y: frame.maxY - height, width: 0, height: height)
-    }
-}
-
-/// A panel that floats over the menu bar on every Space, and never takes focus from the app in
-/// front. `DynamicIsland` decides whether it also shows over full-screen apps.
-private final class IslandPanel: NSPanel {
-    convenience init() {
-        self.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
-        isFloatingPanel = true
-        level = .statusBar
-        backgroundColor = .clear
-        isOpaque = false
-        hasShadow = false
-        // Panels hide when their app isn't active by default, and Mixdown rarely is while recording.
-        hidesOnDeactivate = false
-        isMovable = false
-        isExcludedFromWindowsMenu = true
-        isReleasedWhenClosed = false
-        collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
-    }
-
-    override var canBecomeKey: Bool { false }
-    override var canBecomeMain: Bool { false }
-
-    /// Keeps the panel over the menu bar, where AppKit would otherwise move a window out from.
-    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
-        frameRect
     }
 }

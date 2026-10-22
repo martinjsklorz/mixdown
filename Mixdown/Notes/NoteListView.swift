@@ -160,8 +160,8 @@ struct NoteListView<Footer: View>: View {
             .accessibilityHidden(isFolded)
     }
 
-    private func header(for group: NoteSection.Group) -> SectionHeader {
-        SectionHeader(title: group.title, isCollapsed: group == .pinned ? $collapsesPinned : nil)
+    private func header(for group: NoteSection.Group) -> NoteSectionHeader {
+        NoteSectionHeader(title: group.title, isCollapsed: group == .pinned ? $collapsesPinned : nil)
     }
 
     /// The header of the section at the top of the list once its own has scrolled up out of
@@ -295,115 +295,12 @@ extension AnyTransition {
 
 extension ButtonStyle where Self == UnpressedButtonStyle {
     /// Like `.plain`, without dimming the label while the mouse button is held down on it.
-    fileprivate static var unpressed: UnpressedButtonStyle { UnpressedButtonStyle() }
+    static var unpressed: UnpressedButtonStyle { UnpressedButtonStyle() }
 }
 
-private struct UnpressedButtonStyle: ButtonStyle {
+struct UnpressedButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-    }
-}
-
-/// A section's title, like "Pinned", "Today" or "September". With `isCollapsed`, clicking it
-/// folds the section's notes away or shows them again, and a chevron says which.
-private struct SectionHeader: View {
-    let title: String
-    var isCollapsed: Binding<Bool>?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            heading
-            Divider()
-        }
-        .padding(EdgeInsets(top: 20, leading: 10, bottom: 6, trailing: 10))
-    }
-
-    @ViewBuilder
-    private var heading: some View {
-        if let isCollapsed {
-            Button {
-                isCollapsed.wrappedValue.toggle()
-            } label: {
-                HStack(spacing: 6) {
-                    text
-                    Spacer(minLength: 0)
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .rotationEffect(.degrees(isCollapsed.wrappedValue ? 0 : 90))
-                        .animation(.snappy, value: isCollapsed.wrappedValue)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.unpressed)
-            .accessibilityValue(isCollapsed.wrappedValue ? "Collapsed" : "Expanded")
-            .accessibilityHint(isCollapsed.wrappedValue ? "Shows the notes" : "Hides the notes")
-        } else {
-            text
-        }
-    }
-
-    private var text: some View {
-        Text(title)
-            .font(.title2.weight(.bold))
-            .accessibilityAddTraits(.isHeader)
-    }
-}
-
-private struct NoteRow: View {
-    let note: NoteDocument
-    let dateFormat: Date.FormatStyle
-    let isSelected: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(note.title)
-                    .font(.body.weight(.medium))
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-                if let trigger = note.trigger {
-                    TriggerIcon(trigger: trigger)
-                }
-            }
-            HStack(spacing: 6) {
-                Text(note.createdAt, format: dateFormat)
-                Text(note.snippet.isEmpty ? "No additional text" : note.snippet)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            .font(.subheadline)
-            if let folder = note.folder {
-                Label(folder, systemImage: "folder")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.head)
-            }
-        }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        // The light orange of the app icon's tracks (a darker icon orange in Dark Mode).
-        .background(isSelected ? Color("NoteSelection") : .clear, in: RoundedRectangle(cornerRadius: 8))
-    }
-}
-
-/// A small mark for how the recording was started. Notes that don't say show none.
-private struct TriggerIcon: View {
-    let trigger: RecordingTrigger
-
-    var body: some View {
-        let (symbol, label) =
-            switch trigger {
-            case .manual: ("hand.tap", "Started manually")
-            case .automatic: ("autostartstop", "Started automatically for a call")
-            }
-        Image(systemName: symbol)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .help(label)
-            .accessibilityLabel(label)
     }
 }
 

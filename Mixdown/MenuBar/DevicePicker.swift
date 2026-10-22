@@ -26,12 +26,13 @@ struct DevicePicker: View {
         }
         if !microphones.isEmpty {
             Section("Microphone") {
-                toggle(Self.defaultTitle(among: microphones), isOn: followsDefaultMicrophone) { isOn in
+                let defaultTitle = AudioInputDevice.defaultMicrophoneTitle(among: microphones)
+                toggle(defaultTitle, isOn: followsDefaultMicrophone) { isOn in
                     onSelectMicrophone(isOn ? .defaultMicrophone : nil)
                 }
                 ForEach(microphones) { device in
                     let isOn = !followsDefaultMicrophone && selectedIDs.contains(device.id)
-                    toggle(Self.title(for: device), isOn: isOn) { isOn in
+                    toggle(device.pickerTitle, isOn: isOn) { isOn in
                         onSelectMicrophone(isOn ? device : nil)
                     }
                 }
@@ -48,16 +49,6 @@ struct DevicePicker: View {
 
     private func toggle(_ title: String, isOn: Bool, set: @escaping @MainActor (Bool) -> Void) -> some View {
         Toggle(title, isOn: Binding(get: { isOn }, set: { set($0) }))
-    }
-
-    static func title(for device: AudioInputDevice) -> String {
-        device.isDefault ? "\(device.name) (Default)" : device.name
-    }
-
-    /// "System Default (AirPods)", naming the microphone it currently stands for.
-    static func defaultTitle(among microphones: [AudioInputDevice]) -> String {
-        guard let current = microphones.first(where: \.isDefault) else { return "System Default" }
-        return "System Default (\(current.name))"
     }
 }
 

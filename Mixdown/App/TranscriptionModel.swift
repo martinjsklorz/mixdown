@@ -60,6 +60,12 @@ enum TranscriptionModel: Hashable, Identifiable {
         }
     }
 
+    /// "Low · Qwen3-ASR 0.6B": what the model is for, then which it is. For menus and summaries of
+    /// the setup.
+    var menuLabel: String {
+        purpose.map { "\($0) · \(displayName)" } ?? displayName
+    }
+
     /// Whether `TranscriptionOptions.language` is honored. Otherwise the language is auto-detected.
     /// Apple's model doesn't detect it; it falls back to the Mac's language.
     var supportsLanguageSelection: Bool {

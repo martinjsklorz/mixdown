@@ -29,7 +29,7 @@ enum SpeechChunker {
 
     /// A region that is too long is cut at its quietest frame in
     /// `[minSplitFraction * budget, budget]` after the piece start.
-    static let minSplitFraction = 0.5
+    private static let minSplitFraction = 0.5
 
     static func pieces(
         regions: [TimeSpan],
@@ -81,7 +81,7 @@ enum SpeechChunker {
     }
 
     /// Frames on each side averaged when looking for a cut: ±3 Silero frames ≈ 0.2 s.
-    static let smoothingRadius = 3
+    private static let smoothingRadius = 3
 
     /// Centre of the VAD frame whose centre lies in `[from, to]` and whose neighbourhood
     /// (`smoothingRadius` frames each side) is quietest on average. Ties go to the quieter frame

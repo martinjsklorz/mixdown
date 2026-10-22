@@ -1,4 +1,3 @@
-import AppKit
 import MixdownAppleTranslation
 import SwiftUI
 import Translation
@@ -54,9 +53,7 @@ struct TranslationSettingsView: View {
                 }
                 .disabled(!environment.translatesNotes)
             } footer: {
-                Text(footer)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Caption(footer)
             }
         }
         .formStyle(.grouped)
@@ -71,9 +68,7 @@ struct TranslationSettingsView: View {
             await refreshStatus()
         }
         // Languages may have been downloaded in System Settings meanwhile.
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
-            Task { await refreshStatus() }
-        }
+        .onWindowBecomesKey { Task { await refreshStatus() } }
         // Off the main actor: the session isn't Sendable, so it can't be sent from there to
         // `prepareTranslation()`, which runs concurrently.
         .translationTask(download) { @concurrent session in

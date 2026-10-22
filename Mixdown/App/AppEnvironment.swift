@@ -71,10 +71,10 @@ final class AppEnvironment {
     private(set) var dynamicIslandShowsTimeAlone = false
     /// The moment just marked while the user writes a note on it under the notch; `nil` once the
     /// field closes. See `markMoment()`.
-    private(set) var momentDraft: MomentDraft?
+    private var momentDraft: MomentDraft?
     /// The catch-up asked for last, while it's summed up and shown under the notch; `nil` once
     /// its card closes. See `catchUp()`.
-    private(set) var catchUpRequest: CatchUpRequest?
+    private var catchUpRequest: CatchUpRequest?
     /// How many of the last minutes of a recording `catchUp()` sums up.
     private(set) var catchUpMinutes: Int
 

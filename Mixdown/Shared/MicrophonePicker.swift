@@ -26,11 +26,24 @@ struct MicrophonePicker: View {
         ) {
             Text("None").tag(String?.none)
             Divider()
-            Text(DevicePicker.defaultTitle(among: microphones))
+            Text(AudioInputDevice.defaultMicrophoneTitle(among: microphones))
                 .tag(Optional(AudioInputDevice.defaultMicrophoneID))
             ForEach(microphones) { device in
-                Text(DevicePicker.title(for: device)).tag(Optional(device.id))
+                Text(device.pickerTitle).tag(Optional(device.id))
             }
         }
+    }
+}
+
+extension AudioInputDevice {
+    /// The device's name, marked if it's the Mac's default input. For this picker and `DevicePicker`.
+    var pickerTitle: String {
+        isDefault ? "\(name) (Default)" : name
+    }
+
+    /// "System Default (AirPods)", naming the microphone it currently stands for.
+    static func defaultMicrophoneTitle(among microphones: [AudioInputDevice]) -> String {
+        guard let current = microphones.first(where: \.isDefault) else { return "System Default" }
+        return "System Default (\(current.name))"
     }
 }

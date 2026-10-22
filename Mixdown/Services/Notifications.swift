@@ -1,4 +1,4 @@
-import AppKit
+import Foundation
 import UserNotifications
 import os
 
@@ -67,13 +67,5 @@ enum Notifications {
             logger.error("Couldn't ask for permission to notify: \(error.localizedDescription)")
             return false
         }
-    }
-
-    /// Opens System Settings › Notifications at Mixdown.
-    static func openSystemSettings() {
-        guard let bundleID = Bundle.main.bundleIdentifier,
-            let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(bundleID)")
-        else { return }
-        NSWorkspace.shared.open(url)
     }
 }

@@ -127,9 +127,9 @@ struct AppSettings {
         nonmutating set { defaults.set(newValue, forKey: Key.notesFolderBookmark) }
     }
 
+    /// Set with `@AppStorage`.
     var showsNotifications: Bool {
-        get { defaults.object(forKey: Key.showsNotifications) as? Bool ?? true }
-        nonmutating set { defaults.set(newValue, forKey: Key.showsNotifications) }
+        defaults.object(forKey: Key.showsNotifications) as? Bool ?? true
     }
 
     var indexesNotesInSpotlight: Bool {
@@ -185,9 +185,9 @@ struct AppSettings {
         nonmutating set { defaults.set(newValue, forKey: Key.cancelsEcho) }
     }
 
+    /// Set with `@AppStorage`.
     var playsSounds: Bool {
-        get { defaults.object(forKey: Key.playsSounds) as? Bool ?? true }
-        nonmutating set { defaults.set(newValue, forKey: Key.playsSounds) }
+        defaults.object(forKey: Key.playsSounds) as? Bool ?? true
     }
 
     /// The name of the sound for `cue`, or `nil` if the user chose none.

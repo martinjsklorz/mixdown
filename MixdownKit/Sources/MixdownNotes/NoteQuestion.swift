@@ -9,7 +9,7 @@ import MixdownCore
 /// hatte ich letzte Woche?".
 public struct NoteQuestion: Sendable, Equatable {
     /// A kind of recording a question can ask about.
-    public enum Kind: String, Sendable, CaseIterable {
+    public enum Kind: Sendable {
         case oneOnOne
         case standup
         case clientCall

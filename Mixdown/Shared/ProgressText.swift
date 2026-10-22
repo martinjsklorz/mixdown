@@ -1,8 +1,16 @@
 import Foundation
 
 /// Wording for model download and transcription progress, shared by the menu bar, the menu,
-/// the main window, Settings and the setup assistant.
+/// the main window, Settings and the setup assistant, and for the time recorded.
 enum ProgressText {
+    /// The time recorded: "0:16", "12:05", "1:02:03".
+    static func elapsed(_ seconds: Int) -> String {
+        let duration = Duration.seconds(seconds)
+        return seconds >= 3600
+            ? duration.formatted(.time(pattern: .hourMinuteSecond))
+            : duration.formatted(.time(pattern: .minuteSecond))
+    }
+
     /// "34% · about 6 min left", or "34% · estimating time left…" until there's an estimate.
     static func detail(progress: Double, remaining: TimeInterval?) -> String {
         "\(percentText(progress)) · \(remaining.map(remainingText) ?? "estimating time left…")"
