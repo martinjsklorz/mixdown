@@ -1745,6 +1745,94 @@ struct RecordingCoordinatorTests {
         await coordinator.stopRecording()
     }
 
+    // MARK: - Still recording?
+
+    @Test func asksIfStillRecordingAfterNoSpeech() async throws {
+        let capture = MockCapture(chunks: [Fixtures.chunk(seconds: 1, amplitude: 0)])
+        let coordinator = makeCoordinator(capture: capture)
+        coordinator.stillRecordingDelay = .milliseconds(50)
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        #expect(!coordinator.isAskingIfStillRecording)
+        try await waitUntil { coordinator.isAskingIfStillRecording }
+
+        await coordinator.stopRecording()
+        #expect(!coordinator.isAskingIfStillRecording)
+    }
+
+    @Test func speechAnswersStillRecording() async throws {
+        let capture = MockCapture(chunks: [Fixtures.chunk(seconds: 1, amplitude: 0)])
+        let coordinator = makeCoordinator(capture: capture)
+        coordinator.stillRecordingDelay = .milliseconds(50)
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        try await waitUntil { coordinator.isAskingIfStillRecording }
+
+        // Loud after silence, so it's speech.
+        capture.yield(Fixtures.chunk(seconds: 0.2))
+        try await waitUntil { !coordinator.isAskingIfStillRecording }
+
+        await coordinator.stopRecording()
+    }
+
+    @Test func keepRecordingAsksAgainOnlyAfterAnotherDelay() async throws {
+        let capture = MockCapture(chunks: [Fixtures.chunk(seconds: 1, amplitude: 0)])
+        let coordinator = makeCoordinator(capture: capture)
+        coordinator.stillRecordingDelay = .milliseconds(300)
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        try await waitUntil { coordinator.isAskingIfStillRecording }
+
+        coordinator.keepRecording()
+        #expect(!coordinator.isAskingIfStillRecording)
+        #expect(coordinator.isRecording)
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(!coordinator.isAskingIfStillRecording)
+        try await waitUntil { coordinator.isAskingIfStillRecording }
+
+        await coordinator.stopRecording()
+    }
+
+    @Test func neverAsksIfStillRecordingWhenTurnedOff() async throws {
+        let capture = MockCapture(chunks: [Fixtures.chunk(seconds: 1, amplitude: 0)])
+        let coordinator = makeCoordinator(capture: capture)
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(!coordinator.isAskingIfStillRecording)
+
+        // Turned on mid-recording, it counts from then.
+        coordinator.stillRecordingDelay = .milliseconds(50)
+        try await waitUntil { coordinator.isAskingIfStillRecording }
+
+        coordinator.stillRecordingDelay = nil
+        #expect(!coordinator.isAskingIfStillRecording)
+
+        await coordinator.stopRecording()
+    }
+
+    @Test func pausingAnswersStillRecording() async throws {
+        let capture = MockCapture(chunks: [Fixtures.chunk(seconds: 1, amplitude: 0)])
+        let coordinator = makeCoordinator(capture: capture)
+        coordinator.stillRecordingDelay = .milliseconds(50)
+        await coordinator.monitorDevices()
+
+        await coordinator.startRecording()
+        try await waitUntil { coordinator.isAskingIfStillRecording }
+
+        await coordinator.pauseRecording()
+        #expect(!coordinator.isAskingIfStillRecording)
+        // Paused time doesn't count.
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(!coordinator.isAskingIfStillRecording)
+
+        await coordinator.stopRecording()
+    }
+
     @Test func sourceFailingToStartStopsTheOthers() async {
         let error = AudioCaptureError.deviceUnavailable("Couldn't create the system audio tap")
         let microphone = MockCapture()

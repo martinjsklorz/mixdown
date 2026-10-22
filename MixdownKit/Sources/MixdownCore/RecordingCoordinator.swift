@@ -149,6 +149,20 @@ public final class RecordingCoordinator {
     /// the time other apps play audio.
     var silenceWarningDelay: Duration = .seconds(10)
 
+    /// Whether the recording has gone `stillRecordingDelay` without anyone speaking, on any input,
+    /// so it may have been left running by mistake, e.g. after a meeting ended. Cleared once
+    /// someone speaks, the recording is paused or stops, or by `keepRecording()`.
+    public private(set) var isAskingIfStillRecording = false
+
+    /// How long a recording may go without speech before `isAskingIfStillRecording`; `nil` to
+    /// never ask. Time spent paused doesn't count. Changing it starts the wait over.
+    public var stillRecordingDelay: Duration? {
+        didSet {
+            guard stillRecordingDelay != oldValue, let session else { return }
+            startStillRecordingCheck(for: session)
+        }
+    }
+
     /// How long to wait before trying to save `pendingNotes` again, while there's a `noteWriter`
     /// that failed to write them.
     var pendingNoteRetryInterval: Duration = .seconds(30)
@@ -274,6 +288,11 @@ public final class RecordingCoordinator {
     @ObservationIgnored private var heardDeviceIDs: Set<String> = []
     /// Add each recording device to `silentDevices` once `silenceWarningDelay` has passed, by ID.
     @ObservationIgnored private var silenceChecks: [String: Task<Void, Never>] = [:]
+    /// Sets `isAskingIfStillRecording` once the recording has gone `stillRecordingDelay` without
+    /// speech.
+    @ObservationIgnored private var stillRecordingCheck: Task<Void, Never>?
+    /// Set when someone speaks or the user answers, so `stillRecordingCheck` starts counting again.
+    @ObservationIgnored private var restartsQuietTime = false
     /// Fed by whichever of preparing and transcribing is running.
     private var progressEstimator = RemainingTimeEstimator()
     /// Per-track progress of the transcription in flight.
@@ -791,6 +810,7 @@ public final class RecordingCoordinator {
             attach(started, to: addLane(kind: started.device.kind, to: session), in: session)
         }
         phase = .recording(startedAt: session.startedAt)
+        startStillRecordingCheck(for: session)
         let names = devices.map(\.name).joined(separator: " + ")
         logger.info("Recording started on \(names, privacy: .public)")
         // Catches devices that changed while the captures were starting.
@@ -1044,6 +1064,7 @@ public final class RecordingCoordinator {
         liveCaptioning?.cancel()
         liveCaptioning = nil
         resetLevels()
+        stopStillRecordingCheck()
         let lanes = await endCaptures(of: session)
         let liveError = await finishLiveTranscription(of: session)
         await finish(session, lanes: lanes, interruption: interruption ?? liveError)
@@ -1606,6 +1627,8 @@ public final class RecordingCoordinator {
         // Already set if no input started again since the last pause, which then still counts.
         session.pausedAt = session.pausedAt ?? hostClock()
         phase = .paused(recorded: max(now().timeIntervalSince(startedAt), 0))
+        // Pausing is an answer too; the wait starts over once it resumes.
+        if isAskingIfStillRecording { isAskingIfStillRecording = false }
         let running = session.takeCurrentCaptures()
         for capture in running {
             clearLevel(of: capture.device)
@@ -1832,7 +1855,12 @@ public final class RecordingCoordinator {
         guard let session, session.id == sessionID, session.activeDevices.contains(where: { $0.id == deviceID })
         else { return }
         inputLevels[deviceID] = level
-        if speech > 0 { talkTime?.add(speech, from: kind) }
+        if speech > 0 {
+            talkTime?.add(speech, from: kind)
+            restartsQuietTime = true
+            // Only when it changes: levels come about ten times a second.
+            if isAskingIfStillRecording { isAskingIfStillRecording = false }
+        }
         if !level.isSilent, heardDeviceIDs.insert(deviceID).inserted {
             silenceChecks.removeValue(forKey: deviceID)?.cancel()
             silentDevices.removeAll { $0.id == deviceID }
@@ -1866,6 +1894,50 @@ public final class RecordingCoordinator {
         else { return }
         silentDevices.append(device)
         logger.info("No sound yet from \(device.name, privacy: .public)")
+    }
+
+    // MARK: - Still recording?
+
+    /// Answers `isAskingIfStillRecording`: the recording goes on, and is asked about again only
+    /// after another `stillRecordingDelay` without speech.
+    public func keepRecording() {
+        guard isAskingIfStillRecording else { return }
+        isAskingIfStillRecording = false
+        restartsQuietTime = true
+        logger.info("Still recording")
+    }
+
+    /// Counts the time `session` records without speech, in tenths of `stillRecordingDelay`, and
+    /// asks whether it's still recording once that's passed. Speech, an answer, or a pause start
+    /// the count over.
+    private func startStillRecordingCheck(for session: Session) {
+        stopStillRecordingCheck()
+        guard let delay = stillRecordingDelay, delay > .zero else { return }
+        stillRecordingCheck = Task { [weak self] in
+            let step = delay / 10
+            var quietFor = Duration.zero
+            while true {
+                try? await Task.sleep(for: step)
+                guard !Task.isCancelled, let self, self.session === session else { return }
+                if self.restartsQuietTime || session.isPaused {
+                    self.restartsQuietTime = false
+                    quietFor = .zero
+                    continue
+                }
+                quietFor += step
+                if quietFor >= delay, !self.isAskingIfStillRecording {
+                    self.isAskingIfStillRecording = true
+                    self.logger.info("No speech for \(quietFor.components.seconds) s; asking if still recording")
+                }
+            }
+        }
+    }
+
+    private func stopStillRecordingCheck() {
+        stillRecordingCheck?.cancel()
+        stillRecordingCheck = nil
+        restartsQuietTime = false
+        if isAskingIfStillRecording { isAskingIfStillRecording = false }
     }
 
     /// Forgets the level of a device the recording no longer records from.

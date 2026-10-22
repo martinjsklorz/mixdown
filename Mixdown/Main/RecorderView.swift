@@ -81,6 +81,9 @@ struct RecorderView: View {
                 recordingControls(for: coordinator)
                 caption("Recording · click to stop")
                 InputLevelsView(coordinator: coordinator)
+                if coordinator.isAskingIfStillRecording {
+                    stillRecordingQuestion(for: coordinator)
+                }
                 summaryTemplatePicker(for: coordinator)
 
             case .paused(let recorded):
@@ -142,6 +145,28 @@ struct RecorderView: View {
         }
         .multilineTextAlignment(.center)
         .animation(.default, value: coordinator.isRecording)
+        .animation(.default, value: coordinator.isAskingIfStillRecording)
+    }
+
+    /// Asks whether the recording was left running, after a while without speech. Speaking
+    /// answers it too.
+    private func stillRecordingQuestion(for coordinator: RecordingCoordinator) -> some View {
+        VStack(spacing: 8) {
+            Label(
+                "Still recording? \(StillRecordingPrompt.message(for: coordinator.stillRecordingDelay))",
+                systemImage: "waveform.slash"
+            )
+            .foregroundStyle(.orange)
+            .font(.callout)
+            HStack {
+                Button("Stop Recording") {
+                    Task { await coordinator.stopRecording() }
+                }
+                Button("Keep Recording") { coordinator.keepRecording() }
+            }
+            .controlSize(.small)
+        }
+        .transition(.opacity)
     }
 
     /// Stop in the middle, as when starting, with Mark Moment on one side and Pause or Resume on

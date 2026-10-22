@@ -59,6 +59,9 @@ struct AppSettings {
         static let notifiesAboutCalls = "notifiesAboutCalls"
         /// Whether to start and stop recording with calls. Absent means no.
         static let recordsCallsAutomatically = "recordsCallsAutomatically"
+        /// Minutes without speech before Mixdown asks whether it's still recording; 0 for never.
+        /// Absent means 15.
+        static let stillRecordingMinutes = "stillRecordingMinutes"
         /// Whether to take the system audio's echo out of the microphone. Absent means yes.
         static let cancelsEcho = "cancelsEcho"
         /// An `Appearance` raw value. Absent means `.auto`. Read with `@AppStorage`.
@@ -211,6 +214,18 @@ struct AppSettings {
         get { defaults.object(forKey: Key.cancelsEcho) as? Bool ?? true }
         nonmutating set { defaults.set(newValue, forKey: Key.cancelsEcho) }
     }
+
+    /// One of `stillRecordingMinuteChoices`, or 0 to never ask.
+    var stillRecordingMinutes: Int {
+        get {
+            guard let minutes = defaults.object(forKey: Key.stillRecordingMinutes) as? Int else { return 15 }
+            return minutes == 0 || Self.stillRecordingMinuteChoices.contains(minutes) ? minutes : 15
+        }
+        nonmutating set { defaults.set(newValue, forKey: Key.stillRecordingMinutes) }
+    }
+
+    /// What Settings offers for `stillRecordingMinutes`, besides never.
+    static let stillRecordingMinuteChoices = [5, 10, 15, 30, 60]
 
     var playsSounds: Bool {
         get { defaults.object(forKey: Key.playsSounds) as? Bool ?? true }

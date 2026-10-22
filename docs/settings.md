@@ -28,6 +28,8 @@ Press ⌘, or click the cog above the sidebar to open Settings. **Settings…** 
   while recording. See [Recording](recording.md#inputs).
 - **Echo**: **Remove echo from the microphone**: on by default. See
   [Recording calls](calls.md#echo).
+- **Silence**: **Ask if still recording after** 5, 10, 15 (the default), 30 or 60 minutes without
+  speech, or **Never**. See [Recording](recording.md#while-recording).
 - **Calls**: **Notify when calls start and end** (on) and **Record calls automatically** (off).
   See [Recording calls](calls.md#call-detection).
 

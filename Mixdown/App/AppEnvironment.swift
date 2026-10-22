@@ -54,6 +54,9 @@ final class AppEnvironment {
     private(set) var notifiesAboutCalls: Bool
     /// Whether to start and stop recording with calls, without asking. See `CallPrompt`.
     private(set) var recordsCallsAutomatically: Bool
+    /// Minutes without speech before Mixdown asks whether it's still recording; 0 for never. See
+    /// `StillRecordingPrompt`.
+    private(set) var stillRecordingMinutes: Int
     /// Whether the global shortcut (`KeyboardShortcuts.Name.toggleRecording`) starts and stops
     /// recording. Off, the shortcut is kept but released, so other apps get those keys.
     private(set) var isRecordingShortcutEnabled: Bool
@@ -86,6 +89,7 @@ final class AppEnvironment {
     @ObservationIgnored private var recordingClock: Task<Void, Never>?
     @ObservationIgnored private var recordingClockStart: Date?
     @ObservationIgnored private var callPrompt: CallPrompt?
+    @ObservationIgnored private var stillRecordingPrompt: StillRecordingPrompt?
     /// Created the first time it's shown.
     @ObservationIgnored private var dynamicIsland: DynamicIsland?
     /// The field for `momentDraft`. Created the first time it's shown.
@@ -146,6 +150,7 @@ final class AppEnvironment {
         }
         self.notifiesAboutCalls = settings.notifiesAboutCalls
         self.recordsCallsAutomatically = settings.recordsCallsAutomatically
+        self.stillRecordingMinutes = settings.stillRecordingMinutes
         self.isRecordingShortcutEnabled = settings.isRecordingShortcutEnabled
         self.showsRecordingInDynamicIsland = settings.showsRecordingInDynamicIsland
         self.islandLayout = settings.islandLayout
@@ -165,6 +170,7 @@ final class AppEnvironment {
         listenForMomentShortcut()
         listenForCatchUpShortcut()
         startCallPrompt()
+        startStillRecordingPrompt()
     }
 
     // MARK: Composition
@@ -197,6 +203,7 @@ final class AppEnvironment {
             echoCancellation: echoCancellation
         )
         coordinator.cancelsEcho = settings.cancelsEcho
+        coordinator.stillRecordingDelay = stillRecordingDelay(minutes: settings.stillRecordingMinutes)
         coordinator.translatesLiveText = settings.translatesLiveText
         coordinator.vocabulary = settings.vocabulary
         return coordinator
@@ -229,6 +236,21 @@ final class AppEnvironment {
         callPrompt.recordsAutomatically = recordsCallsAutomatically
         notificationResponder.callPrompt = callPrompt
         self.callPrompt = callPrompt
+    }
+
+    /// Asks whether to go on recording after a while without speech.
+    private func startStillRecordingPrompt() {
+        let prompt = StillRecordingPrompt(
+            coordinator: { [weak self] in self?.coordinator },
+            showRecorder: showRecorder
+        )
+        notificationResponder.stillRecordingPrompt = prompt
+        stillRecordingPrompt = prompt
+        observeStillRecording()
+    }
+
+    private static func stillRecordingDelay(minutes: Int) -> Duration? {
+        minutes > 0 ? .seconds(minutes * 60) : nil
     }
 
     // MARK: Observation
@@ -365,6 +387,20 @@ final class AppEnvironment {
         }
     }
 
+    /// Posts "Still Recording?" while the coordinator asks, and takes it away once answered.
+    private func observeStillRecording() {
+        let isAsking = withObservationTracking {
+            coordinator.isAskingIfStillRecording
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.observeStillRecording() }
+        }
+        if isAsking {
+            stillRecordingPrompt?.ask()
+        } else {
+            stillRecordingPrompt?.withdraw()
+        }
+    }
+
     /// Plays the audio cue for each phase change, such as recording starting.
     private func observePhaseForCues() {
         let phase = withObservationTracking {
@@ -466,6 +502,13 @@ final class AppEnvironment {
             settings.sourceLabels = newValue
             coordinator.sourceLabels = newValue
         }
+    }
+
+    /// Takes effect right away, even while recording.
+    func setStillRecordingMinutes(_ minutes: Int) {
+        settings.stillRecordingMinutes = minutes
+        stillRecordingMinutes = settings.stillRecordingMinutes
+        coordinator.stillRecordingDelay = Self.stillRecordingDelay(minutes: stillRecordingMinutes)
     }
 
     // MARK: Calls
