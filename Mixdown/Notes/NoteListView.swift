@@ -73,6 +73,7 @@ struct NoteListView<Footer: View>: View {
                 .padding(.bottom, 8)
             }
             .onScrollTargetVisibilityChange(idType: Row.ID.self) { visibleRows = $0 }
+            .mask(alignment: .top) { stickyHeaderMask(in: rows) }
             .overlay(alignment: .top) { stickyHeader(in: rows) }
             .onChange(of: collapsesPinned) { _, isFolded in slideRows(folding: isFolded) }
             .focusable()
@@ -168,30 +169,44 @@ struct NoteListView<Footer: View>: View {
     /// it into one list per section. The next section's header pushes it up and out as it arrives.
     @ViewBuilder
     private func stickyHeader(in rows: [Row]) -> some View {
-        // Stale for rows out of view, so only the offsets of headers in view count.
-        // Folded rows count as in view at the top of their section, but take no room.
-        let shownRows = visibleRows.compactMap { id in rows.first { $0.id == id } }.filter { !isFolded($0) }
-        if let top = shownRows.first, top.id != .header(top.group) || headerOffsets[top.group, default: 0] < 0 {
-            let group = top.group
-            let groups = sections.map(\.group)
-            let next = zip(groups, groups.dropFirst()).first { $0.0 == group }?.1
-            let nextOffset = next.flatMap { visibleRows.contains(.header($0)) ? headerOffsets[$0] : nil }
-            let push = nextOffset.map { min(0, $0 - stickyHeaderHeight) } ?? 0
-
+        if let placement = stickyHeaderPlacement(in: rows) {
             ZStack {
-                header(for: group)
+                header(for: placement.group)
                     .padding(.horizontal, 10)
-                    .background(.bar)
                     .onGeometryChange(for: CGFloat.self) {
                         $0.size.height
                     } action: {
                         stickyHeaderHeight = $0
                     }
-                    .offset(y: push)
+                    .offset(y: placement.push)
             }
             .clipped()
             // Lets clicks and scrolling through to the list, except on a header that folds.
-            .allowsHitTesting(group == .pinned)
+            .allowsHitTesting(placement.group == .pinned)
+        }
+    }
+
+    /// The section whose header stays at the top of the list, and how far up the next section's
+    /// header has pushed it, while its own header is scrolled up out of view.
+    private func stickyHeaderPlacement(in rows: [Row]) -> (group: NoteSection.Group, push: CGFloat)? {
+        // Stale for rows out of view, so only the offsets of headers in view count.
+        // Folded rows count as in view at the top of their section, but take no room.
+        let shownRows = visibleRows.compactMap { id in rows.first { $0.id == id } }.filter { !isFolded($0) }
+        guard let top = shownRows.first, top.id != .header(top.group) || headerOffsets[top.group, default: 0] < 0
+        else { return nil }
+        let groups = sections.map(\.group)
+        let next = zip(groups, groups.dropFirst()).first { $0.0 == top.group }?.1
+        let nextOffset = next.flatMap { visibleRows.contains(.header($0)) ? headerOffsets[$0] : nil }
+        return (top.group, nextOffset.map { min(0, $0 - stickyHeaderHeight) } ?? 0)
+    }
+
+    /// Hides the notes scrolled under the sticky header, so it shows the sidebar's own background
+    /// behind it: no material drawn over the list matches the sidebar's.
+    private func stickyHeaderMask(in rows: [Row]) -> some View {
+        let hiddenHeight = stickyHeaderPlacement(in: rows).map { max(0, stickyHeaderHeight + $0.push) } ?? 0
+        return VStack(spacing: 0) {
+            Color.clear.frame(height: hiddenHeight)
+            Rectangle()
         }
     }
 
