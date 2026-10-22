@@ -1,7 +1,7 @@
 import Foundation
 import FoundationModels
 import MixdownCore
-import NaturalLanguage
+import MixdownNaturalLanguage
 import os
 
 private let logger = Logger(subsystem: "app.mixdown", category: "summary")
@@ -67,7 +67,7 @@ enum SystemModelSummary {
             maxTokens: max(model.contextSize - reservedTokens, minimumPieceTokens),
             minTokens: minimumPieceTokens
         )
-        let language = languageCode(of: transcript)
+        let language = TranscriptLanguage.code(of: transcript)
         var summary = try await summarizer.summarize(transcript) { text, kind in
             do {
                 return try await respond(to: text, kind: kind, template: template, model: model, language: language)
@@ -88,14 +88,14 @@ enum SystemModelSummary {
         model: SystemLanguageModel,
         language: String?
     ) async throws -> NoteSummary {
-        let rules = instructions(for: kind, template: template, language: language)
+        let rules = SummaryPrompt.instructions(for: kind, template: template, language: language)
         let session: LanguageModelSession
         if #available(macOS 27, *) {
             session = makeSession(model: model, instructions: rules)
         } else {
             session = LanguageModelSession(model: model) { rules }
         }
-        let prompt = kind == .transcript ? "Transcript:\n\(text)" : text
+        let prompt = SummaryPrompt.prompt(for: text, kind: kind)
         // The explicit `includeSchemaInPrompt` picks the macOS 26 overload over macOS 27's
         // metadata one, whose other parameters have defaults too.
         guard template.hasFixedSections else {
@@ -119,71 +119,6 @@ enum SystemModelSummary {
     @available(macOS 27, *)
     private static func makeSession<Model: LanguageModel>(model: Model, instructions: String) -> LanguageModelSession {
         LanguageModelSession(model: model) { instructions }
-    }
-
-    static func instructions(
-        for kind: ChunkedSummarizer.Step,
-        template: SummaryTemplate,
-        language: String?
-    ) -> String {
-        let task =
-            switch kind {
-            case .transcript:
-                """
-                You summarize recordings such as meetings, calls and voice memos. The user gives you \
-                a transcript or part of one. Lines may start with the speaker's name.
-                """
-            case .combine:
-                """
-                You summarize recordings such as meetings, calls and voice memos. The user gives you \
-                summaries of consecutive parts of one recording, in order. Merge them into a single \
-                summary of the whole recording, combining points that repeat and keeping every \
-                decision and action item. Drop questions that a later part answers.
-                """
-            }
-        // The model answers in the language of its input, and the instructions and the summary's
-        // schema are English. Without a firm rule, a German recording gets an English overview.
-        let languageName = language.flatMap { Locale(identifier: "en").localizedString(forIdentifier: $0) }
-        let languageRule =
-            languageName.map { "You MUST write in \($0)." } ?? "You MUST write in the language of the transcript."
-        return """
-            \(task)\(focus(of: template).map { "\n" + $0 } ?? "")
-            Only use what's in the text; don't add anything. Be brief and concrete. \(languageRule)
-            """
-    }
-
-    /// What kind of recording `template` is for, and what matters in one.
-    static func focus(of template: SummaryTemplate) -> String? {
-        switch template {
-        case .general:
-            nil
-        case .oneOnOne:
-            """
-            The recording is a one-on-one meeting between two people, such as a manager and a team \
-            member. Look out for feedback, goals, concerns and what the two agreed on.
-            """
-        case .standup:
-            """
-            The recording is a team standup. Look out for what each person finished, what they'll \
-            work on next and what blocks them, naming the person.
-            """
-        case .clientCall:
-            """
-            The recording is a call with a client. Look out for the client's needs and requirements, \
-            what was promised to them, and the next steps on both sides.
-            """
-        }
-    }
-
-    /// The language the transcript was made in, or else the one most of its text is in. Speech
-    /// models that detect the language themselves don't report it.
-    static func languageCode(of transcript: MixdownCore.Transcript) -> String? {
-        if let language = transcript.language, !language.isEmpty { return language }
-        let recognizer = NLLanguageRecognizer()
-        // Plenty to tell the language from, without reading an hour of text.
-        recognizer.processString(String(transcript.text.prefix(4000)))
-        guard let language = recognizer.dominantLanguage, language != .undetermined else { return nil }
-        return language.rawValue
     }
 
     static func isContextOverflow(_ error: any Error) -> Bool {
@@ -218,19 +153,11 @@ struct GeneratedSummary {
         NoteSummary(
             title: title.trimmingCharacters(in: .whitespacesAndNewlines),
             overview: overview.trimmingCharacters(in: .whitespacesAndNewlines),
-            keyPoints: keyPoints.map(Self.listItem),
-            actionItems: actionItems.map(Self.listItem)
+            keyPoints: keyPoints.map(SummaryPrompt.listItem),
+            actionItems: actionItems.map(SummaryPrompt.listItem)
         )
     }
 
-    /// Drops a bullet the model sometimes writes itself, since the note adds its own.
-    static func listItem(_ text: String) -> String {
-        var item = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        for bullet in ["- ", "• ", "* "] where item.hasPrefix(bullet) {
-            item = String(item.dropFirst(bullet.count)).trimmingCharacters(in: .whitespaces)
-        }
-        return item
-    }
 }
 
 /// A summary in the fixed sections of every template but `general`.
@@ -263,9 +190,9 @@ struct GeneratedSectionedSummary {
             template: template,
             title: title.trimmingCharacters(in: .whitespacesAndNewlines),
             overview: tldr.trimmingCharacters(in: .whitespacesAndNewlines),
-            decisions: decisions.map(GeneratedSummary.listItem),
-            actionItems: actionItems.map(GeneratedSummary.listItem),
-            openQuestions: openQuestions.map(GeneratedSummary.listItem)
+            decisions: decisions.map(SummaryPrompt.listItem),
+            actionItems: actionItems.map(SummaryPrompt.listItem),
+            openQuestions: openQuestions.map(SummaryPrompt.listItem)
         )
     }
 }

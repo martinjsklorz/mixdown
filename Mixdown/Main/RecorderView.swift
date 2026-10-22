@@ -327,7 +327,7 @@ struct RecorderView: View {
     private var summaryName: String {
         guard environment.summarizesNotes else { return "Off" }
         let name = environment.summarizer.info.displayName
-        guard case .available = environment.summarizer.availability else { return "\(name) (not available)" }
+        guard case .available = environment.summaryAvailability else { return "\(name) (not available)" }
         return name
     }
 

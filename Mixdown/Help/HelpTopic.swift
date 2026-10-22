@@ -156,13 +156,13 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             ## Catch up
 
             Drifted off? Press ⌃⌥⌘C in any app while recording, or choose **Recording → Catch Me \
-            Up**. Apple Intelligence sums up the last few minutes of the live text in a few points, \
+            Up**. The summary model sums up the last few minutes of the live text in a few points, \
             in a card under the notch. It runs on your Mac, so nothing is sent anywhere and it costs \
             nothing. Click the card or press the shortcut again to close it; otherwise it closes once \
             you've had time to read it. It covers 5 minutes unless you choose otherwise under \
-            **Settings → General → Global Shortcuts**. It needs the live model and Apple \
-            Intelligence turned on, and is in the language the live text is translated into, if it \
-            is.
+            **Settings → General → Global Shortcuts**. It needs the live model and the summary \
+            model (Apple Intelligence turned on, or an open model downloaded), and is in the \
+            language the live text is translated into, if it is.
 
             ## Inputs
 
@@ -372,14 +372,24 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             """
         case .summaries:
             """
-            With Apple Intelligence turned on, each note starts with a summary: a short overview, \
-            the key points and any action items, in the language of the recording. Apple \
-            Intelligence writes it on your Mac, so the transcript doesn't leave it.
+            Each note starts with a summary: a short overview, the key points and any action \
+            items, in the language of the recording. The summary model writes it on your Mac, so \
+            the transcript doesn't leave it.
 
             The summary also names the note after its topic, e.g. "Release timeline". Calls \
             recorded from Mixdown's call notification, or automatically, are titled as calls, e.g. \
             "Call about Release timeline". Without a summary, a note is titled with the date and \
             time it was recorded.
+
+            ## Models
+
+            Pick the model under **Settings → Summary → Model**. **Apple Intelligence** is part \
+            of macOS and needs Apple Intelligence turned on in System Settings. The open models \
+            (Qwen3 1.7B, Qwen3 4B Instruct, Qwen3.5 4B and Qwen3 8B) run on your Mac with MLX and \
+            don't need Apple Intelligence: pick one, then click **Download** to fetch it once from \
+            Hugging Face (1 to 4.6 GB). Larger models write better summaries but are slower and \
+            need more memory while they summarize. The model you pick also does Catch Me Up; Chat \
+            always uses Apple Intelligence.
 
             ## Templates
 
@@ -443,7 +453,8 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
         case .privacy:
             """
             Mixdown records, transcribes and summarizes on your Mac. Your audio and transcripts \
-            never leave it. Only the speech models are downloaded.
+            never leave it. Only the speech models, and an open summary model if you pick one, \
+            are downloaded.
 
             ## Permissions
 

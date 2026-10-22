@@ -138,7 +138,8 @@ struct TranscriptionSettingsView: View {
     /// baseline and ignore a baseline offset, so the symbol's padding is cropped off and the circle
     /// sized to the menu font's cap height: it then spans baseline to cap height, like the digits.
     /// The crop is to the drawn circle, not the `alignmentRect`, which is shorter and cuts it off.
-    private static let downloadedImage: NSImage = {
+    /// Also marks downloaded summary models.
+    static let downloadedImage: NSImage = {
         let font = NSFont.menuFont(ofSize: 0)
         let configuration = NSImage.SymbolConfiguration(pointSize: font.pointSize, weight: .regular)
             .applying(NSImage.SymbolConfiguration(paletteColors: [.white, .systemGreen]))

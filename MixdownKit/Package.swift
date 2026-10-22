@@ -13,6 +13,7 @@ let package = Package(
         .library(name: "MixdownSpeechSwift", targets: ["MixdownSpeechSwift"]),
         .library(name: "MixdownAppleSpeech", targets: ["MixdownAppleSpeech"]),
         .library(name: "MixdownFoundationModels", targets: ["MixdownFoundationModels"]),
+        .library(name: "MixdownMLXLLM", targets: ["MixdownMLXLLM"]),
         .library(name: "MixdownAppleTranslation", targets: ["MixdownAppleTranslation"]),
         .library(name: "MixdownNaturalLanguage", targets: ["MixdownNaturalLanguage"]),
         .library(name: "MixdownNotes", targets: ["MixdownNotes"]),
@@ -23,6 +24,12 @@ let package = Package(
         // Only for `Memory.clearCache()` after unloading a model. speech-swift's requirement
         // (and mlx-swift-lm's pin) decides the version; this one just has to allow it.
         .package(url: "https://github.com/ml-explore/mlx-swift", from: "0.30.0"),
+        // Language models on MLX, for summaries. speech-swift pins it exactly, which decides the
+        // version; this one just has to allow it.
+        .package(url: "https://github.com/ml-explore/mlx-swift-lm", from: "3.31.0"),
+        // Tokenizers and chat templates for mlx-swift-lm, which leaves the choice to the app.
+        // speech-swift's requirement decides the version here too.
+        .package(url: "https://github.com/huggingface/swift-transformers", from: "1.1.6"),
     ],
     targets: [
         // Domain models and protocols. No third-party dependencies, no platform frameworks
@@ -56,7 +63,23 @@ let package = Package(
 
         // Foundation Models (Apple Intelligence) implementation of `Summarizer`. The only module
         // that knows about FoundationModels, so summaries can come from elsewhere too.
-        .target(name: "MixdownFoundationModels", dependencies: ["MixdownCore"]),
+        .target(name: "MixdownFoundationModels", dependencies: ["MixdownCore", "MixdownNaturalLanguage"]),
+
+        // mlx-swift-lm implementation of `Summarizer`: open models such as Qwen3, downloaded from
+        // Hugging Face with speech-swift's downloader into the speech models' folder. The only
+        // module that knows about mlx-swift-lm.
+        .target(
+            name: "MixdownMLXLLM",
+            dependencies: [
+                "MixdownCore",
+                "MixdownNaturalLanguage",
+                .product(name: "AudioCommon", package: "speech-swift"),
+                .product(name: "MLX", package: "mlx-swift"),
+                .product(name: "MLXLLM", package: "mlx-swift-lm"),
+                .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
+                .product(name: "Tokenizers", package: "swift-transformers"),
+            ]
+        ),
 
         // Translation framework implementation of `Translator`: Apple's on-device translation
         // models, which macOS downloads per language.
@@ -64,6 +87,7 @@ let package = Package(
 
         // NaturalLanguage implementation of `TextEmbedder`: Apple's on-device contextual
         // embedding models, which macOS downloads per script, for finding notes to answer from.
+        // Also tells summarizers which language a transcript is in.
         .target(name: "MixdownNaturalLanguage", dependencies: ["MixdownCore"]),
 
         // Markdown rendering and persistence of notes, and finding what Chat answers from.

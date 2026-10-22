@@ -4,6 +4,7 @@ import MixdownAppleTranslation
 import MixdownAudio
 import MixdownCore
 import MixdownFoundationModels
+import MixdownMLXLLM
 import MixdownNaturalLanguage
 import MixdownNotes
 import MixdownSpeechSwift
@@ -17,8 +18,19 @@ final class AppEnvironment {
     /// receives its engine at init.
     private(set) var coordinator: RecordingCoordinator
     private(set) var model: TranscriptionModel
-    /// Makes the summaries; `coordinator` only has it while summaries are on.
-    let summarizer: any Summarizer
+    /// The model summaries and catch-ups are made with.
+    private(set) var summaryModel: SummaryModel
+    /// Makes the summaries and catch-ups with `summaryModel`; `coordinator` only has it while
+    /// summaries are on. Replaced when the model changes.
+    private(set) var summarizer: any Summarizer
+    /// How much of `summaryModel` has downloaded, 0...1, while it downloads; `nil` otherwise.
+    private(set) var summaryModelProgress: Double?
+    /// Why `summaryModel` couldn't be downloaded or deleted, until the next try.
+    private(set) var summaryModelError: String?
+    /// Whether `summaryModel` is on disk; always true for Apple's, which macOS provides. Kept here
+    /// so views update when a download finishes, which `summarizer.availability` alone wouldn't do.
+    private(set) var isSummaryModelDownloaded: Bool
+    private(set) var isDeletingSummaryModel = false
     /// Translates transcripts, into the coordinator's `translationLanguage` when there is one.
     let translator: any Translator
     let notesFolder: NotesFolderStore
@@ -64,6 +76,7 @@ final class AppEnvironment {
     /// Shared by every coordinator, so the canceller it keeps loaded survives a model change.
     private static let echoCancellation = LocalVQEEchoCancellation()
     @ObservationIgnored private var deviceMonitor: Task<Void, Never>?
+    @ObservationIgnored private var summaryModelDownload: Task<Void, Never>?
     @ObservationIgnored private var recordingClock: Task<Void, Never>?
     @ObservationIgnored private var recordingClockStart: Date?
     @ObservationIgnored private var callPrompt: CallPrompt?
@@ -87,9 +100,10 @@ final class AppEnvironment {
     init(navigation: MainNavigation, settings: AppSettings = AppSettings()) {
         let notesFolder = NotesFolderStore(settings: settings)
         let model = settings.transcriptionModel
-        // This is the ONE place the summarizer is chosen. To use a different backend, construct
-        // any other `Summarizer` here; nothing else changes.
-        let summarizer: any Summarizer = AppleIntelligenceSummarizer()
+        // `SummaryModel.makeSummarizer()` is the ONE place the summarizer is chosen. To add a
+        // backend, give it a case there; nothing else here changes.
+        let summaryModel = settings.summaryModel
+        let summarizer = summaryModel.makeSummarizer()
         // Likewise the ONE place the translator is chosen.
         let translator: any Translator = AppleTranslator()
         let noteTrash = NoteTrash()
@@ -98,7 +112,9 @@ final class AppEnvironment {
         self.noteChat = NoteChat(answerer: AppleIntelligenceAnswerer(), embedder: NaturalLanguageEmbedder())
         self.settings = settings
         self.model = model
+        self.summaryModel = summaryModel
         self.summarizer = summarizer
+        self.isSummaryModelDownloaded = (summarizer as? MLXSummarizer)?.isDownloaded ?? true
         self.translator = translator
         self.notesFolder = notesFolder
         self.noteTrash = noteTrash
@@ -688,6 +704,80 @@ final class AppEnvironment {
     }
 
     // MARK: Summary
+
+    /// Whether `summarizer` can summarize right now, and if not, why. Read this rather than
+    /// `summarizer.availability` in views, so they update when the model finishes downloading.
+    var summaryAvailability: SummarizerAvailability {
+        _ = isSummaryModelDownloaded
+        return summarizer.availability
+    }
+
+    /// Switches the model summaries and catch-ups are made with, from the next one; a summary
+    /// under way finishes with the old model. Stops a download of the old model.
+    func setSummaryModel(_ model: SummaryModel) {
+        guard model != summaryModel else { return }
+        cancelSummaryModelDownload()
+        settings.summaryModel = model
+        summaryModel = model
+        summarizer = model.makeSummarizer()
+        summaryModelError = nil
+        isSummaryModelDownloaded = (summarizer as? MLXSummarizer)?.isDownloaded ?? true
+        if coordinator.summarizer != nil { coordinator.summarizer = summarizer }
+    }
+
+    /// Downloads `summaryModel` if Mixdown downloads it, showing progress in
+    /// `summaryModelProgress`. Keeps going while Settings is closed.
+    func downloadSummaryModel() {
+        guard summaryModelDownload == nil, let summarizer = summarizer as? MLXSummarizer else { return }
+        summaryModelError = nil
+        summaryModelProgress = 0
+        let reportProgress: @Sendable (Double) -> Void = { [weak self] fraction in
+            guard let self else { return }
+            Task { @MainActor in self.reportSummaryModelProgress(fraction, of: summarizer) }
+        }
+        summaryModelDownload = Task { [weak self] in
+            var failure: String?
+            do {
+                try await summarizer.download(progress: reportProgress)
+            } catch {
+                failure = "Couldn't download \(summarizer.model.displayName): \(error.localizedDescription)"
+            }
+            // Cancelled: `cancelSummaryModelDownload()` reset the state, and another download, or
+            // model, may have taken over since.
+            guard !Task.isCancelled, let self else { return }
+            self.summaryModelDownload = nil
+            self.summaryModelProgress = nil
+            self.summaryModelError = failure
+            self.isSummaryModelDownloaded = summarizer.isDownloaded
+        }
+    }
+
+    private func reportSummaryModelProgress(_ fraction: Double, of summarizer: MLXSummarizer) {
+        guard self.summarizer as? MLXSummarizer === summarizer, let progress = summaryModelProgress else { return }
+        // Hops to the main actor can arrive out of order.
+        summaryModelProgress = max(progress, fraction)
+    }
+
+    /// Stops downloading `summaryModel`. What's on disk is kept, so a new download resumes.
+    func cancelSummaryModelDownload() {
+        summaryModelDownload?.cancel()
+        summaryModelDownload = nil
+        summaryModelProgress = nil
+    }
+
+    /// Removes `summaryModel`'s files, if Mixdown downloaded them.
+    func deleteSummaryModel() async {
+        guard let summarizer = summarizer as? MLXSummarizer else { return }
+        isDeletingSummaryModel = true
+        defer { isDeletingSummaryModel = false }
+        do {
+            try await summarizer.deleteModel()
+        } catch {
+            summaryModelError = "Couldn't delete \(summarizer.model.displayName): \(error.localizedDescription)"
+        }
+        guard self.summarizer as? MLXSummarizer === summarizer else { return }
+        isSummaryModelDownloaded = summarizer.isDownloaded
+    }
 
     /// Whether notes get a summary. Takes effect from the next recording, even if the summarizer
     /// is unavailable right now; it's skipped until it becomes available.

@@ -43,8 +43,9 @@ Mixdown is already recording.
 
 ## No summary
 
-Summaries need Apple Intelligence turned on. **Settings → Summary** says why
-they aren't available on this Mac if they aren't. If summarizing fails, the note is saved with
+Summaries need Apple Intelligence turned on, or an open summary model downloaded under
+**Settings → Summary → Model**. That tab says why they aren't available on this Mac if they
+aren't. If summarizing fails, the note is saved with
 just the transcript.
 
 ## No translation
