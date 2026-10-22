@@ -1,29 +1,143 @@
 import Foundation
 import os
 
-/// The shape of a summary, chosen per kind of recording.
-public enum SummaryTemplate: String, Sendable, CaseIterable, Identifiable {
-    /// An overview, key points and action items, for any recording.
-    case general
-    case oneOnOne
-    case standup
-    case clientCall
+/// The shape of a summary and what the summarizer looks out for, chosen per kind of recording.
+///
+/// Mixdown comes with the built-in templates below. The user can edit them, add templates of their
+/// own and delete those again; built-ins can only be restored to how they came.
+public struct SummaryTemplate: Sendable, Hashable, Identifiable, Codable {
+    /// Which sections a summary has.
+    public enum Layout: String, Sendable, Hashable, Codable, CaseIterable, Identifiable {
+        /// An overview, then key points and action items.
+        case overview
+        /// TL;DR, Decisions, Action Items and Open Questions, each shown even when empty.
+        case sections
 
-    public var id: Self { self }
+        public var id: Self { self }
 
-    public var displayName: String {
-        switch self {
-        case .general: "General"
-        case .oneOnOne: "1:1"
-        case .standup: "Standup"
-        case .clientCall: "Client Call"
+        public var displayName: String {
+            switch self {
+            case .overview: "Overview, Key Points, Action Items"
+            case .sections: "TL;DR, Decisions, Action Items, Open Questions"
+            }
         }
     }
 
+    /// Stable across edits. A built-in's is a word like `oneOnOne`, written to notes' frontmatter.
+    public let id: String
+    public var name: String
+    /// What kind of recording the template is for and what matters in one, for the model. May be
+    /// empty.
+    public var instructions: String
+    public var layout: Layout
+
+    public init(id: String, name: String, instructions: String = "", layout: Layout = .overview) {
+        self.id = id
+        self.name = name
+        self.instructions = instructions
+        self.layout = layout
+    }
+
+    /// The name, or a stand-in while it's blank.
+    public var displayName: String {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? "Untitled Template" : name
+    }
+
     /// Whether summaries have the fixed sections TL;DR, Decisions, Action Items and Open
-    /// Questions, instead of an overview and key points. All but `general` do; they differ in what
-    /// the summarizer looks out for.
-    public var hasFixedSections: Bool { self != .general }
+    /// Questions, instead of an overview and key points.
+    public var hasFixedSections: Bool { layout == .sections }
+
+    public var isBuiltIn: Bool { Self.builtIn(id: id) != nil }
+
+    /// Whether this is a built-in the user changed.
+    public var isEdited: Bool { Self.builtIn(id: id).map { $0 != self } ?? false }
+
+    /// Most characters of `instructions`, so they leave the model room for the transcript.
+    public static let maximumInstructionsLength = 1000
+
+    // MARK: Built-in templates
+
+    /// An overview, key points and action items, for any recording. The fallback when a chosen
+    /// template is gone.
+    public static let general = SummaryTemplate(id: "general", name: "General")
+    public static let oneOnOne = SummaryTemplate(
+        id: "oneOnOne",
+        name: "1:1",
+        instructions: "The recording is a one-on-one meeting between two people, such as a manager and a team "
+            + "member. Look out for feedback, goals, concerns and what the two agreed on.",
+        layout: .sections
+    )
+    public static let standup = SummaryTemplate(
+        id: "standup",
+        name: "Standup",
+        instructions: "The recording is a team standup. Look out for what each person finished, what they'll "
+            + "work on next and what blocks them, naming the person.",
+        layout: .sections
+    )
+    public static let clientCall = SummaryTemplate(
+        id: "clientCall",
+        name: "Client Call",
+        instructions: "The recording is a call with a client. Look out for the client's needs and requirements, "
+            + "what was promised to them, and the next steps on both sides.",
+        layout: .sections
+    )
+
+    public static let builtIns = [general, oneOnOne, standup, clientCall]
+
+    /// The built-in template with `id`, as it came.
+    public static func builtIn(id: String) -> SummaryTemplate? {
+        builtIns.first { $0.id == id }
+    }
+
+    // MARK: Lists of templates
+
+    /// `stored` as a list to offer: every built-in, edited or not, first in their own order, then
+    /// the user's templates in theirs. Templates with an id already in the list are dropped.
+    public static func list(from stored: [SummaryTemplate]) -> [SummaryTemplate] {
+        let builtIns = builtIns.map { builtIn in stored.first { $0.id == builtIn.id } ?? builtIn }
+        var ids = Set(builtIns.map(\.id))
+        return builtIns + stored.filter { ids.insert($0.id).inserted }
+    }
+
+    /// A new template of the user's, named so it stands out from those in `templates`, e.g.
+    /// "New Template 2".
+    public static func new(in templates: [SummaryTemplate]) -> SummaryTemplate {
+        let names = Set(templates.map(\.displayName))
+        let name =
+            (1...).lazy.map { $0 == 1 ? "New Template" : "New Template \($0)" }.first { !names.contains($0) }
+            ?? "New Template"
+        return SummaryTemplate(id: "custom-\(UUID().uuidString)", name: name)
+    }
+
+    /// A template of the user's with the same layout and instructions as `template`, named as a
+    /// copy, e.g. "Standup Copy".
+    public static func copy(of template: SummaryTemplate, in templates: [SummaryTemplate]) -> SummaryTemplate {
+        let names = Set(templates.map(\.displayName))
+        let base = "\(template.displayName) Copy"
+        let name = (1...).lazy.map { $0 == 1 ? base : "\(base) \($0)" }.first { !names.contains($0) } ?? base
+        return SummaryTemplate(
+            id: "custom-\(UUID().uuidString)",
+            name: name,
+            instructions: template.instructions,
+            layout: template.layout
+        )
+    }
+
+    // MARK: Codable
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, instructions, layout
+    }
+
+    /// Lenient, so one odd field doesn't lose all of the user's templates.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
+        instructions = try container.decodeIfPresent(String.self, forKey: .instructions) ?? ""
+        layout = (try? container.decodeIfPresent(Layout.self, forKey: .layout)) ?? .overview
+    }
 }
 
 /// What a summarizer makes of a transcript. Any part may be empty.
@@ -32,16 +146,15 @@ public struct NoteSummary: Sendable, Equatable {
     public var template: SummaryTemplate
     /// The topic in a few words, to name the note after.
     public var title: String
-    /// A few sentences on what the recording was about; the TL;DR of templates with fixed
-    /// sections.
+    /// A few sentences on what the recording was about; the TL;DR of the `sections` layout.
     public var overview: String
-    /// Only made with the `general` template.
+    /// Only made with the `overview` layout.
     public var keyPoints: [String]
-    /// Only made with templates with fixed sections.
+    /// Only made with the `sections` layout.
     public var decisions: [String]
     /// Tasks someone agreed to do, naming the person where the transcript does.
     public var actionItems: [String]
-    /// Questions left unanswered. Only made with templates with fixed sections.
+    /// Questions left unanswered. Only made with the `sections` layout.
     public var openQuestions: [String]
     /// ISO 639-1 code of the language the summary is written in, if known.
     public var language: String?

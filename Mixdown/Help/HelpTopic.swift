@@ -403,6 +403,13 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             Decisions, Action Items (as checkboxes) and Open Questions. A section with nothing in \
             it says _None._
 
+            Under **Settings → Templates**, change a template or add your own with **+**. A \
+            template has a name, its sections (either of the two layouts above) and \
+            instructions: what kind of recording it's for and what to look out for, e.g. "The \
+            recording is a sprint review. Look out for what was shown and the feedback on it." \
+            **Restore Default** undoes your changes to a built-in template. Deleting one of \
+            yours leaves the notes summarized with it as they are.
+
             That template is preselected for each recording. To use another one for this \
             recording only, pick it on **Record** while recording or transcribing, until the \
             summary starts.

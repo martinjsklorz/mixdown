@@ -173,20 +173,24 @@ struct RecorderView: View {
         .frame(maxWidth: 320)
     }
 
-    /// The template this recording's summary gets, preselected from Settings → Transcription and
+    /// The template this recording's summary gets, preselected from Settings → Summary and
     /// changeable until the summary is begun.
     @ViewBuilder
     private func summaryTemplatePicker(for coordinator: RecordingCoordinator) -> some View {
         if environment.summarizesNotes, let template = coordinator.recordingSummaryTemplate {
+            // Still offered if it was deleted while recording, so the picker isn't blank.
+            let templates =
+                environment.summaryTemplates.contains { $0.id == template.id }
+                ? environment.summaryTemplates : environment.summaryTemplates + [template]
             Picker(
                 "Summary:",
                 selection: Binding(
-                    get: { template },
-                    set: { coordinator.chooseSummaryTemplate($0) }
+                    get: { template.id },
+                    set: { id in templates.first { $0.id == id }.map(coordinator.chooseSummaryTemplate) }
                 )
             ) {
-                ForEach(SummaryTemplate.allCases) { template in
-                    Text(template.displayName).tag(template)
+                ForEach(templates) { template in
+                    Text(template.displayName).tag(template.id)
                 }
             }
             .fixedSize()
