@@ -10,6 +10,21 @@ struct TemplatesSettingsView: View {
     @State private var templateToDelete: SummaryTemplate?
 
     var body: some View {
+        // The other tabs are one full-width Form, whose scroll view runs under the whole toolbar
+        // and backs it. Here only the editor's Form would, leaving the toolbar items over the list
+        // without their hover highlight, so a fixed full-width scroll view backs the toolbar instead.
+        GeometryReader { proxy in
+            ScrollView {
+                content
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+                    .scrollDisabled(false)
+            }
+            .scrollDisabled(true)
+            .scrollEdgeEffectStyle(.hard, for: .top)
+        }
+    }
+
+    private var content: some View {
         HStack(spacing: 0) {
             templateList
                 .frame(width: 190)
