@@ -7,31 +7,38 @@ import MixdownCore
 /// Keeps one `MLXLanguageModel` in memory while it's used: loaded on the first answer asked for,
 /// and unloaded again once none has been for `idleUnloadDelay`. Loading it again from disk takes
 /// seconds; keeping it costs 1–5 GB.
-actor LanguageModelRuntime {
+final class LanguageModelRuntime: Sendable {
     private let model: MLXLanguageModel
-    private var container: ModelContainer?
-    private var loading: Task<ModelContainer, any Error>?
-    /// Answers being generated. The model stays loaded while there are any.
-    private var activeAnswers = 0
-    private var pendingUnload: Task<Void, Never>?
+    /// Retained by every answer being generated.
+    private let residency: ModelResidency<ModelContainer>
 
     /// Summaries come in a burst of answers, one per piece; catch-ups a few minutes apart.
     private static let idleUnloadDelay: Duration = .seconds(90)
 
     init(model: MLXLanguageModel) {
         self.model = model
+        // Switching models replaces the summarizer, so the residency's deinit frees the old model.
+        self.residency = ModelResidency(
+            name: model.displayName,
+            idleUnloadDelay: Self.idleUnloadDelay,
+            load: { _ in try await Self.load(model) },
+            // Freed weights land in MLX's buffer cache, which would keep holding the memory.
+            didUnload: { Memory.clearCache() }
+        )
     }
 
     /// The model's answer to `prompt`, in a fresh conversation so earlier pieces don't take up
     /// the context. Downloads the model if it isn't on disk. Honors task cancellation.
     func respond(instructions: String, prompt: String, maximumTokens: Int) async throws -> String {
-        activeAnswers += 1
-        pendingUnload?.cancel()
-        defer {
-            activeAnswers -= 1
-            scheduleUnload()
+        residency.retain()
+        defer { residency.release() }
+        let container: ModelContainer
+        do {
+            container = try await residency.load()
+        } catch {
+            if error is CancellationError || Task.isCancelled { throw CancellationError() }
+            throw SummarizationError.unavailable(error.localizedDescription)
         }
-        let container = try await loadedContainer()
         try Task.checkCancellation()
         let session = ChatSession(
             container,
@@ -52,76 +59,24 @@ actor LanguageModelRuntime {
         return answer
     }
 
-    func unload() {
-        pendingUnload?.cancel()
-        pendingUnload = nil
-        loading?.cancel()
-        loading = nil
-        guard container != nil else { return }
-        container = nil
-        // Freed weights land in MLX's buffer cache, which would keep holding the memory.
-        Memory.clearCache()
+    func unload() async {
+        await residency.unload()
     }
 
-    // MARK: - Loading
-
-    /// Concurrent callers share one load; a failed load is retried by the next call.
-    private func loadedContainer() async throws -> ModelContainer {
-        if let container { return container }
-        let task = loading ?? startLoading()
-        do {
-            let loaded = try await task.value
-            if container == nil { container = loaded }
-            if loading == task { loading = nil }
-            return loaded
-        } catch {
-            if loading == task { loading = nil }
-            if error is CancellationError || Task.isCancelled { throw CancellationError() }
-            throw SummarizationError.unavailable(error.localizedDescription)
+    /// Loads the model from disk, downloading what's missing or damaged first (see
+    /// `ModelDirectory.loadPreferringCache`).
+    private static func load(_ model: MLXLanguageModel) async throws -> ModelContainer {
+        let directory = try ModelFiles.directory(for: model)
+        return try await ModelDirectory.loadPreferringCache(
+            model.repositoryID,
+            cacheLooksComplete: ModelFiles.isComplete(directory),
+            progress: { _ in }
+        ) { offline, progress in
+            if !offline { try await ModelFiles.fetch(model, into: directory, progress: progress) }
+            return try await LLMModelFactory.shared.loadContainer(
+                from: directory,
+                using: TransformersTokenizerLoader()
+            )
         }
-    }
-
-    private func startLoading() -> Task<ModelContainer, any Error> {
-        let model = self.model
-        let task = Task {
-            let started = ContinuousClock.now
-            do {
-                let directory = try await ModelFiles.download(model) { _ in }
-                let container = try await LLMModelFactory.shared.loadContainer(
-                    from: directory,
-                    using: TransformersTokenizerLoader()
-                )
-                summaryLogger.info(
-                    "Loaded \(model.displayName, privacy: .public) in \(String(describing: ContinuousClock.now - started), privacy: .public)"
-                )
-                return container
-            } catch {
-                summaryLogger.error(
-                    "Loading \(model.displayName, privacy: .public) failed: \(String(describing: error), privacy: .public)"
-                )
-                throw error
-            }
-        }
-        loading = task
-        return task
-    }
-
-    // MARK: - Unloading
-
-    private func scheduleUnload() {
-        pendingUnload?.cancel()
-        guard activeAnswers == 0, container != nil else { return }
-        let delay = Self.idleUnloadDelay
-        pendingUnload = Task { [weak self] in
-            try? await Task.sleep(for: delay)
-            guard !Task.isCancelled else { return }
-            await self?.unloadIfIdle()
-        }
-    }
-
-    private func unloadIfIdle() {
-        guard activeAnswers == 0, loading == nil, container != nil else { return }
-        unload()
-        summaryLogger.info("Unloaded \(self.model.displayName, privacy: .public) after being idle")
     }
 }

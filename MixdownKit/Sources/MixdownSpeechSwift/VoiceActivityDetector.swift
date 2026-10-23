@@ -1,5 +1,6 @@
 @preconcurrency internal import AudioCommon
 import Foundation
+import MixdownCore
 @preconcurrency internal import SpeechVAD
 
 /// Silero VAD over a whole recording.
@@ -28,7 +29,7 @@ final class VoiceActivityDetector: @unchecked Sendable {
         progress: @escaping @Sendable (Double) -> Void
     ) async throws -> VoiceActivityDetector {
         let directory = try ModelCache.directory(for: repositoryID, base: cacheBase)
-        let model = try await ModelCache.loadPreferringCache(
+        let model = try await ModelDirectory.loadPreferringCache(
             repositoryID,
             cacheLooksComplete: cacheLooksComplete(in: directory),
             progress: progress

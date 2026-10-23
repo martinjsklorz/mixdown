@@ -1,4 +1,5 @@
 import Foundation
+import MixdownCore
 @preconcurrency internal import MossTranscribe
 import os
 
@@ -37,7 +38,7 @@ final class MossRecognizer: SpeechRecognizer, @unchecked Sendable {
         let directory = try ModelCache.directory(for: repositoryID, base: cacheBase)
         // Offline loads validate the whole bundle (`fromDirectory`), so a partial cache throws and
         // falls through to the online load.
-        let model = try await ModelCache.loadPreferringCache(
+        let model = try await ModelDirectory.loadPreferringCache(
             repositoryID,
             cacheLooksComplete: cacheLooksComplete(in: directory),
             progress: progress

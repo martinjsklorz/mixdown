@@ -84,35 +84,4 @@ enum ModelCache {
     static func contains(_ files: [String], in directory: URL) -> Bool {
         files.allSatisfy { FileManager.default.fileExists(atPath: directory.appendingPathComponent($0).path) }
     }
-
-    /// Loads from disk without touching the network first, then falls back to an online load.
-    ///
-    /// speech-swift's online path always asks the Hub for the file list, so starting offline keeps
-    /// launches fast and makes cached models work without a connection. Progress is only forwarded
-    /// for the online attempt, so a failed offline attempt doesn't leave the bar stuck partway.
-    static func loadPreferringCache<Model>(
-        _ repositoryID: String,
-        cacheLooksComplete: Bool,
-        progress: @escaping @Sendable (Double) -> Void,
-        load: (_ offline: Bool, _ progress: @escaping @Sendable (Double) -> Void) async throws -> Model
-    ) async throws -> Model {
-        if cacheLooksComplete {
-            do {
-                let model = try await load(true) { _ in }
-                progress(1)
-                transcriptionLogger.info("Loaded \(repositoryID, privacy: .public) from cache")
-                return model
-            } catch let error as CancellationError {
-                throw error
-            } catch {
-                transcriptionLogger.notice(
-                    "Cached \(repositoryID, privacy: .public) unusable, downloading: \(String(describing: error), privacy: .public)"
-                )
-            }
-        }
-        transcriptionLogger.info("Downloading \(repositoryID, privacy: .public)")
-        let model = try await load(false, progress)
-        progress(1)
-        return model
-    }
 }

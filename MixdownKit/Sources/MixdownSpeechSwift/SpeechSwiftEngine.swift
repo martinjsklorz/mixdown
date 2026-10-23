@@ -26,17 +26,12 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
     public nonisolated var transcribesLive: Bool { model.isLive }
 
     private nonisolated let model: SpeechSwiftModel
-    private var models: LoadedModels?
-    private var loading: (task: Task<LoadedModels, any Error>, progress: ProgressRelay)?
+    /// Retained by every transcription, running or queued, and every recording between
+    /// `recordingWillStart()` and `recordingDidFinish()`.
+    private nonisolated let residency: ModelResidency<LoadedModels>
     /// Transcriptions run one after another: the model instances aren't thread-safe, and actor
     /// reentrancy alone would let a second transcription interleave at the `await`s.
     private let transcriptions = SerialTaskQueue()
-    /// Transcriptions running or queued. The models stay loaded while there are any.
-    private var activeTranscriptions = 0
-    /// Recordings between `recordingWillStart()` and `recordingDidFinish()`. The models stay loaded
-    /// while there are any. Outside the actor, so starting a recording never waits on it.
-    private nonisolated let activeRecordings = Mutex(0)
-    private var pendingUnload: Task<Void, Never>?
     /// Seconds of audio per second of recognition, as last measured on this Mac.
     private var measuredSpeed: Double?
 
@@ -47,19 +42,17 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
     public init(model: SpeechSwiftModel) {
         self.model = model
         self.info = TranscriptionEngineInfo(id: "speech-swift", displayName: model.displayName)
-    }
-
-    /// Switching models replaces the engine rather than calling `unload()`, so the old one frees its
-    /// memory here. Nothing is transcribing: that holds a reference.
-    deinit {
-        pendingUnload?.cancel()
-        loading?.task.cancel()
-        // A finished load task keeps its result, i.e. the models.
-        loading = nil
-        if case .offline(_, let recognizer) = models { recognizer.unload() }
-        // Released before clearing, or MOSS's weights (freed with the instance) would miss the cache clear.
-        models = nil
-        Memory.clearCache()
+        // Switching models replaces the engine, so the residency's deinit frees the old models.
+        self.residency = ModelResidency(
+            name: model.displayName,
+            idleUnloadDelay: Self.idleUnloadDelay,
+            load: { progress in try await Self.load(model, progress: progress) },
+            willUnload: { models in
+                if case .offline(_, let recognizer) = models { recognizer.unload() }
+            },
+            // Freed weights land in MLX's buffer cache, which would keep holding the memory.
+            didUnload: { Memory.clearCache() }
+        )
     }
 
     /// Loads the model (and for offline models the VAD), downloading them on first use. Concurrent
@@ -70,20 +63,19 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
     /// `CancellationError`. Files already on disk are kept, so the next call resumes from them.
     public func prepare(progress: (@Sendable (Double) -> Void)?) async throws {
         _ = try await loadedModels(progress: progress)
-        scheduleUnload()
     }
 
     /// Loads the models in the background, if they aren't already, and keeps them loaded until
     /// `recordingDidFinish()`. Otherwise a recording longer than `idleUnloadDelay` would find them
     /// unloaded when it stops, and the transcription would wait on a load from disk.
     public nonisolated func recordingWillStart() {
-        activeRecordings.withLock { $0 += 1 }
-        Task { await self.loadForRecording() }
+        residency.retain()
+        // A failure is logged, and the transcription tries again.
+        Task { [residency] in _ = try? await residency.load() }
     }
 
     public nonisolated func recordingDidFinish() {
-        activeRecordings.withLock { $0 = max($0 - 1, 0) }
-        Task { await self.scheduleUnload() }
+        residency.release()
     }
 
     /// Transcribes a whole recording of 16 kHz mono samples. Segments follow the VAD's speech regions
@@ -104,12 +96,8 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
             progress?.report(1)
             return Transcript(segments: [], language: language)
         }
-        activeTranscriptions += 1
-        pendingUnload?.cancel()
-        defer {
-            activeTranscriptions -= 1
-            scheduleUnload()
-        }
+        residency.retain()
+        defer { residency.release() }
         let transcript = try await transcriptions.run {
             try await self.performTranscription(samples, options: options, language: language, progress: progress)
         }
@@ -173,9 +161,7 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
     /// Removes the ASR model's files and drops the loaded instance. The VAD (~2 MB) is kept, since
     /// every offline model shares it.
     public func deleteModel() async throws {
-        loading?.task.cancel()
-        loading = nil
-        unload()
+        await residency.unload()
         let directory = try ModelCache.directory(for: model.repositoryID, base: Self.modelDirectory())
         try FileManager.default.removeItem(at: directory)
         transcriptionLogger.info("Deleted \(self.model.displayName, privacy: .public)")
@@ -183,117 +169,31 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
 
     // MARK: - Loading
 
+    /// Throws `TranscriptionError.modelUnavailable`, or `CancellationError`; see `prepare`.
     private func loadedModels(progress: (@Sendable (Double) -> Void)?) async throws -> LoadedModels {
-        if let models {
-            progress?(1)
-            return models
-        }
-
-        let loading = self.loading ?? startLoading()
-        if let progress { loading.progress.add(progress) }
-        let task = loading.task
         do {
-            let loaded = try await withTaskCancellationHandler {
-                try await task.value
-            } onCancel: {
-                task.cancel()
-            }
-            // A load that finished despite being cancelled is still good.
-            if models == nil { models = loaded }
-            if self.loading?.task == task { self.loading = nil }
-            return loaded
+            return try await residency.load(progress: progress)
         } catch {
-            // Cleared so the next call retries.
-            if self.loading?.task == task { self.loading = nil }
-            try Task.checkCancellation()
-            // Another caller cancelled the load this one joined; start over rather than fail.
-            if task.isCancelled {
-                return try await loadedModels(progress: progress)
-            }
+            if error is CancellationError || Task.isCancelled { throw CancellationError() }
             throw TranscriptionError.unavailable(error)
         }
     }
 
-    private func startLoading() -> (task: Task<LoadedModels, any Error>, progress: ProgressRelay) {
-        let relay = ProgressRelay()
-        let model = self.model
-        let task = Task {
-            do {
-                let loaded = try await Self.load(model, progress: relay)
-                transcriptionLogger.info("\(model.displayName, privacy: .public) ready")
-                return loaded
-            } catch {
-                if Task.isCancelled {
-                    transcriptionLogger.info("Loading \(model.displayName, privacy: .public) cancelled")
-                } else {
-                    transcriptionLogger.error(
-                        "Loading \(model.displayName, privacy: .public) failed: \(String(describing: error), privacy: .public)"
-                    )
-                }
-                throw error
-            }
-        }
-        loading = (task, relay)
-        return (task, relay)
-    }
-
-    private func loadForRecording() async {
-        pendingUnload?.cancel()
-        pendingUnload = nil
-        // `startLoading()` logs a failure, and the transcription tries again.
-        guard (try? await loadedModels(progress: nil)) != nil else { return }
-        // In case the recording finished while loading.
-        scheduleUnload()
-    }
-
-    // MARK: - Unloading
-
-    private var isInUse: Bool {
-        activeTranscriptions > 0 || activeRecordings.withLock { $0 } > 0
-    }
-
-    /// Unloads the models after `idleUnloadDelay`, unless a recording or transcription comes first.
-    private func scheduleUnload() {
-        pendingUnload?.cancel()
-        guard !isInUse, models != nil else { return }
-        let delay = Self.idleUnloadDelay
-        pendingUnload = Task { [weak self] in
-            try? await Task.sleep(for: delay)
-            guard !Task.isCancelled else { return }
-            await self?.unloadIfIdle()
-        }
-    }
-
-    private func unloadIfIdle() {
-        guard !isInUse, loading == nil, models != nil else { return }
-        unload()
-        transcriptionLogger.info("Unloaded \(self.model.displayName, privacy: .public) after being idle")
-    }
-
-    private func unload() {
-        pendingUnload?.cancel()
-        pendingUnload = nil
-        if case .offline(_, let recognizer) = models { recognizer.unload() }
-        models = nil
-        // Freed weights land in MLX's buffer cache, which would keep holding the memory.
-        Memory.clearCache()
-    }
-
-    private static func load(_ model: SpeechSwiftModel, progress: ProgressRelay) async throws -> LoadedModels {
+    private static func load(
+        _ model: SpeechSwiftModel,
+        progress: @escaping @Sendable (Double) -> Void
+    ) async throws -> LoadedModels {
         let base = try modelDirectory()
         try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         guard let recognizerType = model.recognizerType else {
-            let recognizer = try await LiveRecognizer.load(cacheBase: base) { progress.report($0) }
-            progress.report(1)
-            return .live(recognizer)
+            return .live(try await LiveRecognizer.load(cacheBase: base, progress: progress))
         }
         // The VAD is ~2 MB; give it a sliver of the bar.
-        let detector = try await VoiceActivityDetector.load(cacheBase: base) { progress.report(0.02 * $0) }
+        let detector = try await VoiceActivityDetector.load(cacheBase: base) { progress(0.02 * $0) }
         let recognizer = try await recognizerType.load(
             repositoryID: model.repositoryID,
             cacheBase: base
-        ) { progress.report(0.02 + 0.98 * $0) }
-        progress.report(1)
+        ) { progress(0.02 + 0.98 * $0) }
         return .offline(detector: detector, recognizer: recognizer)
     }
 
@@ -445,31 +345,5 @@ private final class MonotonicProgress: Sendable {
             $0 = fraction
             forward(fraction)
         }
-    }
-}
-
-/// Fans load progress out to every `prepare` caller, never moving backwards.
-private final class ProgressRelay: Sendable {
-    private struct State {
-        var observers: [@Sendable (Double) -> Void] = []
-        var value: Double = 0
-    }
-
-    private let state = Mutex(State())
-
-    func add(_ observer: @escaping @Sendable (Double) -> Void) {
-        let value = state.withLock {
-            $0.observers.append(observer)
-            return $0.value
-        }
-        observer(value)
-    }
-
-    func report(_ fraction: Double) {
-        let (observers, value) = state.withLock { current -> ([@Sendable (Double) -> Void], Double) in
-            current.value = max(current.value, min(max(fraction, 0), 1))
-            return (current.observers, current.value)
-        }
-        observers.forEach { $0(value) }
     }
 }
