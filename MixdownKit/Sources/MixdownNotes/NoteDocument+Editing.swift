@@ -92,24 +92,22 @@ extension NoteDocument {
         var bodyStart = 0
         if let end = Frontmatter.end(of: lines) {
             for key in ["speakers", "talk_labels"] {
-                guard let field = Frontmatter.fieldLines(key, in: lines, end: end),
-                    let colon = lines[field.lowerBound].firstIndex(of: ":")
-                else { continue }
-                let value = [String(lines[field.lowerBound][lines[field.lowerBound].index(after: colon)...])]
-                    + lines[field].dropFirst()
-                guard let items = Frontmatter.yamlFlowSequence(
-                    value.joined(separator: " ").trimmingCharacters(in: .whitespaces)
-                ),
-                    items.contains(old)
-                else { continue }
+                guard let field = Frontmatter.fieldLines(key, in: lines, end: end) else { continue }
+                let value = Frontmatter.value(of: lines[field])
+                guard let items = Frontmatter.yamlSequence(value), items.contains(old) else { continue }
                 var renamed = items.map { $0 == old ? new : $0 }
                 // Two speakers merged into one. Talk Time's labels stay two, for its two sides.
                 if key == "speakers" {
                     var seen = Set<String>()
                     renamed = renamed.filter { seen.insert($0).inserted }
                 }
-                let list = renamed.map(MarkdownNoteRenderer.yamlQuoted).joined(separator: ", ")
-                lines.replaceSubrange(field, with: ["\(key): [\(list)]"])
+                let quoted = renamed.map(MarkdownNoteRenderer.yamlQuoted)
+                // Written the way it was: Obsidian writes lists an item per line.
+                lines.replaceSubrange(
+                    field,
+                    with: value.first == "["
+                        ? ["\(key): [\(quoted.joined(separator: ", "))]"] : ["\(key):"] + quoted.map { "  - \($0)" }
+                )
             }
             bodyStart = (Frontmatter.end(of: lines) ?? 0) + 1
         }

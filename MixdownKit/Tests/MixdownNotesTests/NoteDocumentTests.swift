@@ -189,6 +189,50 @@ struct NoteDocumentTests {
         #expect(document.body == "Text")
     }
 
+    @Test func readsListsObsidianWritesAnItemPerLine() {
+        let contents = """
+            ---
+            title: Weekly Sync
+            sources:
+              - MacBook Pro Microphone
+              - "System Audio"
+            speakers:
+            - Me
+            - 'Anna: Client' # comment
+            -
+            talk_labels:
+              - Me
+              - Others
+            talk_microphone:
+              - 35
+              - 0
+            talk_system_audio: [12,
+              50]
+            duration: 65
+            ---
+            Text
+            """
+
+        let document = NoteDocument(url: url, contents: contents, fileDate: fileDate)
+
+        #expect(document.sources == ["MacBook Pro Microphone", "System Audio"])
+        #expect(document.speakers == ["Me", "Anna: Client"])
+        #expect(document.talkTimeline?.microphoneLabel == "Me")
+        #expect(document.talkTimeline?.microphone == [35, 0])
+        #expect(document.talkTimeline?.systemAudio == [12, 50])
+        #expect(document.duration == 65)
+        #expect(document.body == "Text")
+    }
+
+    @Test func emptyOrNestedBlockIsNoList() {
+        let contents = "---\nsources:\n  name: Mic\nsource: Fallback\nspeakers:\n---\n"
+
+        let document = NoteDocument(url: url, contents: contents, fileDate: fileDate)
+
+        #expect(document.sources == ["Fallback"])
+        #expect(document.speakers.isEmpty)
+    }
+
     @Test func unterminatedFrontmatterIsBody() {
         let contents = "---\ntitle: Nope\n\nText"
 

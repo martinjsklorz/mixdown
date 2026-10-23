@@ -3,18 +3,17 @@ import Foundation
 /// Reads the YAML frontmatter at the start of a Markdown note: just enough YAML for the fields
 /// notes have, leniently, so notes edited by hand or by other apps still read.
 enum Frontmatter {
-    /// Splits off a leading `---` … `---` block and reads its top-level `key: value` lines.
-    /// Values are kept as written; decode them with `yamlScalar(_:)` or `yamlFlowSequence(_:)`.
+    /// Splits off a leading `---` … `---` block and reads its top-level `key: value` fields.
+    /// Values are kept as written, with the lines they continue on; decode them with
+    /// `yamlScalar(_:)` or `yamlSequence(_:)`.
     static func split(_ contents: String) -> (fields: [String: String], body: String) {
-        let text = normalized(contents)
-        let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
-        guard let end = Self.end(of: lines) else { return ([:], text) }
+        let lines = normalizedLines(contents)
+        guard let end = Self.end(of: lines) else { return ([:], lines.joined(separator: "\n")) }
 
         var fields: [String: String] = [:]
-        for line in lines[1..<end] {
-            guard let key = Self.key(of: line), let colon = line.firstIndex(of: ":") else { continue }
-            let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
-            fields[key] = value
+        for index in 1..<end {
+            guard let key = Self.key(of: lines[index]) else { continue }
+            fields[key] = value(of: lines[index..<fieldEnd(after: index, in: lines, end: end)])
         }
         return (fields, lines[(end + 1)...].joined(separator: "\n"))
     }
@@ -35,8 +34,31 @@ enum Frontmatter {
     /// lines a multi-line value continues on, up to the next key.
     static func fieldLines(_ key: String, in lines: [String], end: Int) -> Range<Int>? {
         guard let index = lines[1..<end].firstIndex(where: { Self.key(of: $0) == key }) else { return nil }
-        let next = lines[(index + 1)..<end].firstIndex { $0.first.map { !$0.isWhitespace } ?? false }
-        return index..<(next ?? end)
+        return index..<fieldEnd(after: index, in: lines, end: end)
+    }
+
+    /// The value of the field on the first of `lines`, with the lines it continues on, as written:
+    /// the first line's text after the colon, then the other lines, without trailing blank lines.
+    static func value(of lines: ArraySlice<String>) -> String {
+        guard let first = lines.first, let colon = first.firstIndex(of: ":") else { return "" }
+        let value = first[first.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+        var rest = lines.dropFirst()
+        while rest.last?.allSatisfy(\.isWhitespace) == true { rest = rest.dropLast() }
+        return ([value] + rest).joined(separator: "\n")
+    }
+
+    /// The index after the lines the field on line `index` continues on: indented and blank
+    /// lines, and the `- item` lines of a block sequence, which YAML allows without indentation.
+    private static func fieldEnd(after index: Int, in lines: [String], end: Int) -> Int {
+        lines[(index + 1)..<end].firstIndex { line in
+            guard let first = line.first else { return false }
+            return !first.isWhitespace && !isSequenceItem(line)
+        } ?? end
+    }
+
+    /// Whether `line` is an item of a YAML block sequence, `- item` or a bare `-`.
+    private static func isSequenceItem<Line: StringProtocol>(_ line: Line) -> Bool {
+        line.first == "-" && line.dropFirst().first.map(\.isWhitespace) ?? true
     }
 
     /// The index of the line closing the frontmatter, if `lines` start with frontmatter.
@@ -50,15 +72,16 @@ enum Frontmatter {
 
     /// The key of a top-level `key: value` frontmatter line.
     static func key<Line: StringProtocol>(of line: Line) -> String? {
-        guard let first = line.first, !first.isWhitespace, first != "#",
+        guard let first = line.first, !first.isWhitespace, first != "#", !isSequenceItem(line),
             let colon = line.firstIndex(of: ":")
         else { return nil }
         return line[..<colon].trimmingCharacters(in: .whitespaces)
     }
 
     /// The value of a YAML scalar: quotes removed and escapes resolved, comments dropped.
-    /// An unterminated quoted value is kept as written.
+    /// An unterminated quoted value is kept as written. Only the first line is read.
     static func yamlScalar(_ raw: String) -> String {
+        let raw = String(raw.prefix { $0 != "\n" })
         if raw.first == "\"" || raw.first == "'" {
             return quotedScalar(raw[...])?.value ?? raw
         }
@@ -66,9 +89,32 @@ enum Frontmatter {
         return raw[..<comment.lowerBound].trimmingCharacters(in: .whitespaces)
     }
 
+    /// The items of a YAML sequence, or `nil` if `raw` isn't one: a flow sequence like
+    /// `["a", 'b', c]`, or a block sequence with an item per `- item` line, the way Obsidian
+    /// writes lists. Either may span lines. Empty items are dropped.
+    static func yamlSequence(_ raw: String) -> [String]? {
+        let lines = raw.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
+        if raw.first == "[" { return yamlFlowSequence(lines.joined(separator: " ")) }
+        // A block sequence's items start on the line after the key.
+        guard raw.first == "\n" else { return nil }
+
+        var items: [String] = []
+        for line in lines where !line.isEmpty && !line.hasPrefix("#") {
+            if isSequenceItem(line) {
+                items.append(line.dropFirst().trimmingCharacters(in: .whitespaces))
+            } else if let last = items.indices.last {
+                // An item continued on the next line, folded into one like YAML does.
+                items[last] += (items[last].isEmpty ? "" : " ") + line
+            } else {
+                return nil
+            }
+        }
+        return items.isEmpty ? nil : items.map(yamlScalar).filter { !$0.isEmpty }
+    }
+
     /// The items of a YAML flow sequence like `["a", 'b', c]`, or `nil` if `raw` isn't a
     /// complete one. Empty items are dropped.
-    static func yamlFlowSequence(_ raw: String) -> [String]? {
+    private static func yamlFlowSequence(_ raw: String) -> [String]? {
         guard raw.first == "[" else { return nil }
         var items: [String] = []
         var rest = raw.dropFirst()

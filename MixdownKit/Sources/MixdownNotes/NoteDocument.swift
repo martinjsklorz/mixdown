@@ -59,13 +59,13 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
         self.duration = scalars["duration"].flatMap(TimeInterval.init).flatMap {
             (0...Self.maxDuration).contains($0) ? $0 : nil
         }
-        let sources = fields["sources"].flatMap(Frontmatter.yamlFlowSequence) ?? scalars["source"].map { [$0] } ?? []
+        let sources = fields["sources"].flatMap(Frontmatter.yamlSequence) ?? scalars["source"].map { [$0] } ?? []
         self.sources = sources.filter { !$0.isEmpty }
         self.trigger = scalars["trigger"].flatMap(RecordingTrigger.init(rawValue:))
         self.template = scalars["template"].flatMap { $0.isEmpty ? nil : $0 }
         // YAML's `true`, `True` and `TRUE`.
         self.isPinned = scalars["pinned"]?.lowercased() == "true"
-        self.speakers = (fields["speakers"].flatMap(Frontmatter.yamlFlowSequence) ?? []).filter { !$0.isEmpty }
+        self.speakers = (fields["speakers"].flatMap(Frontmatter.yamlSequence) ?? []).filter { !$0.isEmpty }
         self.talkTimeline = Self.talkTimeline(fields: fields)
         self.snippet = Self.snippet(from: blocks)
         self.isCall =
@@ -105,7 +105,7 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
 
     private static func talkTimeline(fields: [String: String]) -> TalkTimeline? {
         let seconds = { (key: String) -> [TimeInterval]? in
-            guard let items = fields[key].flatMap(Frontmatter.yamlFlowSequence), !items.isEmpty else { return nil }
+            guard let items = fields[key].flatMap(Frontmatter.yamlSequence), !items.isEmpty else { return nil }
             let values = items.compactMap(TimeInterval.init)
             // `nan` fails the range check too.
             guard values.count == items.count, values.allSatisfy({ (0...TalkTimeline.interval).contains($0) })
@@ -115,7 +115,7 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
         guard let microphone = seconds("talk_microphone"), let systemAudio = seconds("talk_system_audio") else {
             return nil
         }
-        let labels = fields["talk_labels"].flatMap(Frontmatter.yamlFlowSequence) ?? []
+        let labels = fields["talk_labels"].flatMap(Frontmatter.yamlSequence) ?? []
         return TalkTimeline(
             microphoneLabel: labels.count == 2 ? labels[0] : SourceLabels.defaultMicrophone,
             systemAudioLabel: labels.count == 2 ? labels[1] : SourceLabels.defaultSystemAudio,

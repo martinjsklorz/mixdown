@@ -569,4 +569,29 @@ struct NoteLibraryTests {
         #expect(renamed.contains("Others (Speaker 2) joined. Me and"))
         #expect(try loadNotes(in: directory).first?.talkTimeline?.microphoneLabel == "Martin_K")
     }
+
+    @Test func renamingASpeakerKeepsListsObsidianWroteAnItemPerLine() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = try await MarkdownNoteWriter(directory: directory).write(speakerNote())
+        // How Obsidian's Properties editor saves the lists.
+        let obsidian = try contents(of: url)
+            .replacingOccurrences(
+                of: "speakers: [\"Others (Speaker 2)\", \"Me\", \"Others (Speaker 1)\"]",
+                with: "speakers:\n  - Others (Speaker 2)\n  - Me\n  - Others (Speaker 1)"
+            )
+            .replacingOccurrences(of: "talk_labels: [\"Me\", \"Others\"]", with: "talk_labels:\n  - Me\n  - Others")
+        #expect(obsidian.contains("speakers:\n  - Others (Speaker 2)"))
+        #expect(obsidian.contains("talk_labels:\n  - Me"))
+        try obsidian.write(to: url, atomically: true, encoding: .utf8)
+
+        #expect(try NoteLibrary.renameSpeaker("Me", to: "Martin", inNoteAt: url))
+
+        let renamed = try contents(of: url)
+        #expect(renamed.contains("speakers:\n  - \"Others (Speaker 2)\"\n  - \"Martin\"\n  - \"Others (Speaker 1)\"\n"))
+        #expect(renamed.contains("talk_labels:\n  - \"Martin\"\n  - \"Others\"\n"))
+        let note = try #require(try loadNotes(in: directory).first)
+        #expect(note.speakers == ["Others (Speaker 2)", "Martin", "Others (Speaker 1)"])
+        #expect(note.talkTimeline?.microphoneLabel == "Martin")
+    }
 }
