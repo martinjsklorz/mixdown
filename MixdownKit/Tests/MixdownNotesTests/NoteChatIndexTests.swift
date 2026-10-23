@@ -110,14 +110,87 @@ struct NoteChatIndexTests {
         #expect(index.entries.values.first?.isEmbedded == true)
     }
 
+    // MARK: Saving
+
+    private func makeDirectory() -> URL {
+        FileManager.default.temporaryDirectory
+            .appending(path: "NoteChatIndexTests-\(UUID().uuidString)", directoryHint: .isDirectory)
+    }
+
+    private func savedFiles(in directory: URL) throws -> Set<String> {
+        Set(try FileManager.default.contentsOfDirectory(atPath: directory.path(percentEncoded: false)))
+    }
+
     @Test func savesAndLoads() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
         var index = NoteChatIndex()
         try await index.update(to: [note("Sync", body: Self.sync)], embedder: WordEmbedder())
 
-        let loaded = NoteChatIndex.decoded(from: try index.encoded())
+        try index.save(in: directory)
+        let loaded = NoteChatIndex.load(from: directory)
 
+        #expect(!index.hasUnsavedChanges)
         #expect(loaded.entries.values.first?.passages == index.entries.values.first?.passages)
-        #expect(NoteChatIndex.decoded(from: Data("junk".utf8)).isEmpty)
+        #expect(!loaded.hasUnsavedChanges)
+        #expect(NoteChatIndex.load(from: directory.appending(path: "missing")).isEmpty)
+    }
+
+    @Test func savesEachNoteInItsOwnFileAndOnlyWhatChanged() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let sync = note("Sync", body: Self.sync)
+        let budget = note("Budget", body: "We need more money.")
+        var index = NoteChatIndex()
+        try await index.update(to: [sync, budget], embedder: WordEmbedder())
+        try index.save(in: directory)
+        let syncFile = NoteChatIndex.fileName(forID: sync.url.absoluteString)
+        let budgetFile = NoteChatIndex.fileName(forID: budget.url.absoluteString)
+        #expect(try savedFiles(in: directory) == [syncFile, budgetFile])
+
+        let changed = note("Budget", body: "We need less money.")
+        try await index.update(to: [sync, changed], embedder: WordEmbedder())
+        #expect(index.unsavedIDs == [changed.url.absoluteString])
+        try index.save(in: directory)
+        let reloaded = NoteChatIndex.load(from: directory)
+        #expect(reloaded.entries[budget.url.absoluteString]?.passages.first?.text == "We need less money.")
+
+        try await index.update(to: [changed], embedder: WordEmbedder())
+        #expect(index.unsavedIDs.isEmpty)
+        try index.save(in: directory)
+        #expect(try savedFiles(in: directory) == [budgetFile])
+    }
+
+    @Test func dropsFilesItCantUse() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var index = NoteChatIndex()
+        try await index.update(to: [note("Sync", body: Self.sync)], embedder: nil)
+        try index.save(in: directory)
+        try Data("junk".utf8).write(to: directory.appending(path: "junk.plist"))
+
+        let loaded = NoteChatIndex.load(from: directory)
+
+        #expect(loaded.noteCount == 1)
+        #expect(try savedFiles(in: directory).count == 1)
+    }
+
+    @Test func takesOverTheIndexEarlierVersionsSavedInOneFile() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var index = NoteChatIndex()
+        try await index.update(to: [note("Sync", body: Self.sync)], embedder: WordEmbedder())
+        let legacy = try PropertyListEncoder().encode(
+            NoteChatIndex.LegacySaved(version: NoteChatIndex.formatVersion, entries: index.entries)
+        )
+
+        var migrated = NoteChatIndex.decoded(fromLegacyFile: legacy)
+        #expect(migrated.hasUnsavedChanges)
+        try migrated.save(in: directory)
+
+        let loaded = NoteChatIndex.load(from: directory)
+        #expect(loaded.entries.values.first?.passages == index.entries.values.first?.passages)
+        #expect(NoteChatIndex.decoded(fromLegacyFile: Data("junk".utf8)).isEmpty)
     }
 
     // MARK: Searching
@@ -162,6 +235,22 @@ struct NoteChatIndexTests {
         let results = index.search("What happened?", queryEmbeddings: [], in: notes, limit: 5)
 
         #expect(results.map(\.text) == ["We moved the release.", "Remember the milk."])
+    }
+
+    @Test func questionWithoutWordsCoversAsManyNotesAsItCan() async throws {
+        var index = NoteChatIndex()
+        let summary = "## Summary\n\nFirst point.\n\n## Action Items\n\n- Second point."
+        let notes = (1...8).map { note("Note \($0)", body: summary) }
+        try await index.update(to: notes, embedder: nil)
+
+        let few = index.search("What happened?", queryEmbeddings: [], in: notes, limit: 6)
+        #expect(few.map(\.noteURL) == notes.prefix(6).map(\.url))
+        #expect(few.allSatisfy { $0.text == "First point." })
+
+        // With room to spare, the newest notes' second passages come after every note's first.
+        let more = index.search("What happened?", queryEmbeddings: [], in: Array(notes.prefix(3)), limit: 5)
+        #expect(more.map(\.text) == ["First point.", "First point.", "First point.", "Second point.", "Second point."])
+        #expect(more.map(\.noteURL) == [notes[0], notes[1], notes[2], notes[0], notes[1]].map(\.url))
     }
 
     @Test func capsPassagesPerNote() async throws {

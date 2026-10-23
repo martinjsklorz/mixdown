@@ -3,10 +3,13 @@ import MixdownNotes
 import Observation
 import SwiftUI
 
-/// The notes listed in the main window's sidebar, read from the notes folder off the main thread.
+/// The notes in the notes folder, read off the main thread. One for the whole app (see
+/// `AppEnvironment.library`), so the main window, Chat and Spotlight share one reading of the folder.
 @MainActor @Observable
 final class NoteLibraryModel {
     private(set) var notes: [NoteDocument] = []
+    /// The folder `notes` were read from; `nil` without one, or if it couldn't be read.
+    private(set) var folder: URL?
     private(set) var errorMessage: String?
     private(set) var hasLoaded = false
 
@@ -53,9 +56,11 @@ final class NoteLibraryModel {
                 // Notes written or removed since slide in and out of the sidebar; the first
                 // load just appears.
                 withAnimation(hasLoaded ? .snappy : nil) { self.notes = notes }
+                folder = directory
                 errorMessage = nil
             case .failure(let error):
                 notes = []
+                folder = nil
                 errorMessage = error.localizedDescription
             }
             hasLoaded = true
