@@ -109,6 +109,12 @@ public enum NoteLibrary {
         public init() {}
     }
 
+    /// The space the notes `loadNotes(in:cache:)` would list take up: Markdown files only, so
+    /// other files in a shared folder (an Obsidian vault's attachments, say) aren't counted.
+    public static func diskUsage(in directory: URL) -> DiskUsage {
+        DiskUsage.of(directory, options: [.skipsHiddenFiles, .skipsPackageDescendants], including: isNote)
+    }
+
     /// Whether the file at `url` would be listed as a note, judged by its name alone: a Markdown
     /// file that isn't hidden.
     private static func isNote(_ url: URL) -> Bool {

@@ -6,13 +6,17 @@ import SwiftUI
 
 /// The main menu. The View menu's sections switch what the main window shows; the File menu has
 /// the notes files and the shown note, the Recording menu recording and inputs, the Help menu
-/// Mixdown Help. Settings… comes with the `Settings` scene.
+/// Mixdown Help. About Mixdown adds how much space models and notes take up. Settings… comes with
+/// the `Settings` scene.
 struct MixdownCommands: Commands {
     let environment: AppEnvironment
     let navigation: MainNavigation
     @FocusedValue(\.shownNote) private var shownNote
 
     var body: some Commands {
+        CommandGroup(replacing: .appInfo) {
+            Button("About Mixdown") { AboutPanel.show(notesFolder: environment.notesFolder.status) }
+        }
         // Replaces New Window, which a single-instance window doesn't offer anyway.
         CommandGroup(replacing: .newItem) {
             NotesFileMenuItems(shownNote: shownNote)

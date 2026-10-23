@@ -10,6 +10,12 @@ public enum ModelDirectory {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
             .appendingPathComponent("Mixdown/Models", isDirectory: true)
     }
+
+    /// The space every downloaded model takes up, partial downloads included. Apple's speech and
+    /// language models aren't in here: macOS keeps those.
+    public static var diskUsage: DiskUsage {
+        url.map { DiskUsage.of($0) } ?? DiskUsage()
+    }
 }
 
 extension ModelDirectory {
