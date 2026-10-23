@@ -91,7 +91,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func askToQuitWhileMakingNote(_ coordinator: RecordingCoordinator) -> NSApplication.TerminateReply {
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "Mixdown is still making a note"
+        alert.messageText =
+            if let name = coordinator.importingFileName {
+                "Mixdown is still importing “\(name)”"
+            } else {
+                "Mixdown is still making a note of the recording"
+            }
         let quittingNow =
             if let name = coordinator.importingFileName {
                 "If you quit now, import “\(name)” again later."

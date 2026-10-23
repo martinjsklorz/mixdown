@@ -10,16 +10,6 @@ extension RecordingCoordinator {
         return isMakingNoteOfStoredRecording
     }
 
-    /// A recording, an unfinished recording or an imported file is being made into a note: it's
-    /// transcribed, its speakers told apart, translated or summarized, or it waits on the model.
-    public var isMakingNote: Bool {
-        switch phase {
-        case .transcribing, .identifyingSpeakers, .translating, .summarizing: true
-        case .preparingModel: isPreparingModelForRecording
-        default: false
-        }
-    }
-
     /// Idle, the model is downloaded and there's a `noteWriter`.
     public var canTranscribeUnfinishedRecordings: Bool {
         isIdle && isModelDownloaded && noteWriter != nil

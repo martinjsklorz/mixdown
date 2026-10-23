@@ -229,6 +229,16 @@ public final class RecordingCoordinator {
         if case .paused = phase { true } else { false }
     }
 
+    /// A recording, an unfinished recording or an imported file is being made into a note: it's
+    /// transcribed, its speakers told apart, translated or summarized, or it waits on the model.
+    public var isMakingNote: Bool {
+        switch phase {
+        case .transcribing, .identifyingSpeakers, .translating, .summarizing: true
+        case .preparingModel: isPreparingModelForRecording
+        default: false
+        }
+    }
+
     /// Recording, or starting to. Stopping while the captures start ends the recording as soon as
     /// they have.
     public var canStopRecording: Bool {

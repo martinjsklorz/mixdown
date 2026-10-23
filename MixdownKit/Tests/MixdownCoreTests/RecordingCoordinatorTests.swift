@@ -170,12 +170,14 @@ struct RecordingCoordinatorTests {
         await coordinator.startRecording()
         #expect(coordinator.phase == .recording(startedAt: Fixtures.startDate))
         #expect(coordinator.isRecording)
+        #expect(!coordinator.isMakingNote)
         #expect(!coordinator.canStartRecording)
         #expect(!coordinator.showsLiveTranscript)
 
         await coordinator.stopRecording()
 
         #expect(coordinator.phase == .idle)
+        #expect(!coordinator.isMakingNote)
         #expect(capture.stopCount == 1)
         #expect(await engine.receivedSampleCounts == [32_000])
         // The model was on disk, so it isn't prepared first.
