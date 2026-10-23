@@ -9,15 +9,15 @@ struct CallsToggles: View {
         Toggle(
             "Notify when calls start and end",
             isOn: Binding(
-                get: { environment.notifiesAboutCalls },
-                set: { environment.setNotifiesAboutCalls($0) }
+                get: { environment.preferences.notifiesAboutCalls },
+                set: { environment.preferences.notifiesAboutCalls = $0 }
             )
         )
         Toggle(
             "Record calls automatically",
             isOn: Binding(
-                get: { environment.recordsCallsAutomatically },
-                set: { environment.setRecordsCallsAutomatically($0) }
+                get: { environment.preferences.recordsCallsAutomatically },
+                set: { environment.preferences.recordsCallsAutomatically = $0 }
             )
         )
     }

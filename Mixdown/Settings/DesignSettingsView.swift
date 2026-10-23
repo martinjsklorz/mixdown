@@ -3,6 +3,7 @@ import SwiftUI
 /// How Mixdown looks, including while it works.
 struct DesignSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
+    private var preferences: Preferences { environment.preferences }
     @AppStorage(AppSettings.Key.appearance) private var appearance: Appearance = .auto
 
     var body: some View {
@@ -22,16 +23,16 @@ struct DesignSettingsView: View {
                 Toggle(
                     "Show recording in the Dynamic Island",
                     isOn: Binding(
-                        get: { environment.showsRecordingInDynamicIsland },
-                        set: { environment.setShowsRecordingInDynamicIsland($0) }
+                        get: { preferences.showsRecordingInDynamicIsland },
+                        set: { preferences.showsRecordingInDynamicIsland = $0 }
                     )
                 )
                 Group {
                     Picker(
                         "Time",
                         selection: Binding(
-                            get: { environment.islandLayout.timeSide },
-                            set: { side in environment.setIslandLayout(changedLayout { $0.timeSide = side }) }
+                            get: { preferences.islandLayout.timeSide },
+                            set: { preferences.islandLayout.timeSide = $0 }
                         )
                     ) {
                         ForEach(DynamicIsland.Side.allCases) { side in
@@ -42,29 +43,29 @@ struct DesignSettingsView: View {
                     Toggle(
                         "Show input levels",
                         isOn: Binding(
-                            get: { environment.islandLayout.showsLevels },
-                            set: { shows in environment.setIslandLayout(changedLayout { $0.showsLevels = shows }) }
+                            get: { preferences.islandLayout.showsLevels },
+                            set: { preferences.islandLayout.showsLevels = $0 }
                         )
                     )
                     // Shown off while it can't apply, but remembered for when it can.
                     Toggle(
                         "Show live text",
                         isOn: Binding(
-                            get: { environment.islandLayout.showsLiveText && environment.model.isLive },
-                            set: { shows in environment.setIslandLayout(changedLayout { $0.showsLiveText = shows }) }
+                            get: { preferences.islandLayout.showsLiveText && environment.model.isLive },
+                            set: { preferences.islandLayout.showsLiveText = $0 }
                         )
                     )
                     .disabled(!environment.model.isLive)
                     Toggle(
                         "Show talk share",
                         isOn: Binding(
-                            get: { environment.islandLayout.showsTalkShare && environment.measuresTalkTime },
-                            set: { shows in environment.setIslandLayout(changedLayout { $0.showsTalkShare = shows }) }
+                            get: { preferences.islandLayout.showsTalkShare && preferences.measuresTalkTime },
+                            set: { preferences.islandLayout.showsTalkShare = $0 }
                         )
                     )
-                    .disabled(!environment.measuresTalkTime)
+                    .disabled(!preferences.measuresTalkTime)
                 }
-                .disabled(!environment.showsRecordingInDynamicIsland)
+                .disabled(!preferences.showsRecordingInDynamicIsland)
             } header: {
                 Text("Recording")
             } footer: {
@@ -83,12 +84,5 @@ struct DesignSettingsView: View {
         }
         .formStyle(.grouped)
         .onChange(of: appearance) { _, appearance in appearance.apply() }
-    }
-
-    /// The island's current layout, changed by `change`.
-    private func changedLayout(_ change: (inout DynamicIsland.Layout) -> Void) -> DynamicIsland.Layout {
-        var layout = environment.islandLayout
-        change(&layout)
-        return layout
     }
 }

@@ -38,6 +38,8 @@ The speech engines sit behind one protocol (`TranscriptionEngine`), and so do th
 (`Summarizer`), the translator (`Translator`), and Chat's model (`NoteAnswerer`) and embeddings
 (`TextEmbedder`). Speech models from any engine are listed in
 `Mixdown/App/TranscriptionModel.swift`; `Mixdown/App/AppEnvironment.swift` wires everything together.
+Settings views change `Mixdown/App/Preferences.swift` directly, and `AppEnvironment.applyPreferences()`
+hands every change on to the coordinator from one place.
 
 ## In-app Help
 

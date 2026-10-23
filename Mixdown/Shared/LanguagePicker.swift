@@ -12,8 +12,8 @@ struct LanguagePicker: View {
         Picker(
             "Language",
             selection: Binding(
-                get: { environment.language },
-                set: { environment.setLanguage($0) }
+                get: { environment.preferences.language },
+                set: { environment.preferences.language = $0 }
             )
         ) {
             Text("Automatic").tag(String?.none)

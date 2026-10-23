@@ -3,7 +3,7 @@ import MixdownCore
 import SwiftUI
 
 /// A moment just marked, while the user writes a few words about it. It only goes into the note
-/// on Return; see `AppEnvironment.markMoment()`.
+/// on Return; see `IslandController.markMoment()`.
 @MainActor @Observable
 final class MomentDraft {
     /// Where in the recording it was marked. See `RecordingCoordinator.momentTime`.
@@ -20,7 +20,7 @@ final class MomentDraft {
 ///
 /// It takes the keyboard without bringing Mixdown to the front, so the app that was in front gets
 /// it back as soon as the field closes: on Return, Escape, clicking elsewhere, or after a few
-/// seconds without typing (see `AppEnvironment.markMoment()`). Should the panel not get the
+/// seconds without typing (see `IslandController.markMoment()`). Should the panel not get the
 /// keyboard that way, Mixdown comes to the front, and hands it back to that app on closing.
 @MainActor
 final class MomentEntry {
@@ -28,7 +28,7 @@ final class MomentEntry {
     /// Space between the field and the notch or island above it.
     private static let spacing: CGFloat = 6
 
-    private let environment: AppEnvironment
+    private let island: IslandController
     /// The Dynamic Island's frame while it's shown, to go under it.
     private let islandFrame: () -> NSRect?
     /// Created on the first `show(_:)`, as windows shouldn't be made before the app has launched.
@@ -39,8 +39,8 @@ final class MomentEntry {
     /// keyboard.
     private var appToReactivate: NSRunningApplication?
 
-    init(environment: AppEnvironment, islandFrame: @escaping () -> NSRect?) {
-        self.environment = environment
+    init(island: IslandController, islandFrame: @escaping () -> NSRect?) {
+        self.island = island
         self.islandFrame = islandFrame
     }
 
@@ -49,7 +49,7 @@ final class MomentEntry {
         guard draft !== shownDraft else { return }
         shownDraft = draft
         let panel = panel ?? makePanel()
-        panel.contentView = NSHostingView(rootView: MomentEntryView(environment: environment, draft: draft))
+        panel.contentView = NSHostingView(rootView: MomentEntryView(island: island, draft: draft))
         place(panel)
         panel.makeKeyAndOrderFront(nil)
         // A nonactivating panel normally gets the keyboard as it is; just in case it didn't.
@@ -91,7 +91,7 @@ final class MomentEntry {
         ) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, self.shownDraft != nil else { return }
-                self.environment.closeMomentDraft()
+                self.island.closeMomentDraft()
             }
         }
         return panel
@@ -116,7 +116,7 @@ final class MomentEntry {
 
 /// A bookmark, the moment's time, and a field for a note on it, in black like the island.
 private struct MomentEntryView: View {
-    let environment: AppEnvironment
+    let island: IslandController
     @Bindable var draft: MomentDraft
 
     /// Grows in from the notch once shown.
@@ -133,8 +133,8 @@ private struct MomentEntryView: View {
                 .fixedSize()
             MomentTextField(
                 text: $draft.text,
-                onSubmit: { environment.addMomentDraft() },
-                onCancel: { environment.closeMomentDraft() }
+                onSubmit: { island.addMomentDraft() },
+                onCancel: { island.closeMomentDraft() }
             )
         }
         .font(.system(size: 13))

@@ -4,6 +4,7 @@ import SwiftUI
 
 struct TranscriptionSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
+    private var preferences: Preferences { environment.preferences }
     @State private var isConfirmingDelete = false
     @State private var isConfirmingSpeakerModelDelete = false
     /// Whether macOS has Apple's speech model for the chosen language, for the model menu while
@@ -60,16 +61,16 @@ struct TranscriptionSettingsView: View {
                 TextField(
                     "Microphone",
                     text: Binding(
-                        get: { environment.sourceLabels.microphone },
-                        set: { environment.sourceLabels.microphone = $0 }
+                        get: { preferences.sourceLabels.microphone },
+                        set: { preferences.sourceLabels.microphone = $0 }
                     ),
                     prompt: Text(SourceLabels.defaultMicrophone)
                 )
                 TextField(
                     "System audio",
                     text: Binding(
-                        get: { environment.sourceLabels.systemAudio },
-                        set: { environment.sourceLabels.systemAudio = $0 }
+                        get: { preferences.sourceLabels.systemAudio },
+                        set: { preferences.sourceLabels.systemAudio = $0 }
                     ),
                     prompt: Text(SourceLabels.defaultSystemAudio)
                 )
@@ -87,19 +88,19 @@ struct TranscriptionSettingsView: View {
                 Toggle(
                     "Tell speakers apart",
                     isOn: Binding(
-                        get: { environment.identifiesSpeakers },
-                        set: { environment.identifiesSpeakers = $0 }
+                        get: { preferences.identifiesSpeakers },
+                        set: { environment.setIdentifiesSpeakers($0) }
                     )
                 )
                 speakerModelStatus
                 Toggle(
                     "Name speakers from the conversation",
                     isOn: Binding(
-                        get: { environment.namesSpeakers },
-                        set: { environment.namesSpeakers = $0 }
+                        get: { preferences.namesSpeakers },
+                        set: { preferences.namesSpeakers = $0 }
                     )
                 )
-                .disabled(!environment.identifiesSpeakers)
+                .disabled(!preferences.identifiesSpeakers)
             } header: {
                 Text("Speakers")
             } footer: {
@@ -107,8 +108,8 @@ struct TranscriptionSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .task(id: environment.language) {
-            isAppleSpeechInstalled = await AppleSpeechEngine.isInstalled(language: environment.language)
+        .task(id: preferences.language) {
+            isAppleSpeechInstalled = await AppleSpeechEngine.isInstalled(language: preferences.language)
         }
     }
 
@@ -133,7 +134,7 @@ struct TranscriptionSettingsView: View {
     /// Delete once it's on disk.
     @ViewBuilder
     private var speakerModelStatus: some View {
-        if let progress = environment.speakerModelProgress {
+        if let progress = environment.speakerModelDownload.progress {
             HStack {
                 ProgressView(value: progress) {
                     Text("Downloading the speaker model…")
@@ -141,24 +142,24 @@ struct TranscriptionSettingsView: View {
                     Text(progress.formatted(.percent.precision(.fractionLength(0))))
                         .monospacedDigit()
                 }
-                Button("Cancel", systemImage: "xmark.circle") { environment.cancelSpeakerModelDownload() }
+                Button("Cancel", systemImage: "xmark.circle") { environment.speakerModelDownload.cancel() }
                     .labelStyle(.iconOnly)
                     .help("Cancel")
             }
-        } else if let error = environment.speakerModelError {
+        } else if let error = environment.speakerModelDownload.error {
             HStack {
                 Text(error)
                     .foregroundStyle(.red)
                 Spacer()
-                Button("Retry", systemImage: "arrow.clockwise") { environment.downloadSpeakerModel() }
+                Button("Retry", systemImage: "arrow.clockwise") { environment.speakerModelDownload.start() }
                     .labelStyle(.titleAndIcon)
             }
-        } else if environment.isDeletingSpeakerModel {
+        } else if environment.speakerModelDownload.isDeleting {
             LabeledContent("Speaker model") {
                 ProgressView()
                     .controlSize(.small)
             }
-        } else if environment.isSpeakerModelDownloaded {
+        } else if environment.speakerModelDownload.isDownloaded {
             LabeledContent("Speaker model") {
                 Button("Delete", systemImage: "trash") { isConfirmingSpeakerModelDelete = true }
                     .labelStyle(.iconOnly)
@@ -176,9 +177,9 @@ struct TranscriptionSettingsView: View {
                         Text("This frees up disk space and turns off telling speakers apart.")
                     }
             }
-        } else if environment.identifiesSpeakers {
+        } else if preferences.identifiesSpeakers {
             LabeledContent("Speaker model") {
-                Button("Download", systemImage: "arrow.down.circle") { environment.downloadSpeakerModel() }
+                Button("Download", systemImage: "arrow.down.circle") { environment.speakerModelDownload.start() }
                     .labelStyle(.titleAndIcon)
             }
         }
@@ -199,7 +200,7 @@ struct TranscriptionSettingsView: View {
                 + "names said in the conversation, such as people introducing themselves or being asked by "
                 + "name. A speaker it can't tell stays numbered."
         )
-        if environment.namesSpeakers, case .unavailable(let reason) = environment.summaryAvailability {
+        if preferences.namesSpeakers, case .unavailable(let reason) = environment.summaryAvailability {
             lines.append(reason)
         }
         return lines.joined(separator: " ")
@@ -285,7 +286,7 @@ struct TranscriptionSettingsView: View {
         var lines: [String]
         if model.isLive {
             lines = [
-                environment.identifiesSpeakers
+                preferences.identifiesSpeakers
                     ? "The live model shows the text as you speak and saves it as the note, so the note is ready when you stop."
                     : "The live model shows the text as you speak and saves it as the note, so the note is ready when you stop and no audio is kept, however long you record.",
                 "It's less accurate than the offline models and names speakers only by input, like Me and Others.",

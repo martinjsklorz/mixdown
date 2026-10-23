@@ -6,6 +6,7 @@ import Translation
 /// translate the usual recordings.
 struct TranslationSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
+    private var preferences: Preferences { environment.preferences }
     /// BCP 47 identifiers of the languages Apple's models translate between, by name. Empty until
     /// macOS has said.
     @State private var languages: [String] = []
@@ -24,34 +25,34 @@ struct TranslationSettingsView: View {
                 Toggle(
                     "Translate recordings",
                     isOn: Binding(
-                        get: { environment.translatesNotes },
-                        set: { environment.translatesNotes = $0 }
+                        get: { preferences.translatesNotes },
+                        set: { preferences.translatesNotes = $0 }
                     )
                 )
                 Group {
                     Picker(
                         "Translate to",
                         selection: Binding(
-                            get: { environment.translationLanguage },
-                            set: { environment.setTranslationLanguage($0) }
+                            get: { preferences.translationLanguage },
+                            set: { preferences.translationLanguage = $0 }
                         )
                     ) {
                         ForEach(choices, id: \.self) { identifier in
                             Text(Self.name(of: identifier)).tag(identifier)
                         }
                     }
-                    languagePairRow(to: environment.translationLanguage)
+                    languagePairRow(to: preferences.translationLanguage)
                     // Shown off while it can't apply, but remembered for when it can.
                     Toggle(
                         "Translate live text while recording",
                         isOn: Binding(
-                            get: { environment.translatesLiveText && environment.model.isLive },
-                            set: { environment.translatesLiveText = $0 }
+                            get: { preferences.translatesLiveText && environment.model.isLive },
+                            set: { preferences.translatesLiveText = $0 }
                         )
                     )
                     .disabled(!environment.model.isLive)
                 }
-                .disabled(!environment.translatesNotes)
+                .disabled(!preferences.translatesNotes)
             } footer: {
                 Caption(footer)
             }
@@ -83,18 +84,18 @@ struct TranslationSettingsView: View {
 
     /// The languages to pick from, with the chosen one even before macOS has listed them.
     private var choices: [String] {
-        let chosen = environment.translationLanguage
+        let chosen = preferences.translationLanguage
         return languages.contains(chosen) ? languages : [chosen] + languages
     }
 
     /// What recordings are usually in: the transcription language, or the Mac's for Automatic.
     private var sourceLanguage: String {
-        environment.language ?? Locale.current.language.minimalIdentifier
+        preferences.language ?? Locale.current.language.minimalIdentifier
     }
 
     /// Which languages are shown, as `source>target`.
     private var pair: String {
-        "\(sourceLanguage)>\(environment.translationLanguage)"
+        "\(sourceLanguage)>\(preferences.translationLanguage)"
     }
 
     /// "English → German", and whether those are downloaded, with a button to download them.
@@ -174,11 +175,11 @@ struct TranslationSettingsView: View {
     }
 
     private func refreshStatus() async {
-        let target = environment.translationLanguage
+        let target = preferences.translationLanguage
         let source = sourceLanguage
         let status = await AppleTranslator.status(from: source, to: target)
         // The languages may have changed while macOS was asked.
-        guard source == sourceLanguage, target == environment.translationLanguage else { return }
+        guard source == sourceLanguage, target == preferences.translationLanguage else { return }
         self.status = status
     }
 

@@ -70,7 +70,7 @@ private struct ChatMenuItem: View {
     @Environment(AppEnvironment.self) private var environment
 
     var body: some View {
-        if environment.isChatEnabled {
+        if environment.preferences.isChatEnabled {
             SectionMenuItem("Chat", destination: .chat)
                 .keyboardShortcut("3")
         }
@@ -167,10 +167,10 @@ private struct RecordingMenuItems: View {
         }
         .keyboardShortcut("p", modifiers: [.command, .shift])
         .disabled(!coordinator.isRecording)
-        Button("Mark Moment") { environment.markMoment() }
+        Button("Mark Moment") { environment.island.markMoment() }
             .globalKeyboardShortcut(.markMoment)
             .disabled(!coordinator.isRecording)
-        Button("Catch Me Up") { environment.catchUp() }
+        Button("Catch Me Up") { environment.island.catchUp() }
             .globalKeyboardShortcut(.catchUp)
             .disabled(!coordinator.isRecording)
 

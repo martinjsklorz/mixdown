@@ -3,6 +3,7 @@ import SwiftUI
 
 struct GeneralSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
+    private var preferences: Preferences { environment.preferences }
     @AppStorage(AppSettings.Key.suppressesTrashConfirmation) private var suppressesTrashConfirmation = false
 
     var body: some View {
@@ -36,8 +37,8 @@ struct GeneralSettingsView: View {
                 Toggle(
                     "Show notes in Spotlight",
                     isOn: Binding(
-                        get: { environment.indexesNotesInSpotlight },
-                        set: { environment.setIndexesNotesInSpotlight($0) }
+                        get: { preferences.indexesNotesInSpotlight },
+                        set: { preferences.indexesNotesInSpotlight = $0 }
                     )
                 )
                 Caption("Search for any line of a note with Spotlight (⌘Space). The index stays on this Mac.")
@@ -47,7 +48,7 @@ struct GeneralSettingsView: View {
                 Toggle(
                     "Chat with your notes",
                     isOn: Binding(
-                        get: { environment.isChatEnabled },
+                        get: { preferences.isChatEnabled },
                         set: { environment.setChatEnabled($0) }
                     )
                 )
@@ -65,8 +66,8 @@ struct GeneralSettingsView: View {
                 Picker(
                     "Catch up on the last",
                     selection: Binding(
-                        get: { environment.catchUpMinutes },
-                        set: { environment.setCatchUpMinutes($0) }
+                        get: { preferences.catchUpMinutes },
+                        set: { preferences.catchUpMinutes = $0 }
                     )
                 ) {
                     ForEach(AppSettings.catchUpMinuteChoices, id: \.self) { minutes in

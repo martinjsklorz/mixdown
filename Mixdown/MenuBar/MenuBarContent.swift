@@ -15,16 +15,16 @@ struct MenuBarContent: View {
         Button(coordinator.canStopRecording ? "Stop Recording" : "Start Recording") {
             Task { await coordinator.toggleRecording() }
         }
-        .recordingShortcut(isGlobal: environment.isRecordingShortcutEnabled)
+        .recordingShortcut(isGlobal: environment.preferences.isRecordingShortcutEnabled)
         .disabled(!coordinator.canStartRecording && !coordinator.canStopRecording)
         if coordinator.isRecording {
             Button(coordinator.isPaused ? "Resume Recording" : "Pause Recording") {
                 Task { await coordinator.togglePause() }
             }
             .keyboardShortcut("p", modifiers: [.command, .shift])
-            Button("Mark Moment") { environment.markMoment() }
+            Button("Mark Moment") { environment.island.markMoment() }
                 .globalKeyboardShortcut(.markMoment)
-            Button("Catch Me Up") { environment.catchUp() }
+            Button("Catch Me Up") { environment.island.catchUp() }
                 .globalKeyboardShortcut(.catchUp)
         }
 

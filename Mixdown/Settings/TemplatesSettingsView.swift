@@ -6,6 +6,7 @@ import SwiftUI
 /// and restored; the user's own can be added, duplicated and deleted.
 struct TemplatesSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
+    private var preferences: Preferences { environment.preferences }
     @State private var selectedID: String? = SummaryTemplate.general.id
     @State private var templateToDelete: SummaryTemplate?
 
@@ -50,13 +51,13 @@ struct TemplatesSettingsView: View {
     }
 
     private var selectedTemplate: SummaryTemplate? {
-        environment.summaryTemplates.first { $0.id == selectedID }
+        preferences.summaryTemplates.templates.first { $0.id == selectedID }
     }
 
     // MARK: List
 
     private var templateList: some View {
-        let templates = environment.summaryTemplates
+        let templates = preferences.summaryTemplates.templates
         let custom = templates.filter { !$0.isBuiltIn }
 
         return VStack(spacing: 0) {
@@ -159,7 +160,7 @@ struct TemplatesSettingsView: View {
                     Button("Duplicate") { add(copying: template) }
                     Spacer()
                     if template.isBuiltIn {
-                        Button("Restore Default") { environment.restoreSummaryTemplate(id: template.id) }
+                        Button("Restore Default") { preferences.summaryTemplates.restore(id: template.id) }
                             .disabled(!template.isEdited)
                     } else {
                         Button("Delete…", role: .destructive) { templateToDelete = template }
@@ -180,13 +181,13 @@ struct TemplatesSettingsView: View {
         _ keyPath: WritableKeyPath<SummaryTemplate, Value>,
         of template: SummaryTemplate
     ) -> Binding<Value> {
-        let current = { environment.summaryTemplates.first { $0.id == template.id } ?? template }
+        let current = { preferences.summaryTemplates.templates.first { $0.id == template.id } ?? template }
         return Binding(
             get: { current()[keyPath: keyPath] },
             set: { value in
                 var edited = current()
                 edited[keyPath: keyPath] = value
-                environment.updateSummaryTemplate(edited)
+                preferences.summaryTemplates.update(edited)
             }
         )
     }
@@ -194,11 +195,11 @@ struct TemplatesSettingsView: View {
     // MARK: Actions
 
     private func add(copying original: SummaryTemplate?) {
-        selectedID = environment.addSummaryTemplate(copying: original).id
+        selectedID = preferences.summaryTemplates.add(copying: original).id
     }
 
     private func delete(_ template: SummaryTemplate) {
-        environment.deleteSummaryTemplate(id: template.id)
+        preferences.summaryTemplates.delete(id: template.id)
         if selectedID == template.id { selectedID = SummaryTemplate.general.id }
     }
 }

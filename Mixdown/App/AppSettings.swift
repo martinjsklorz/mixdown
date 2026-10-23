@@ -184,38 +184,25 @@ struct AppSettings {
         nonmutating set { defaults.set(newValue.rawValue, forKey: Key.summaryModel) }
     }
 
-    /// Every template on offer: the built-ins, edited or not, then the user's own. Only what
-    /// differs from the built-ins as they came is stored.
-    var summaryTemplates: [SummaryTemplate] {
+    /// Every template on offer and those recordings use. Only what differs from the built-ins as
+    /// they came is stored.
+    var summaryTemplates: SummaryTemplateLibrary {
         get {
             let stored =
                 defaults.data(forKey: Key.summaryTemplates).flatMap {
                     try? JSONDecoder().decode([SummaryTemplate].self, from: $0)
                 } ?? []
-            return SummaryTemplate.list(from: stored)
+            return SummaryTemplateLibrary(
+                stored: stored,
+                recordingTemplateID: defaults.string(forKey: Key.summaryTemplate),
+                callTemplateID: defaults.string(forKey: Key.callSummaryTemplate)
+            )
         }
         nonmutating set {
-            let changed = newValue.filter { !$0.isBuiltIn || $0.isEdited }
-            defaults.set(try? JSONEncoder().encode(changed), forKey: Key.summaryTemplates)
+            defaults.set(try? JSONEncoder().encode(newValue.changedTemplates), forKey: Key.summaryTemplates)
+            defaults.set(newValue.recordingTemplateID, forKey: Key.summaryTemplate)
+            defaults.set(newValue.callTemplateID, forKey: Key.callSummaryTemplate)
         }
-    }
-
-    var summaryTemplate: SummaryTemplate {
-        get { template(id: defaults.string(forKey: Key.summaryTemplate)) }
-        nonmutating set { defaults.set(newValue.id, forKey: Key.summaryTemplate) }
-    }
-
-    var callSummaryTemplate: SummaryTemplate {
-        get { template(id: defaults.string(forKey: Key.callSummaryTemplate)) }
-        nonmutating set { defaults.set(newValue.id, forKey: Key.callSummaryTemplate) }
-    }
-
-    /// The template with `id` from `summaryTemplates`, or General if there's none, e.g. because the
-    /// user deleted it.
-    private func template(id: String?) -> SummaryTemplate {
-        let templates = summaryTemplates
-        return templates.first { $0.id == id } ?? templates.first { $0.id == SummaryTemplate.general.id }
-            ?? .general
     }
 
     var cancelsEcho: Bool {

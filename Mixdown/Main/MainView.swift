@@ -173,7 +173,7 @@ struct MainView: View {
         return VStack(spacing: 0) {
             HStack(spacing: 8) {
                 SidebarSearchField(text: $searchText)
-                if environment.isChatEnabled {
+                if environment.preferences.isChatEnabled {
                     SidebarSectionButton(
                         "Chat",
                         systemImage: "bubble.left.and.text.bubble.right",

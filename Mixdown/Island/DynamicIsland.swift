@@ -31,7 +31,7 @@ final class DynamicIsland {
         /// Without levels, the island only reaches out on the time's side.
         var showsLevels = true
         /// Whether the latest words scroll by in a line under the notch. Only while the recording
-        /// is transcribed live; `AppEnvironment` turns it off otherwise.
+        /// is transcribed live; `IslandController` turns it off otherwise.
         var showsLiveText = false
         /// Whether a ring next to the time shows how the talking is shared between the user and the
         /// others. Only while recording both a microphone and system audio.
