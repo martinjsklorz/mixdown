@@ -35,6 +35,8 @@ final class AppEnvironment {
     let preferences: Preferences
     /// The Dynamic Island, and the moment field and Catch Me Up card under the notch.
     let island = IslandController()
+    /// Checks for and installs new releases; does nothing in builds from source.
+    let updater = Updater()
     let notesFolder: NotesFolderStore
     let noteTrash: NoteTrash
     /// Chat across the notes, kept while the main window is closed.

@@ -6,13 +6,17 @@ import SwiftUI
 
 /// The main menu. The View menu's sections switch what the main window shows; the File menu has
 /// the notes files and the shown note, the Recording menu recording and inputs, the Help menu
-/// Mixdown Help. Settings… comes with the `Settings` scene.
+/// Mixdown Help. Settings… comes with the `Settings` scene; Check for Updates… follows About.
 struct MixdownCommands: Commands {
     let environment: AppEnvironment
     let navigation: MainNavigation
     @FocusedValue(\.shownNote) private var shownNote
 
     var body: some Commands {
+        CommandGroup(after: .appInfo) {
+            CheckForUpdatesMenuItem()
+                .environment(environment)
+        }
         // Replaces New Window, which a single-instance window doesn't offer anyway.
         CommandGroup(replacing: .newItem) {
             NotesFileMenuItems(shownNote: shownNote)
@@ -73,6 +77,19 @@ private struct ChatMenuItem: View {
         if environment.preferences.isChatEnabled {
             SectionMenuItem("Chat", destination: .chat)
                 .keyboardShortcut("3")
+        }
+    }
+}
+
+/// Only in release builds, which have an updater.
+private struct CheckForUpdatesMenuItem: View {
+    @Environment(AppEnvironment.self) private var environment
+
+    var body: some View {
+        let updater = environment.updater
+        if updater.isAvailable {
+            Button("Check for Updates…") { updater.checkForUpdates() }
+                .disabled(!updater.canCheckForUpdates)
         }
     }
 }

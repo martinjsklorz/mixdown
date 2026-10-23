@@ -34,6 +34,12 @@
 	<string>Mixdown records your microphone to transcribe meetings and voice notes on this Mac.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Mixdown transcribes your recordings with Apple's speech model on this Mac, if you choose it in Settings.</string>
+	<key>SUFeedURL</key>
+	<string>$(SPARKLE_FEED_URL)</string>
+	<key>SUPublicEDKey</key>
+	<string>$(SPARKLE_PUBLIC_KEY)</string>
+	<key>SUEnableInstallerLauncherService</key>
+	<true/>
 	<key>NSAudioCaptureUsageDescription</key>
 	<string>Mixdown records the audio your Mac plays, such as calls and videos, to transcribe it on this Mac.</string>
 </dict>
