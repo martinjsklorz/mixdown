@@ -24,6 +24,9 @@ import os
 /// Audio and video files can be imported too, with `importAudio(from:)`. They're transcribed,
 /// translated and summarized like a recording, and saved as a note of their own.
 ///
+/// Each capture is drained by a `CaptureLoop`. Finished recordings and imported files both go
+/// through a `NotePipeline`, which turns their tracks into a saved note.
+///
 /// All dependencies are protocols, so the coordinator is fully testable with doubles and
 /// knows nothing about CoreAudio or the speech model.
 @MainActor
@@ -70,8 +73,6 @@ public final class RecordingCoordinator {
     public internal(set) var selectedDevices: [AudioInputDevice] = []
     /// When the recording in progress started, paused or not; `nil` when there's none.
     public internal(set) var recordingStartedAt: Date?
-    /// Location of the most recently written note.
-    public internal(set) var lastNoteURL: URL?
     /// Whether the current recording is transcribed live. Stays true until its note is written.
     public internal(set) var showsLiveTranscript = false
     /// What the inputs said so far while `showsLiveTranscript`, else empty.
@@ -82,24 +83,6 @@ public final class RecordingCoordinator {
     /// `liveTranscript` translated into `translationLanguage` as it's recognized, while
     /// `showsLiveTranscript` and `translatesLiveText`; else `nil`.
     public internal(set) var liveCaptions: LiveCaptions?
-    /// Saves finished notes. `nil` while there's no folder to save to; recording waits for one.
-    /// Setting it saves `pendingNotes`.
-    public var noteWriter: (any NoteWriting)? {
-        didSet {
-            noteWriterGeneration &+= 1
-            guard !pendingNotes.isEmpty else { return }
-            Task { await savePendingNotes() }
-        }
-    }
-    /// Finished notes that couldn't be saved yet, oldest first, e.g. because the notes folder is on
-    /// a drive that was disconnected or asleep when the recording finished. They're saved as soon
-    /// as there's a `noteWriter` again, and retried every `pendingNoteRetryInterval` meanwhile.
-    /// Only kept in memory, so they're lost if the app quits.
-    public internal(set) var pendingNotes: [Note] = []
-    /// True while `pendingNotes` are being written.
-    public internal(set) var isSavingPendingNotes = false
-    /// Adds a summary to each note. `nil` while summaries are off.
-    public var summarizer: (any Summarizer)?
     /// The summary template for recordings started by hand.
     public var summaryTemplate: SummaryTemplate
     /// The summary template for recordings started for a call. See `markRecordingAsCall(automatically:)`.
@@ -110,12 +93,6 @@ public final class RecordingCoordinator {
     public internal(set) var recordingSummaryTemplate: SummaryTemplate?
     /// Whether the user picked `recordingSummaryTemplate`, so marking a call keeps it.
     @ObservationIgnored var isRecordingSummaryTemplateChosen = false
-    /// Adds a translation of the transcript to each note, into `translationLanguage`. Summaries are
-    /// then made from the translation, so they're in that language too.
-    public var translator: (any Translator)?
-    /// The BCP 47 identifier of the language to translate notes into, e.g. `"de"`; `nil` while
-    /// translation is off. Read once the recording is transcribed.
-    public var translationLanguage: String?
     /// Whether a recording transcribed live is also translated into `translationLanguage` while
     /// it's recorded, as `liveCaptions`. Changes apply to the next recording.
     public var translatesLiveText = true
@@ -124,11 +101,6 @@ public final class RecordingCoordinator {
     public var options: TranscriptionOptions {
         didSet { syncEngineLanguage() }
     }
-    /// Speaker names for multi-source recordings.
-    public var sourceLabels: SourceLabels
-    /// Words to correct in each transcript, before it's translated and summarized. Read once the
-    /// recording is transcribed.
-    public var vocabulary = Vocabulary()
     /// Whether to take the echo of the system audio out of the microphones while both record, if
     /// there's an `echoCancellation`. Changes apply to the next recording.
     public var cancelsEcho = true
@@ -140,9 +112,6 @@ public final class RecordingCoordinator {
     /// "Speaker 1", "Speaker 2" and so on; `nil` while that's off. With a live engine, the system
     /// audio is kept for it while recording. Changes apply to the next recording.
     public var speakerDiarizer: (any SpeakerDiarizer)?
-    /// Renames the speakers `speakerDiarizer` told apart after what's said, where it can tell who
-    /// they are; `nil` while that's off. Read once the recording is transcribed.
-    public var speakerNamer: (any Summarizer)?
 
     /// Each source's level while recording, by device ID. Changes about ten times a second, so
     /// only read it from views that draw meters.
@@ -179,10 +148,6 @@ public final class RecordingCoordinator {
             startStillRecordingCheck(for: session)
         }
     }
-
-    /// How long to wait before trying to save `pendingNotes` again, while there's a `noteWriter`
-    /// that failed to write them.
-    var pendingNoteRetryInterval: Duration = .seconds(30)
 
     /// How long to wait after a device goes away mid-recording before picking its replacement,
     /// so the system has made another device the default by then.
@@ -253,7 +218,8 @@ public final class RecordingCoordinator {
     public var timeRemaining: TimeInterval? {
         switch phase {
         case .preparingModel where isCancellingPreparation: return nil
-        case .preparingModel, .transcribing: return progressEstimator.remaining
+        case .preparingModel: return progressEstimator.remaining
+        case .transcribing: return pipeline.timeRemaining
         default: return nil
         }
     }
@@ -280,14 +246,11 @@ public final class RecordingCoordinator {
     let echoCancellation: (any EchoCancellation)?
     /// Reads the files `importAudio(from:)` imports; without one, there's no importing.
     let audioFileDecoder: (any AudioFileDecoding)?
+    /// Transcribes, translates, summarizes and saves recordings and imports.
+    let pipeline: NotePipeline
     let now: @Sendable () -> Date
     let hostClock: @Sendable () -> TimeInterval
     let logger = Logger(subsystem: "app.mixdown", category: "coordinator")
-    /// For the captures' echo removal, which runs off the main actor.
-    nonisolated static let echoLogger = Logger(subsystem: "app.mixdown", category: "echo")
-    /// Changes with every `noteWriter`, so a save that failed can tell it has a new one to try.
-    @ObservationIgnored var noteWriterGeneration = 0
-    @ObservationIgnored var pendingNoteRetry: Task<Void, Never>?
     /// Translates the live text into `liveCaptions` while recording.
     @ObservationIgnored var liveCaptioning: Task<Void, Never>?
     /// The message of the `.failed` phase that says a note is waiting to be saved, cleared once
@@ -324,10 +287,8 @@ public final class RecordingCoordinator {
     @ObservationIgnored var stillRecordingCheck: Task<Void, Never>?
     /// Set when someone speaks or the user answers, so `stillRecordingCheck` starts counting again.
     @ObservationIgnored var restartsQuietTime = false
-    /// Fed by whichever of preparing and transcribing is running.
+    /// Fed while preparing the model; the pipeline estimates transcription itself.
     var progressEstimator = RemainingTimeEstimator()
-    /// Per-track progress of the transcription in flight.
-    @ObservationIgnored var transcriptionProgress: TranscriptionProgress?
 
     /// - Parameters:
     ///   - pendingNotes: Notes still to be saved, from the coordinator this one replaces. See
@@ -367,24 +328,26 @@ public final class RecordingCoordinator {
         engine.languageDidChange(to: options.language)
         self.engineLanguage = options.language
         self.isModelDownloaded = engine.isDownloaded
-        self.noteWriter = noteWriter
-        self.summarizer = summarizer
+        self.pipeline = NotePipeline(
+            engine: engine,
+            saver: NoteSaver(noteWriter: noteWriter, pendingNotes: pendingNotes),
+            summarizer: summarizer,
+            translator: translator,
+            translationLanguage: translationLanguage,
+            sourceLabels: sourceLabels,
+            now: now
+        )
         self.summaryTemplate = summaryTemplate
         self.callSummaryTemplate = callSummaryTemplate
-        self.translator = translator
-        self.translationLanguage = translationLanguage
         self.options = options
-        self.sourceLabels = sourceLabels
         self.preferredDeviceIDs = preferredDeviceIDs
         self.playbackMonitor = playbackMonitor
         self.echoCancellation = echoCancellation
         self.audioFileDecoder = audioFileDecoder
         self.now = now
         self.hostClock = hostClock
-        self.pendingNotes = pendingNotes
-        if !pendingNotes.isEmpty {
-            Task { await savePendingNotes() }
-        }
+        pipeline.didChangeStage = { [weak self] stage in self?.pipelineDidChange(to: stage) }
+        pipeline.saver.didSaveAll = { [weak self] in self?.pendingNotesDidSave() }
     }
 
     // MARK: - Recording

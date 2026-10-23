@@ -122,87 +122,18 @@ extension RecordingCoordinator {
         let device: AudioInputDevice
         let capture: any AudioCapturing
         /// Drains the capture stream off the main actor and returns the track.
-        let consumer: Task<CaptureResult, Never>
+        let consumer: Task<CaptureLoop.Output, Never>
         /// Feeds the audio to a live session, if the engine transcribes live. Returns the error
         /// that stopped it early, if any.
         let live: Task<(any Error)?, Never>?
     }
 
-    /// Audio a consumer is handing to the live session.
-    struct LiveFeed: Sendable {
-        let samples: [Float]
-        /// The capture's `startHostTime`, which the session's times count from.
-        let startHostTime: TimeInterval?
-    }
-
-    /// Everything a capture stream produced, plus the error that ended it early, if any.
-    struct CaptureResult: Sendable {
-        var track: AudioTrack
-        /// When there was speech, in seconds from the track's first sample.
-        var speech: [Range<TimeInterval>] = []
-        var error: (any Error)?
-    }
-
     /// A lane's captures joined into one track, and where in it each device's audio begins.
     struct LaneAudio: Sendable {
         var track: AudioTrack
-        var parts: [DevicePart] = []
+        var parts: [NotePipeline.DevicePart] = []
         /// When there was speech, in seconds from the track's first sample.
         var speech: [Range<TimeInterval>] = []
-    }
-
-    /// Where a device's audio begins in a lane's track, in seconds from its first sample.
-    struct DevicePart: Sendable {
-        let device: AudioInputDevice
-        let start: TimeInterval
-    }
-
-    /// A finished lane's audio, positioned on the recording's timeline.
-    struct RecordedTrack: Sendable {
-        /// The lane's `index`.
-        let lane: Int
-        /// The device the lane started with.
-        let device: AudioInputDevice
-        /// Which device recorded which part; more than one if the lane switched devices.
-        let parts: [DevicePart]
-        /// Empty if the lane didn't keep its audio; see `Session.keepsAudio(of:transcribesLive:)`.
-        let samples: [Float]
-        /// When there was speech, in seconds from the track's first sample.
-        let speech: [Range<TimeInterval>]
-        let duration: TimeInterval
-        /// Seconds from the start of the recording to the track's first sample.
-        let offset: TimeInterval
-
-        var end: TimeInterval { offset + duration }
-
-        /// The device recording at `time`, in seconds on the recording's timeline.
-        func device(at time: TimeInterval) -> AudioInputDevice {
-            parts.last { $0.start <= time - offset }?.device ?? device
-        }
-    }
-
-    /// Combines the progress of a recording's tracks, each weighted by its length. The engines
-    /// transcribe them one after another, at a pace that depends on how much speech each has.
-    struct TranscriptionProgress {
-        let sessionID: UUID
-        let sampleCounts: [Int]
-        var fractions: [Double]
-
-        init(sessionID: UUID, tracks: [RecordedTrack]) {
-            self.init(sessionID: sessionID, sampleCounts: tracks.map(\.samples.count))
-        }
-
-        init(sessionID: UUID, sampleCounts: [Int]) {
-            self.sessionID = sessionID
-            self.sampleCounts = sampleCounts
-            fractions = Array(repeating: 0, count: sampleCounts.count)
-        }
-
-        var total: Double {
-            let samples = Double(sampleCounts.reduce(0, +))
-            guard samples > 0 else { return 0 }
-            return zip(sampleCounts, fractions).reduce(0) { $0 + Double($1.0) * $1.1 } / samples
-        }
     }
 
     typealias CaptureStream = AsyncThrowingStream<AudioChunk, any Error>
@@ -211,20 +142,5 @@ extension RecordingCoordinator {
         let device: AudioInputDevice
         let capture: any AudioCapturing
         let stream: CaptureStream
-    }
-
-    /// One track's transcript, on the recording's timeline.
-    struct TrackTranscript {
-        let track: RecordedTrack
-        var transcript: Transcript
-        /// Per segment, its words with their times, if the engine timed them.
-        var words: [[LiveWord]]?
-    }
-
-    /// Tracks of a recording that couldn't be transcribed, and why the first of them failed.
-    struct TrackFailure {
-        /// Every device that recorded a part of the failed tracks.
-        let devices: [AudioInputDevice]
-        let error: any Error
     }
 }

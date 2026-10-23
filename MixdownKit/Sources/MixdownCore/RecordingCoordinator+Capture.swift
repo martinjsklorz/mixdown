@@ -86,107 +86,36 @@ extension RecordingCoordinator {
         return lane
     }
 
-    /// Makes `started` the lane's current capture: drains its stream into a track, watches for it
-    /// ending on its own, and checks that it isn't silent. With a live engine, also transcribes it.
+    /// Makes `started` the lane's current capture: drains its stream into a track with a
+    /// `CaptureLoop`, watches for it ending on its own, and checks that it isn't silent. With a live
+    /// engine, also transcribes it.
     private func attach(_ started: StartedCapture, to lane: Lane, in session: Session) {
         // The first input to start again after a pause ends it.
         if let pausedAt = session.pausedAt {
             session.pausedDuration += max(hostClock() - pausedAt, 0)
             session.pausedAt = nil
         }
-        let hostTimeShift = session.pausedDuration
-        let stream = started.stream
         let deviceID = started.device.id
         let sessionID = session.id
-        let transcribesLive = engine.transcribesLive
-        let feed = transcribesLive ? AsyncStream<LiveFeed>.makeStream() : nil
         let kind = lane.kind
-        let keepsAudio = session.keepsAudio(of: kind, transcribesLive: transcribesLive)
+        let transcribesLive = engine.transcribesLive
+        let feed = transcribesLive ? AsyncStream<CaptureLoop.LiveFeed>.makeStream() : nil
         let echoReference = session.echoReference
-        let echoCancellation = echoReference == nil ? nil : echoCancellation
-        let deviceName = started.device.name
-        if kind == .systemAudio { echoReference?.beginWriting() }
-        let consumer = Task.detached(priority: .userInitiated) { [weak self] () async -> CaptureResult in
-            // Where the captured samples go, gaps filled; `track` gets them once their echo is
-            // removed, in step with it.
-            var timeline = AudioTrack(keepsSamples: false)
-            var track = AudioTrack(keepsSamples: keepsAudio)
-            var echoRemover: EchoRemover?
-            // Whether system audio recorded alongside, which tells why `echoRemover` never started.
-            var sawSystemAudio = false
-            var meter = LevelMeter()
-            // Judges the audio as it's kept, so the microphones' echo doesn't count as the user
-            // talking.
-            var speechDetector = SpeechActivityDetector()
-            var unsentSpeech: TimeInterval = 0
-            var unfed: [Float] = []
-            defer {
-                if kind == .systemAudio { echoReference?.endWriting() }
-                if !unfed.isEmpty {
-                    feed?.continuation.yield(LiveFeed(samples: unfed, startHostTime: track.startHostTime))
-                }
-                feed?.continuation.finish()
-            }
-            func keep(_ samples: [Float]) {
-                guard !samples.isEmpty else { return }
-                unsentSpeech += speechDetector.add(samples)
-                track.append(AudioChunk(samples: samples, hostTime: timeline.startHostTime.map { $0 + track.duration }))
-                guard feed != nil else { return }
-                unfed.append(contentsOf: samples)
-                if unfed.count >= RecordingCoordinator.liveFeedSampleCount {
-                    feed?.continuation.yield(LiveFeed(samples: unfed, startHostTime: track.startHostTime))
-                    unfed.removeAll(keepingCapacity: true)
+        let loop = CaptureLoop(
+            kind: kind,
+            deviceName: started.device.name,
+            keepsAudio: session.keepsAudio(of: kind, transcribesLive: transcribesLive),
+            hostTimeShift: session.pausedDuration,
+            echoReference: echoReference,
+            echoCancellation: echoReference == nil ? nil : echoCancellation,
+            liveFeed: feed?.continuation,
+            reportLevel: { [weak self] level, speech in
+                Task { @MainActor [weak self] in
+                    self?.updateLevel(level, speech: speech, of: deviceID, kind: kind, sessionID: sessionID)
                 }
             }
-            var captureError: (any Error)?
-            do {
-                for try await captured in stream {
-                    // Moved back by the time spent paused, so the pause leaves no gap to fill.
-                    let chunk =
-                        hostTimeShift > 0
-                        ? AudioChunk(samples: captured.samples, hostTime: captured.hostTime.map { $0 - hostTimeShift })
-                        : captured
-                    // Including silence filled into a gap, so the live session's clock stays in step
-                    // with the track's.
-                    let added = timeline.append(chunk)
-                    if kind == .systemAudio { echoReference?.write(chunk) }
-                    // Starts once system audio records too and a canceller is ready.
-                    if kind == .microphone, echoRemover == nil, let echoReference, echoReference.state.isActive {
-                        sawSystemAudio = true
-                        if let canceller = echoCancellation?.takeCanceller() {
-                            let start = timeline.startHostTime.map {
-                                $0 + timeline.duration - Double(added.count) / AudioChunk.sampleRate
-                            }
-                            echoRemover = EchoRemover(
-                                canceller: canceller,
-                                reference: echoReference,
-                                startHostTime: start
-                            )
-                        }
-                    }
-                    keep(echoRemover?.process(added) ?? added)
-                    // Fire and forget, so a busy main actor never holds up capture.
-                    if let level = meter.add(chunk) {
-                        let speech = unsentSpeech
-                        unsentSpeech = 0
-                        Task { @MainActor [weak self] in
-                            self?.updateLevel(level, speech: speech, of: deviceID, kind: kind, sessionID: sessionID)
-                        }
-                    }
-                }
-            } catch {
-                captureError = error
-            }
-            if let echoRemover {
-                keep(echoRemover.finish())
-            } else if kind == .microphone, echoReference != nil {
-                let reason = sawSystemAudio ? "no canceller loaded in time" : "no system audio recorded alongside"
-                RecordingCoordinator.echoLogger.info(
-                    "Recorded \(deviceName, privacy: .public) without echo removal: \(reason, privacy: .public)"
-                )
-            }
-            return CaptureResult(track: track, speech: speechDetector.spans, error: captureError)
-        }
+        )
+        let consumer = loop.start(started.stream)
         let live = feed.map { feed in
             // A lane's captures are transcribed one after another, so its words stay in order.
             let previous = lane.captures.last?.live
@@ -311,8 +240,8 @@ extension RecordingCoordinator {
                 // Counted by length, as live tracks keep no samples.
                 guard track.duration > 0 else { continue }
                 let start = audio.track.duration - track.duration
-                audio.parts.append(DevicePart(device: capture.device, start: start))
-                audio.speech += Self.shifted(result.speech, by: start)
+                audio.parts.append(NotePipeline.DevicePart(device: capture.device, start: start))
+                audio.speech += NotePipeline.shifted(result.speech, by: start)
             }
             lanes.append(audio)
         }
@@ -325,7 +254,12 @@ extension RecordingCoordinator {
     /// the default microphone, and one cut off by the audio service restarting is started again;
     /// anything else ends the whole recording: permission was revoked, or the user stopped capture
     /// from the system's menu bar indicator.
-    private func captureDidEnd(_ capture: Capture, of lane: Lane, in session: Session, result: CaptureResult) async {
+    private func captureDidEnd(
+        _ capture: Capture,
+        of lane: Lane,
+        in session: Session,
+        result: CaptureLoop.Output
+    ) async {
         // Captures stopped on purpose, by a switch or the end of the recording, aren't current.
         guard self.session === session, lane.current?.id == capture.id else { return }
 

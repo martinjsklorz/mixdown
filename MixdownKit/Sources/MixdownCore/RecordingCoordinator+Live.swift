@@ -16,7 +16,7 @@ extension RecordingCoordinator {
     /// Feeds one capture's audio to a live session and adds what it recognizes to
     /// `liveTranscript`, until the capture ends. Returns the error that stopped it early, if any.
     func transcribeLive(
-        _ feed: AsyncStream<LiveFeed>,
+        _ feed: AsyncStream<CaptureLoop.LiveFeed>,
         source index: Int,
         options: TranscriptionOptions
     ) async -> (any Error)? {
