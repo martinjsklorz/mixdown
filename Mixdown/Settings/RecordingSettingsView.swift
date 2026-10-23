@@ -89,6 +89,29 @@ struct RecordingSettingsView: View {
             }
 
             Section {
+                Picker(
+                    "Keep audio until the note is saved",
+                    selection: Binding(
+                        get: { preferences.keepsAudioOnDisk },
+                        set: { preferences.keepsAudioOnDisk = $0 }
+                    )
+                ) {
+                    Text("On Disk").tag(true)
+                    Text("In Memory Only").tag(false)
+                }
+            } header: {
+                Text("Audio")
+            } footer: {
+                Caption(
+                    "On disk, the audio is written to Mixdown's container as you record and deleted once "
+                        + "the note is saved, so quitting, a crash or a failed transcription doesn't lose it. "
+                        + "In memory only, no audio is written: a recording that couldn't be transcribed can "
+                        + "be tried again until Mixdown quits, but a crash loses it. Applies from the next "
+                        + "recording."
+                )
+            }
+
+            Section {
                 CallsToggles()
             } header: {
                 Text("Calls")

@@ -71,6 +71,12 @@ struct MenuBarContent: View {
         Divider()
 
         Button("Open Mixdown") { navigation.show(navigation.destination, using: openWindow) }
+        if !coordinator.unfinishedRecordings.isEmpty && !coordinator.canStopRecording {
+            let count = coordinator.unfinishedRecordings.count
+            Button(count == 1 ? "1 Unfinished Recording…" : "\(count) Unfinished Recordings…") {
+                navigation.show(.recorder, using: openWindow)
+            }
+        }
 
         if case .failed(let message) = coordinator.phase {
             Divider()

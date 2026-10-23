@@ -1,7 +1,7 @@
 import Foundation
 
 extension RecordingCoordinator {
-    /// Shown only once the note is written; the audio itself is never kept.
+    /// Shown only once the note is written.
     nonisolated static func interruptedMessage(for error: any Error) -> String {
         "Recording stopped early. \(error.localizedDescription) The note has what was recorded until then."
     }
@@ -19,7 +19,7 @@ extension RecordingCoordinator {
     }
 
     /// Shown once a note is written without the speech of `devices`, whose tracks failed to
-    /// transcribe; the audio itself is never kept.
+    /// transcribe.
     nonisolated static func untranscribedMessage(for devices: [AudioInputDevice], error: any Error) -> String {
         let names = devices.map(\.name).formatted(.list(type: .and))
         return "Couldn't transcribe \(names). \(error.localizedDescription) The note has the other inputs."
@@ -33,6 +33,18 @@ extension RecordingCoordinator {
     /// Shown for an imported file with less audio than a recording needs.
     nonisolated static func tooShortImportMessage(for name: String) -> String {
         "“\(name)” is too short to transcribe. It needs at least half a second of audio."
+    }
+
+    /// Added to the failure of `recording`, now one of `unfinishedRecordings`.
+    nonisolated static func keptRecordingMessage(for recording: UnfinishedRecording) -> String {
+        recording.isOnDisk
+            ? "Mixdown kept the recording, so you can transcribe it again from Record."
+            : "Mixdown kept the recording until it quits, so you can transcribe it again from Record."
+    }
+
+    /// Shown when an unfinished recording's audio can't be read back.
+    nonisolated static func unreadableRecordingMessage(for error: any Error) -> String {
+        "Couldn't read the recording. \(error.localizedDescription)"
     }
 
     nonisolated static let tooShortMessage =

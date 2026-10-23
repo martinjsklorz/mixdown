@@ -133,6 +133,7 @@ final class AppEnvironment {
         translator: any Translator,
         notesDirectory: URL?,
         pendingNotes: [Note] = [],
+        recordingsInMemory: RecordingsInMemory = RecordingsInMemory(),
         preferredDeviceIDs: [String],
         preferences: Preferences
     ) -> RecordingCoordinator {
@@ -144,6 +145,7 @@ final class AppEnvironment {
             engine: model.makeEngine(),
             noteWriter: notesDirectory.map { MarkdownNoteWriter(directory: $0) },
             pendingNotes: pendingNotes,
+            recordingsInMemory: recordingsInMemory,
             summarizer: nil,
             summaryTemplate: preferences.summaryTemplates.recordingTemplate,
             callSummaryTemplate: preferences.summaryTemplates.callTemplate,
@@ -154,7 +156,8 @@ final class AppEnvironment {
             preferredDeviceIDs: preferredDeviceIDs,
             playbackMonitor: CoreAudioPlaybackMonitor(),
             echoCancellation: echoCancellation,
-            audioFileDecoder: AudioFileDecoder()
+            audioFileDecoder: AudioFileDecoder(),
+            recordingStore: .default
         )
         configure(coordinator, with: preferences, summarizer: summarizer)
         return coordinator
@@ -172,6 +175,7 @@ final class AppEnvironment {
         coordinator.vocabulary = preferences.vocabulary
         coordinator.cancelsEcho = preferences.cancelsEcho
         coordinator.measuresTalkTime = preferences.measuresTalkTime
+        coordinator.keepsAudioOnDisk = preferences.keepsAudioOnDisk
         let minutes = preferences.stillRecordingMinutes
         coordinator.stillRecordingDelay = minutes > 0 ? .seconds(minutes * 60) : nil
         coordinator.speakerDiarizer = preferences.identifiesSpeakers ? speakerDiarizer : nil
@@ -500,6 +504,7 @@ final class AppEnvironment {
             translator: translator,
             notesDirectory: notesFolder.directory,
             pendingNotes: coordinator.takePendingNotes(),
+            recordingsInMemory: coordinator.takeRecordingsInMemory(),
             preferredDeviceIDs: settings.selectedDeviceIDs,
             preferences: preferences
         )

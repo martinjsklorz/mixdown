@@ -11,64 +11,115 @@ extension RecordingCoordinator {
             liveCaptions = nil
         }
 
-        let offsets = AudioTrack.startOffsets(of: lanes.map(\.track))
-        let tracks: [NotePipeline.RecordedTrack] = zip(session.lanes, lanes).enumerated().compactMap { index, pair in
-            guard let device = pair.0.firstDevice else { return nil }
-            return NotePipeline.RecordedTrack(
-                lane: index,
-                device: device,
-                parts: pair.1.parts,
-                samples: pair.1.track.samples,
-                speech: pair.1.speech,
-                duration: pair.1.track.duration,
-                offset: offsets[index]
-            )
-        }
+        let tracks = Self.recordedTracks(of: session, lanes: lanes)
         let duration = tracks.map(\.end).max() ?? 0
         guard duration >= Self.minimumRecordingDuration else {
             logger.info("Discarding \(duration, format: .fixed(precision: 2)) s recording as too short")
+            if session.isStored { recordingStore?.delete(session.id) }
             // An interruption this early explains itself, like capture failing to start.
             phase = .failed(message: interruption?.localizedDescription ?? Self.tooShortMessage)
             return
         }
 
         phase = .transcribing(progress: 0)
+        let input = NotePipeline.Input(
+            tracks: tracks,
+            options: session.options,
+            liveText: engine.transcribesLive ? liveTranscript : nil,
+            diarizer: session.diarizer,
+            details: NotePipeline.NoteDetails(
+                startedAt: session.startedAt,
+                duration: duration,
+                sources: session.devices,
+                trigger: session.trigger,
+                isCall: session.isCall,
+                // Described up to now, as the user may have still been typing when it stopped.
+                moments: moments.map { Moment(id: $0.id, time: min($0.time, duration), text: $0.text) }
+                    .sorted { $0.time < $1.time },
+                talkTimeline: session.measuresTalkTime ? talkTimeline(of: tracks, duration: duration) : nil,
+                recordingID: session.isStored ? session.id : nil
+            )
+        )
+        let recording = unfinishedRecording(of: session, lanes: lanes, duration: duration)
+        await makeNote(from: input, keeping: recording, interruption: interruption)
+    }
+
+    /// The tracks of `session`'s lanes, from what each recorded.
+    static func recordedTracks(of session: Session, lanes: [LaneAudio]) -> [NotePipeline.RecordedTrack] {
+        recordedTracks(of: startingDevices(of: session, lanes: lanes))
+    }
+
+    /// What each of `session`'s lanes recorded, with the device it started with.
+    static func startingDevices(
+        of session: Session,
+        lanes: [LaneAudio]
+    ) -> [(device: AudioInputDevice, audio: LaneAudio)] {
+        zip(session.lanes, lanes).compactMap { lane, audio in lane.firstDevice.map { ($0, audio) } }
+    }
+
+    /// The tracks of a recording's lanes, each with the device it started with, lined up on the
+    /// host clock.
+    static func recordedTracks(
+        of lanes: [(device: AudioInputDevice, audio: LaneAudio)]
+    ) -> [NotePipeline.RecordedTrack] {
+        let offsets = AudioTrack.startOffsets(of: lanes.map(\.audio.track))
+        return lanes.enumerated().map { index, lane in
+            NotePipeline.RecordedTrack(
+                lane: index,
+                device: lane.device,
+                parts: lane.audio.parts,
+                samples: lane.audio.track.samples,
+                speech: lane.audio.speech,
+                duration: lane.audio.track.duration,
+                offset: offsets[index]
+            )
+        }
+    }
+
+    /// Makes and saves a note of a recording, and shows how that went. If it couldn't be made, or
+    /// a track couldn't be transcribed, `recording` becomes one of `unfinishedRecordings`, to
+    /// transcribe again; otherwise its audio in `recordingsInMemory` is let go. If capture ended
+    /// with `interruption`, that's surfaced afterwards.
+    func makeNote(
+        from input: NotePipeline.Input,
+        keeping recording: UnfinishedRecording?,
+        interruption: (any Error)? = nil
+    ) async {
+        isMakingNoteOfStoredRecording = recording?.isOnDisk ?? false
+        defer {
+            isMakingNoteOfStoredRecording = false
+            if let recording, !unfinishedRecordings.contains(where: { $0.id == recording.id }) {
+                recordingsInMemory[recording.id] = nil
+            }
+        }
         do {
             try await prepareModelIfMissing()
-            let input = NotePipeline.Input(
-                tracks: tracks,
-                options: session.options,
-                liveText: engine.transcribesLive ? liveTranscript : nil,
-                diarizer: session.diarizer,
-                details: NotePipeline.NoteDetails(
-                    startedAt: session.startedAt,
-                    duration: duration,
-                    sources: session.devices,
-                    trigger: session.trigger,
-                    isCall: session.isCall,
-                    // Described up to now, as the user may have still been typing when it stopped.
-                    moments: moments.map { Moment(id: $0.id, time: min($0.time, duration), text: $0.text) }
-                        .sorted { $0.time < $1.time },
-                    talkTimeline: session.measuresTalkTime ? talkTimeline(of: tracks, duration: duration) : nil
-                )
-            )
-            let messages = try await pipeline.makeNote(from: input) {
-                takeSummaryTemplate(otherwise: session.isCall ? callSummaryTemplate : summaryTemplate)
+            let outcome = try await pipeline.makeNote(from: input) {
+                takeSummaryTemplate(otherwise: input.details.isCall ? callSummaryTemplate : summaryTemplate)
             }
-            show(interruption.map { [Self.interruptedMessage(for: $0)] + messages } ?? messages)
+            var messages = interruption.map { [Self.interruptedMessage(for: $0)] } ?? []
+            messages += outcome.messages
+            if !outcome.isComplete, let recording {
+                keep(recording)
+                messages.append(Self.keptRecordingMessage(for: recording))
+            }
+            show(messages)
             // A live model that failed to load needs the same retry as an offline one.
             if let interruption, case TranscriptionError.modelUnavailable = interruption {
                 modelError = interruption.localizedDescription
             }
         } catch is CancellationError {
             logger.info("Finishing recording cancelled")
+            if let recording { keep(recording) }
             phase = .idle
         } catch {
             logger.error("Finishing recording failed: \(error.localizedDescription, privacy: .public)")
+            if let recording { keep(recording) }
+            let message = [error.localizedDescription, recording.map(Self.keptRecordingMessage)]
+                .compactMap { $0 }.joined(separator: " ")
+            phase = .failed(message: message)
             if case TranscriptionError.modelUnavailable = error {
-                failWithModelError(error)
-            } else {
-                phase = .failed(message: error.localizedDescription)
+                modelError = error.localizedDescription
             }
         }
     }

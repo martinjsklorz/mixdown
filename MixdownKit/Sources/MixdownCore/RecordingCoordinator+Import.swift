@@ -79,10 +79,10 @@ extension RecordingCoordinator {
                     untitledName: url.deletingPathExtension().lastPathComponent
                 )
             )
-            let messages = try await pipeline.makeNote(from: input) {
+            let outcome = try await pipeline.makeNote(from: input) {
                 takeSummaryTemplate(otherwise: summaryTemplate)
             }
-            show(messages)
+            show(outcome.messages)
         } catch {
             // Engines may throw their own errors when cancelled.
             if error is CancellationError || Task.isCancelled {

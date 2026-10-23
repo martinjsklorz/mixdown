@@ -23,6 +23,21 @@ public struct AudioTrack: Sendable, Equatable {
         self.keepsSamples = keepsSamples
     }
 
+    /// A track of `samples` that starts at `startHostTime`, e.g. read back from disk.
+    init(samples: [Float], startHostTime: TimeInterval?) {
+        self.samples = samples
+        self.startHostTime = startHostTime
+        sampleCount = samples.count
+        keepsSamples = true
+    }
+
+    /// A track `sampleCount` samples long that starts at `startHostTime`, but keeps none of them.
+    init(sampleCount: Int, startHostTime: TimeInterval?) {
+        self.startHostTime = startHostTime
+        self.sampleCount = sampleCount
+        keepsSamples = false
+    }
+
     public var duration: TimeInterval { Double(sampleCount) / AudioChunk.sampleRate }
 
     /// Adds `chunk` and returns the samples it added: silence filling a gap before it, if any,

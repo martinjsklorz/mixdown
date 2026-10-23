@@ -9,6 +9,7 @@ struct CaptureLoopTests {
     private func loop(
         kind: AudioSourceKind = .microphone,
         keepsAudio: Bool = true,
+        audioFile: URL? = nil,
         hostTimeShift: TimeInterval = 0,
         liveFeed: AsyncStream<CaptureLoop.LiveFeed>.Continuation? = nil,
         levels: LockedValue<[InputLevel]> = LockedValue([])
@@ -17,6 +18,7 @@ struct CaptureLoopTests {
             kind: kind,
             deviceName: "Test",
             keepsAudio: keepsAudio,
+            audioFile: audioFile,
             hostTimeShift: hostTimeShift,
             echoReference: nil,
             echoCancellation: nil,
@@ -58,6 +60,24 @@ struct CaptureLoopTests {
         let output = await loop(keepsAudio: false).start(stream([Fixtures.chunk(seconds: 1)])).value
 
         #expect(output.track.duration == 1)
+        #expect(output.track.samples.isEmpty)
+    }
+
+    @Test func writesTheAudioToItsFileEvenWithoutKeepingIt() async throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).audio")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let chunks = [
+            Fixtures.chunk(seconds: 1, hostTime: 50),
+            Fixtures.chunk(seconds: 1, hostTime: 52, amplitude: 0.2),
+        ]
+
+        let output = await loop(keepsAudio: false, audioFile: file).start(stream(chunks)).value
+
+        let written = try CaptureAudioFile.read(file)
+        #expect(written.startHostTime == 50)
+        #expect(written.duration == output.track.duration)
+        let gap = [Float](repeating: 0, count: 16_000)
+        #expect(written.samples == chunks[0].samples + gap + chunks[1].samples)
         #expect(output.track.samples.isEmpty)
     }
 

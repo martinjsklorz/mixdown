@@ -21,7 +21,24 @@ drive the notes folder is on.
 
 The notes folder couldn't be reached when the note was finished. Connect the folder's drive, or
 choose another folder under **Settings → General**, and Mixdown saves it. Quitting before then
-loses the note. See [Notes](notes.md#when-the-folder-cant-be-reached).
+loses the note, but not a recording's audio kept on disk: it comes back under **Unfinished
+Recordings**. See [Notes](notes.md#when-the-folder-cant-be-reached).
+
+## Unfinished Recordings on Record
+
+Mixdown keeps a recording's audio on disk until its note is saved. If Mixdown quit or crashed
+while recording or making the note, or transcribing failed, the recording is listed under
+**Unfinished Recordings** on Record, and in the menu bar. Click **Transcribe** to make its note, or
+**Delete…** to throw the audio away.
+
+Quitting while recording asks whether to stop and quit once the note is saved, or to quit now and
+keep the recording for later. Logging out, restarting or shutting down doesn't ask: the recording
+stops and is kept.
+
+With **Settings → Recording → Keep audio until the note is saved** set to **In Memory Only**, only
+a recording whose transcription failed is listed, and only until Mixdown quits, which asks first.
+Quitting now while recording loses the recording; logging out stops it and waits for its note.
+See [Privacy](privacy.md).
 
 ## The speech model is downloading again
 

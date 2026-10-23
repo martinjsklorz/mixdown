@@ -67,6 +67,9 @@ struct AppSettings {
         /// Whether to time how long the user and the others talk while both a microphone and
         /// system audio record. Absent means no.
         static let measuresTalkTime = "measuresTalkTime"
+        /// Whether recordings' audio is written to disk until their notes are saved. Absent means
+        /// yes.
+        static let keepsAudioOnDisk = "keepsAudioOnDisk"
         /// Whether the people on the system audio are told apart once a recording ends. Absent
         /// means no.
         static let identifiesSpeakers = "identifiesSpeakers"
@@ -213,6 +216,11 @@ struct AppSettings {
     var measuresTalkTime: Bool {
         get { defaults.bool(forKey: Key.measuresTalkTime) }
         nonmutating set { defaults.set(newValue, forKey: Key.measuresTalkTime) }
+    }
+
+    var keepsAudioOnDisk: Bool {
+        get { defaults.object(forKey: Key.keepsAudioOnDisk) as? Bool ?? true }
+        nonmutating set { defaults.set(newValue, forKey: Key.keepsAudioOnDisk) }
     }
 
     var identifiesSpeakers: Bool {

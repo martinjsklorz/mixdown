@@ -11,6 +11,7 @@ extension RecordingCoordinator {
         if !isRecordingSummaryTemplateChosen {
             recordingSummaryTemplate = callSummaryTemplate
         }
+        storeDescription(of: session)
     }
 
     /// Summarizes the recording in progress, or the one being transcribed, with `template`
@@ -47,6 +48,7 @@ extension RecordingCoordinator {
         guard isRecording else { return nil }
         let moment = Moment(time: time, text: text.trimmingCharacters(in: .whitespacesAndNewlines))
         moments.append(moment)
+        if let session { storeDescription(of: session) }
         logger.info("Moment added at \(time, format: .fixed(precision: 1)) s")
         return moment
     }
