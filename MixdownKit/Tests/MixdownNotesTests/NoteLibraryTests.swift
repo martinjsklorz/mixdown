@@ -85,6 +85,35 @@ struct NoteLibraryTests {
         #expect(try loadNotes(in: directory).map(\.title) == ["Root"])
     }
 
+    @Test func diskUsageCountsOnlyListedNotes() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fileManager = FileManager.default
+        for folder in ["Clients", ".obsidian"] {
+            try fileManager.createDirectory(
+                at: directory.appending(path: folder, directoryHint: .isDirectory),
+                withIntermediateDirectories: true
+            )
+        }
+        try write("# Root", to: "Root.md", in: directory)
+        try write("# Client", to: "Clients/Client.markdown", in: directory)
+        try write("Not a note", to: "Clients/Attachment.txt", in: directory)
+        try write("# Hidden", to: ".hidden.md", in: directory)
+        try write("# Settings", to: ".obsidian/Settings.md", in: directory)
+
+        let usage = NoteLibrary.diskUsage(in: directory)
+
+        #expect(usage.fileCount == 2)
+        #expect(usage.bytes > 0)
+    }
+
+    @Test func missingDirectoryUsesNoSpace() {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "NoteLibraryTests-missing-\(UUID().uuidString)", directoryHint: .isDirectory)
+
+        #expect(NoteLibrary.diskUsage(in: directory) == DiskUsage())
+    }
+
     @Test func missingDirectoryHasNoNotes() throws {
         let directory = FileManager.default.temporaryDirectory
             .appending(path: "NoteLibraryTests-missing-\(UUID().uuidString)", directoryHint: .isDirectory)
