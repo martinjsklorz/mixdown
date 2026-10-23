@@ -7,13 +7,13 @@ import MixdownCore
 /// falls back to the first `#` heading, then the file name; a missing `created` date falls back
 /// to the date the caller got from the file system.
 public struct NoteDocument: Sendable, Equatable, Identifiable {
-    public var url: URL
-    public var title: String
-    public var createdAt: Date
+    public var url: URL { didSet { cachedFingerprint = .init() } }
+    public var title: String { didSet { cachedFingerprint = .init() } }
+    public var createdAt: Date { didSet { cachedFingerprint = .init() } }
     /// In seconds. `nil` unless the frontmatter has a usable `duration`.
     public var duration: TimeInterval?
     /// Names of the recorded inputs, from the frontmatter's `sources` list or single `source`.
-    public var sources: [String]
+    public var sources: [String] { didSet { cachedFingerprint = .init() } }
     /// How the recording was started. `nil` for notes from before Mixdown recorded it, and ones
     /// edited to something else.
     public var trigger: RecordingTrigger?
@@ -25,12 +25,12 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
     /// `general`, which Mixdown doesn't write, and for notes from before it did.
     public var template: String?
     /// The Markdown after the frontmatter.
-    public var body: String
+    public var body: String { didSet { cachedFingerprint = .init() } }
     /// The first text of the body as a single line of plain text. Empty if there is none.
     public var snippet: String
     /// The subfolder of the notes folder the note is in, like `Clients/Acme`, or `nil` if it's
     /// directly inside. Set by `NoteLibrary`.
-    public var folder: String?
+    public var folder: String? { didSet { cachedFingerprint = .init() } }
     /// Whether the note is listed above the others, from the frontmatter's `pinned: true`.
     public var isPinned: Bool
     /// The transcript's speakers in order of first appearance, from the frontmatter's `speakers`
@@ -39,6 +39,10 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
     /// How long each side talked, minute by minute, from the frontmatter's `talk_microphone` and
     /// `talk_system_audio` lists. `nil` if they're missing or unusable.
     public var talkTimeline: TalkTimeline?
+
+    /// `NoteSearchIndex.fingerprint(of:)`, worked out once by `NoteLibrary` rather than on every
+    /// index update. Cleared when a field it's made from changes.
+    var cachedFingerprint = CachedFingerprint()
 
     public var id: URL { url }
 
@@ -184,4 +188,11 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
         }
         return text
     }
+}
+
+/// A note's fingerprint, kept with it. Left out when comparing notes, as it only saves work.
+struct CachedFingerprint: Sendable, Equatable {
+    var value: String?
+
+    static func == (lhs: Self, rhs: Self) -> Bool { true }
 }

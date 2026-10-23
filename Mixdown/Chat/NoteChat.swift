@@ -262,12 +262,13 @@ final class NoteChat {
 /// can run while an update waits on the embedder.
 private actor NoteChatIndexStore {
     private static let logger = Logger(subsystem: "app.mixdown", category: "chat")
-    /// The index is saved every so many notes while reading many, so quitting loses little.
-    private static let notesPerSave = 50
 
     private let embedder: any TextEmbedder
-    private let fileURL = URL.applicationSupportDirectory.appending(path: "ChatIndex.plist")
-    /// Read from `fileURL` when first needed.
+    /// A file per note; see `NoteChatIndex.save(in:)`.
+    private let directoryURL = URL.applicationSupportDirectory.appending(path: "ChatIndex", directoryHint: .isDirectory)
+    /// Where earlier versions saved the whole index, moved into `directoryURL` when first read.
+    private let legacyFileURL = URL.applicationSupportDirectory.appending(path: "ChatIndex.plist")
+    /// Read from `directoryURL` when first needed.
     private var index: NoteChatIndex?
 
     init(embedder: any TextEmbedder) {
@@ -275,17 +276,14 @@ private actor NoteChatIndexStore {
     }
 
     /// Brings the index in line with `notes`, calling `progress` after each note it reads with how
-    /// many are done. Stops early when cancelled, keeping the notes read so far.
+    /// many are done. Each note is saved as soon as it's read, so stopping early, when cancelled or
+    /// on quitting, keeps the notes read so far.
     func update(to notes: [NoteDocument], progress: @Sendable (_ done: Int, _ total: Int) async -> Void) async {
-        var index = loaded()
-        let noteCount = index.noteCount
-        index.removeNotes(notIn: notes)
-        let pending = index.notesToIndex(notes, canEmbed: true)
-        self.index = index
-        guard !pending.isEmpty else {
-            if index.noteCount != noteCount { save() }
-            return
-        }
+        _ = loaded()
+        index?.removeNotes(notIn: notes)
+        let pending = index?.notesToIndex(notes, canEmbed: true) ?? []
+        save()
+        guard !pending.isEmpty else { return }
 
         var embedder: (any TextEmbedder)? = self.embedder
         for (done, note) in pending.enumerated() {
@@ -294,11 +292,10 @@ private actor NoteChatIndexStore {
                 Self.logger.info("Indexing notes for Chat without embeddings, as the embedder failed")
                 embedder = nil
             }
-            self.index?.insert(indexed)
+            index?.insert(indexed)
+            save()
             await progress(done + 1, pending.count)
-            if (done + 1) % Self.notesPerSave == 0 { save() }
         }
-        save()
     }
 
     /// The passages of `notes` that best answer `query`, best first.
@@ -317,21 +314,24 @@ private actor NoteChatIndexStore {
 
     private func loaded() -> NoteChatIndex {
         if let index { return index }
-        let loaded = (try? Data(contentsOf: fileURL)).map(NoteChatIndex.decoded(from:)) ?? NoteChatIndex()
+        var loaded = NoteChatIndex.load(from: directoryURL)
+        if loaded.isEmpty, let data = try? Data(contentsOf: legacyFileURL) {
+            loaded = NoteChatIndex.decoded(fromLegacyFile: data)
+        }
         index = loaded
-        return loaded
+        save()
+        // Moved into `directoryURL`, or left behind by it.
+        if index?.hasUnsavedChanges == false { try? FileManager.default.removeItem(at: legacyFileURL) }
+        return index ?? loaded
     }
 
+    /// Writes the notes that changed since the last save.
     private func save() {
-        guard let index else { return }
+        guard index?.hasUnsavedChanges == true else { return }
         do {
-            try FileManager.default.createDirectory(
-                at: fileURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            try index.encoded().write(to: fileURL, options: .atomic)
+            try index?.save(in: directoryURL)
         } catch {
-            // The next launch reads the notes again.
+            // Tried again on the next save; if it never works, the next launch reads the notes again.
             Self.logger.error("Couldn't save the Chat index: \(error.localizedDescription, privacy: .public)")
         }
     }

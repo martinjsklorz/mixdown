@@ -12,8 +12,12 @@ struct MainView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(MainNavigation.self) private var navigation
     @Environment(\.openSettings) private var openSettings
-    @State private var library = NoteLibraryModel()
     @State private var searchText = ""
+    /// The notes the latest finished search matched, which the sidebar shows while the next one
+    /// runs. `nil` while not searching.
+    @State private var searchMatches: Set<NoteDocument.ID>?
+    /// Calls to `reload(selecting:line:)` still running, which pick the selection themselves.
+    @State private var pendingReloads = 0
     @State private var columnVisibility = NavigationSplitViewVisibility.automatic
     @State private var noteToRename: NoteDocument?
     /// The speaker to rename and their note, while asking for the new name.
@@ -61,15 +65,20 @@ struct MainView: View {
         }
         .frame(minWidth: 720, minHeight: 480)
         .toolbar(id: "detail") { detailToolbar }
-        // Reads the folder and watches it for changes; again for each folder the user chooses.
+        // Selects a note once the folder is read; again for each folder the user chooses.
+        // `AppEnvironment` keeps the notes up to date as the folder changes.
         .task(id: environment.notesFolder.directory) {
-            let directory = environment.notesFolder.directory
-            // Started first, so nothing that changes during the first reload is missed.
-            let changes = directory.map { NotesFolderWatcher.changes(in: $0) }
             let shown = navigation.takeNoteToShow()
             await reload(selecting: shown?.url, line: shown?.line)
-            guard let changes else { return }
-            for await _ in changes { await reload() }
+        }
+        // A note removed by another app takes the selection with it.
+        .onChange(of: library.notes) {
+            if pendingReloads == 0 { keepSelection() }
+        }
+        // Searches off the main thread, as long transcripts take a while to look through. A new
+        // search or a change to the notes cancels the running one.
+        .task(id: SearchRequest(query: searchQuery, notes: library.notes)) {
+            await search(searchQuery, in: library.notes)
         }
         .onChange(of: environment.coordinator.lastNoteURL) { _, url in
             Task {
@@ -166,6 +175,9 @@ struct MainView: View {
     }
 
     // MARK: Sidebar
+
+    /// The notes `library` has, for the sidebar, Chat and the detail column.
+    private var library: NoteLibraryModel { environment.library }
 
     private var sidebar: some View {
         let notes = filteredNotes
@@ -401,20 +413,43 @@ struct MainView: View {
             .flatMap(\.notes)
     }
 
+    /// The notes that match the search, from the latest search that finished. All of them until
+    /// the first one has.
     private var filteredNotes: [NoteDocument] {
-        let query = searchText.trimmingCharacters(in: .whitespaces)
-        guard !query.isEmpty else { return library.notes }
-        return library.notes.filter {
-            $0.title.localizedStandardContains(query) || $0.body.localizedStandardContains(query)
-                || $0.folder?.localizedStandardContains(query) == true
+        guard !searchQuery.isEmpty, let searchMatches else { return library.notes }
+        return library.notes.filter { searchMatches.contains($0.id) }
+    }
+
+    private var searchQuery: String { searchText.trimmingCharacters(in: .whitespaces) }
+
+    private struct SearchRequest: Equatable {
+        var query: String
+        var notes: [NoteDocument]
+    }
+
+    /// Sets `searchMatches` to the notes of `notes` that match `query`, unless cancelled first.
+    private func search(_ query: String, in notes: [NoteDocument]) async {
+        guard !query.isEmpty else {
+            searchMatches = nil
+            return
         }
+        let search = Task.detached(priority: .userInitiated) { try NoteLibrary.search(notes, for: query) }
+        let matches = await withTaskCancellationHandler {
+            try? await search.value
+        } onCancel: {
+            search.cancel()
+        }
+        guard let matches, !Task.isCancelled else { return }
+        searchMatches = matches
     }
 
     /// Reloads the folder, then selects the note at `url` if given, else keeps the selection if
     /// that note still exists, else selects the newest note. With a `line` of the note at `url`
     /// (see `MainNavigation.noteLineToShow`), has its view scroll to it.
     private func reload(selecting url: URL? = nil, line: Int? = nil) async {
+        pendingReloads += 1
         await library.reload(from: environment.notesFolder.directory)
+        pendingReloads -= 1
         let notes = library.notes
         // By name: the writer's URL and the directory listing's can differ in form. Notes in
         // different subfolders can share a name, so then by resolved path.
@@ -428,8 +463,15 @@ struct MainView: View {
             if let line, let block = NoteSearchIndex.lines(of: note).dropFirst(line).first?.block {
                 navigation.blockToShow = MainNavigation.NoteBlock(noteID: note.id, index: block)
             }
-        } else if !notes.contains(where: { $0.id == navigation.selectedNoteID }) {
-            navigation.selectedNoteID = notes.first?.id
+        } else {
+            keepSelection()
+        }
+    }
+
+    /// Selects the newest note if the selected one is gone.
+    private func keepSelection() {
+        if !library.notes.contains(where: { $0.id == navigation.selectedNoteID }) {
+            navigation.selectedNoteID = library.notes.first?.id
         }
     }
 }

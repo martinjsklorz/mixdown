@@ -186,14 +186,20 @@ public enum NoteSearchIndex {
         return update
     }
 
-    /// Tells notes apart that would get different items: a 64-bit FNV-1a hash, in hex, of what
-    /// the items are made from. Stable between launches, unlike `Hasher`.
+    /// Tells notes apart that would get different items: a hash of what the items are made from.
+    /// `NoteLibrary` works it out once as it reads a note, so updates don't hash every note again.
     static func fingerprint(of note: NoteDocument) -> String {
-        let fields =
+        if let fingerprint = note.cachedFingerprint.value { return fingerprint }
+        return hash(
             [
                 "\(formatVersion)", note.url.absoluteString, note.title, "\(note.createdAt.timeIntervalSince1970)",
                 note.folder ?? "", note.body,
             ] + note.sources
+        )
+    }
+
+    /// A 64-bit FNV-1a hash of `fields`, in hex. Stable between launches, unlike `Hasher`.
+    static func hash(_ fields: [String]) -> String {
         var hash: UInt64 = 0xcbf2_9ce4_8422_2325
         func add(_ byte: UInt8) {
             hash ^= UInt64(byte)
