@@ -94,11 +94,14 @@ public struct NoteQuestion: Sendable, Equatable {
         isInDates(note) && (kind == .call || kind.map { Self.note(note, is: $0) } ?? true)
     }
 
-    /// Whether `note` counts towards the answer: it's from `dates`, of `kind` and contains every
-    /// word of `topic`.
+    /// Whether `note` counts towards the answer: it's from `dates`, of `kind` and has every word of
+    /// `topic` as a word of its own, so "AI" doesn't count "said" and "Ben" doesn't count "benefit".
+    /// A plural `s` and case don't matter.
     public func counts(_ note: NoteDocument) -> Bool {
-        isInDates(note) && (kind.map { Self.note(note, is: $0) } ?? true)
-            && topic.allSatisfy { note.title.localizedStandardContains($0) || note.body.localizedStandardContains($0) }
+        guard isInDates(note), kind.map({ Self.note(note, is: $0) }) ?? true else { return false }
+        guard !topic.isEmpty else { return true }
+        let words = Set((NoteChatText.words(in: note.title) + NoteChatText.words(in: note.body)).map(NoteChatText.term))
+        return topic.allSatisfy { words.contains(NoteChatText.term($0)) }
     }
 
     private func isInDates(_ note: NoteDocument) -> Bool {
@@ -213,7 +216,7 @@ public struct NoteQuestion: Sendable, Equatable {
             }
         }
         if let match = text.firstMatch(of: Patterns.year), let year = Int(match.output.2) {
-            let isSince = match.output.1.map { ["since", "seit"].contains($0.lowercased()) } ?? false
+            let isSince = ["since", "seit", "ab"].contains(match.output.1.lowercased())
             if let start = calendar.date(from: DateComponents(year: year, month: 1, day: 1)),
                 let interval = calendar.dateInterval(of: .year, for: start)
             {
@@ -279,16 +282,18 @@ private enum Patterns {
         #/\b(last|previous|past|letzte[nmrs]?|vorige[nmrs]?|vergangene[nmrs]?)\s+(week|month|year|woche|monat|jahr)\b/#
         .ignoresCase()
     nonisolated(unsafe) static let lastCount =
-        #/\b(last|previous|past|letzte[nmrs]?|vergangene[nmrs]?)\s+(\d{1,3})\s+(days?|weeks?|months?|tagen?|wochen|monaten?)\b/#
+        #/\b(last|previous|past|letzte[nmrs]?|vorige[nmrs]?|vergangene[nmrs]?)\s+(\d{1,3})\s+(days?|weeks?|months?|years?|tagen?|wochen|monaten?|jahren?)\b/#
         .ignoresCase()
-    nonisolated(unsafe) static let year = #/\b(?:(in|im|during|since|seit)\s+)?((?:19|20)\d{2})\b/#.ignoresCase()
+    /// Only after a preposition, as "2000 users" is no year.
+    nonisolated(unsafe) static let year =
+        #/\b(in|im|during|from|since|seit|aus|von|ab)\s+(?:the\s+year\s+|jahre?\s+)?((?:19|20)\d{2})\b/#.ignoresCase()
 
     static func unit(_ word: String) -> Calendar.Component? {
         switch word.lowercased() {
         case "day", "days", "tag", "tage", "tagen": .day
         case "week", "weeks", "woche", "wochen": .weekOfYear
         case "month", "months", "monat", "monate", "monaten": .month
-        case "year", "jahr": .year
+        case "year", "years", "jahr", "jahre", "jahren": .year
         default: nil
         }
     }

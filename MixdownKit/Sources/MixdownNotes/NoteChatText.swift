@@ -13,14 +13,28 @@ enum NoteChatText {
     /// `stopwords`, and with an English plural `s` dropped, so "Releases" finds "release".
     static func terms(in text: some StringProtocol) -> [String] {
         words(in: text).compactMap { word in
-            var term = word.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil)
-            if term.hasSuffix("'s") || term.hasSuffix("’s") { term.removeLast(2) }
+            let term = folded(word)
             guard term.count > 1 || term.first?.isNumber == true, !stopwords.contains(term) else { return nil }
-            if term.count > 3, term.hasSuffix("s"), !["ss", "us", "is"].contains(where: term.hasSuffix) {
-                term.removeLast()
-            }
+            return singular(term)
+        }
+    }
+
+    /// `word` folded like `terms(in:)`, whether or not it's a stopword or a single letter.
+    static func term(_ word: some StringProtocol) -> String {
+        singular(folded(word))
+    }
+
+    private static func folded(_ word: some StringProtocol) -> String {
+        var term = word.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil)
+        if term.hasSuffix("'s") || term.hasSuffix("’s") { term.removeLast(2) }
+        return term
+    }
+
+    private static func singular(_ term: String) -> String {
+        guard term.count > 3, term.hasSuffix("s"), !["ss", "us", "is"].contains(where: term.hasSuffix) else {
             return term
         }
+        return String(term.dropLast())
     }
 
     static func isStopword(_ word: String) -> Bool {

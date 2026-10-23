@@ -91,6 +91,21 @@ struct NoteQuestionTests {
             parse("how many calls since August").dates
                 == DateInterval(start: Self.date(2026, 8, 1), end: Self.date(2026, 10, 22))
         )
+        #expect(
+            parse("how many calls in the last 2 years").dates
+                == DateInterval(start: Self.date(2024, 10, 21, hour: 12), end: Self.date(2026, 10, 22))
+        )
+        #expect(parse("how many calls in the last 2 years").datePhrase == "in the last 2 years")
+        #expect(parse("Wie viele Anrufe in den letzten 3 Jahren?").dates?.start == Self.date(2023, 10, 21, hour: 12))
+        #expect(parse("how many calls since 2024").dates?.start == Self.date(2024, 1, 1))
+        #expect(parse("Wie viele Anrufe im Jahr 2025?").dates?.start == Self.date(2025, 1, 1))
+    }
+
+    @Test func numbersWithoutPrepositionArentYears() {
+        let question = parse("How many notes mention 2000 users?")
+
+        #expect(question.dates == nil)
+        #expect(question.topic == ["2000", "users"])
     }
 
     @Test func readsGerman() {
@@ -171,6 +186,19 @@ struct NoteQuestionTests {
 
         #expect(counted.map(\.title) == ["A"])
         #expect(question.countAnswer(for: counted) == "You recorded **1** note that mentions “budget”, 30 min in all.")
+    }
+
+    @Test func countsTopicAsWholeWords() {
+        let notes = [
+            note(title: "A", body: "She said it again."),
+            note(title: "B", body: "Our AI roadmap."),
+            note(title: "C", body: "A benefit for everyone."),
+            note(title: "D", body: "Ben's budgets."),
+        ]
+
+        #expect(notes.filter(parse("How many notes mention AI?").counts).map(\.title) == ["B"])
+        #expect(notes.filter(parse("How many notes with Ben?").counts).map(\.title) == ["D"])
+        #expect(notes.filter(parse("How many notes about the budget?").counts).map(\.title) == ["D"])
     }
 
     @Test func answersNone() {
