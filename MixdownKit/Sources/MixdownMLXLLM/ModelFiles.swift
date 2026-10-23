@@ -37,7 +37,7 @@ enum ModelFiles {
         existingDirectory(for: model).map(isComplete) ?? false
     }
 
-    private static func isComplete(_ directory: URL) -> Bool {
+    static func isComplete(_ directory: URL) -> Bool {
         HuggingFaceDownloader.weightsExist(in: directory)
             && ["config.json", "tokenizer.json", "tokenizer_config.json"].allSatisfy {
                 FileManager.default.fileExists(atPath: directory.appendingPathComponent($0).path)
@@ -45,8 +45,7 @@ enum ModelFiles {
     }
 
     /// Downloads what's missing of the model, unless it's all on disk already: that skips the
-    /// Hub, so loading a downloaded model is quick and works offline. Files already on disk are
-    /// kept when cancelled, so the next call resumes from them.
+    /// Hub. Files already on disk are kept when cancelled, so the next call resumes from them.
     static func download(
         _ model: MLXLanguageModel,
         progress: @escaping @Sendable (Double) -> Void
@@ -56,6 +55,17 @@ enum ModelFiles {
             progress(1)
             return directory
         }
+        try await fetch(model, into: directory, progress: progress)
+        return directory
+    }
+
+    /// Asks the Hub for the model's files and downloads every one that's missing or not the size
+    /// it should be, such as one cut short, into `directory` (from `directory(for:)`).
+    static func fetch(
+        _ model: MLXLanguageModel,
+        into directory: URL,
+        progress: @escaping @Sendable (Double) -> Void
+    ) async throws {
         try await HuggingFaceDownloader.downloadWeights(
             modelId: model.repositoryID,
             to: directory,
@@ -63,7 +73,6 @@ enum ModelFiles {
             progressHandler: { progress($0) }
         )
         progress(1)
-        return directory
     }
 
     static func delete(_ model: MLXLanguageModel) throws {

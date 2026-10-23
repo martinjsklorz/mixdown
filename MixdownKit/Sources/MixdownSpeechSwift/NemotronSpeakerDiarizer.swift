@@ -87,7 +87,7 @@ public final class NemotronSpeakerDiarizer: SpeakerDiarizer {
     private static func load(progress: @escaping @Sendable (Double) -> Void) async throws -> Nemotron3Diarizer {
         do {
             let directory = try Self.directory()
-            return try await ModelCache.loadPreferringCache(
+            return try await ModelDirectory.loadPreferringCache(
                 repositoryID,
                 cacheLooksComplete: cacheLooksComplete(in: directory),
                 progress: progress

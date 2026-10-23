@@ -1,4 +1,5 @@
 import Foundation
+import MixdownCore
 @preconcurrency internal import Qwen3ASR
 
 /// Qwen3-ASR (MLX). Plain text, no timestamps, so the engine feeds it short VAD pieces.
@@ -21,7 +22,7 @@ final class Qwen3Recognizer: SpeechRecognizer, @unchecked Sendable {
         progress: @escaping @Sendable (Double) -> Void
     ) async throws -> Qwen3Recognizer {
         let directory = try ModelCache.directory(for: repositoryID, base: cacheBase)
-        let model = try await ModelCache.loadPreferringCache(
+        let model = try await ModelDirectory.loadPreferringCache(
             repositoryID,
             cacheLooksComplete: cacheLooksComplete(in: directory),
             progress: progress
