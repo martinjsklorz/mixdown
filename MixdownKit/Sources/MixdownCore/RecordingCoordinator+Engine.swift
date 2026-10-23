@@ -132,13 +132,11 @@ extension RecordingCoordinator {
             isModelDownloaded = engine.isDownloaded
         }
         try await engine.prepare(progress: preparationProgressHandler())
-
-        restartProgressEstimate()
         phase = .transcribing(progress: 0)
     }
 
-    /// Starts a new estimate of `timeRemaining` at 0% progress, now.
-    func restartProgressEstimate() {
+    /// Starts a new estimate of `timeRemaining` for preparing the model at 0% progress, now.
+    private func restartProgressEstimate() {
         progressEstimator = RemainingTimeEstimator()
         progressEstimator.add(progress: 0, at: now())
     }

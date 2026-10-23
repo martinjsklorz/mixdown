@@ -25,7 +25,7 @@ window lives in the `MixdownKit` package:
 
 | Module | What it does |
 | ------ | ------------ |
-| `MixdownCore` | Domain types and protocols, plus `RecordingCoordinator`, which runs a recording from start to saved note: captures, live or offline transcription, merging tracks, translation, summary, writing. No dependencies beyond Foundation. |
+| `MixdownCore` | Domain types and protocols, plus `RecordingCoordinator`, which runs a recording from start to saved note. It drains each capture with a `CaptureLoop` and hands the finished tracks, like an imported file's, to a `NotePipeline`: live or offline transcription, telling speakers apart, merging tracks, translation, summary, and saving with a `NoteSaver`. No dependencies beyond Foundation. |
 | `MixdownAudio` | Core Audio: microphone capture (HAL IO proc), system audio (process tap), the device list, and which apps use a microphone (for call detection). |
 | `MixdownSpeechSwift` | Nemotron, Qwen3-ASR and MOSS via [speech-swift](https://github.com/soniqo/speech-swift) (MLX). |
 | `MixdownAppleSpeech` | Apple's on-device model via `SpeechAnalyzer`. |
