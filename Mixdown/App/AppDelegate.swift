@@ -1,12 +1,13 @@
 import AppKit
 import CoreSpotlight
+import MixdownCore
 import MixdownNotes
 import SwiftUI
 
 /// Brings the main window back when the Dock icon is clicked. SwiftUI does that for a
 /// `WindowGroup`, but not for a `Window` that has been closed. Also adds help topics to the Help
-/// menu's search, opens notes picked in Spotlight, and asks before quitting with notes that
-/// haven't been saved.
+/// menu's search, opens notes picked in Spotlight, and asks before quitting would lose a recording
+/// or a note.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Set by `capturesOpenWindow(for:navigation:environment:)`, which also gives it SwiftUI's
@@ -30,23 +31,65 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.helpSearch = helpSearch
     }
 
-    /// Notes waiting for the notes folder only live in memory, so quitting would lose them.
+    /// A recording, one being made into a note and notes waiting for the notes folder only live
+    /// in memory, so quitting would lose them.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        let count = environment?.coordinator.pendingNotes.count ?? 0
-        guard count > 0 else { return .terminateNow }
+        guard let coordinator = environment?.coordinator else { return .terminateNow }
+        for warning in [inProgressWarning(coordinator), unsavedNotesWarning(coordinator)] {
+            guard let warning else { continue }
+            guard confirmQuit(warning) else { return .terminateCancel }
+        }
+        return .terminateNow
+    }
+
+    private struct QuitWarning {
+        let message: String
+        let information: String
+    }
+
+    private func inProgressWarning(_ coordinator: RecordingCoordinator) -> QuitWarning? {
+        if coordinator.isRecording {
+            return QuitWarning(
+                message: "Mixdown is recording",
+                information: "If you quit now, the recording is lost. Stop it first, and Mixdown makes it into a note."
+            )
+        }
+        guard coordinator.isMakingNote else { return nil }
+        if let name = coordinator.importingFileName {
+            return QuitWarning(
+                message: "Mixdown is still importing “\(name)”",
+                information: "If you quit now, no note is saved. You can import the file again later."
+            )
+        }
+        return QuitWarning(
+            message: "Mixdown is still making a note of the recording",
+            information: "If you quit now, the recording is lost. Wait until the note is saved."
+        )
+    }
+
+    private func unsavedNotesWarning(_ coordinator: RecordingCoordinator) -> QuitWarning? {
+        let count = coordinator.pendingNotes.count
+        guard count > 0 else { return nil }
+        return QuitWarning(
+            message: count == 1 ? "A note hasn't been saved yet" : "\(count) notes haven't been saved yet",
+            information: "Mixdown couldn't reach the notes folder. If you quit now, "
+                + (count == 1 ? "the note is" : "the notes are")
+                + " lost. Connect the folder's drive, or choose another folder in Settings, and Mixdown "
+                + "saves " + (count == 1 ? "it." : "them.")
+        )
+    }
+
+    /// Whether the user chose to quit anyway.
+    private func confirmQuit(_ warning: QuitWarning) -> Bool {
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = count == 1 ? "A note hasn't been saved yet" : "\(count) notes haven't been saved yet"
-        alert.informativeText =
-            "Mixdown couldn't reach the notes folder. If you quit now, "
-            + (count == 1 ? "the note is" : "the notes are")
-            + " lost. Connect the folder's drive, or choose another folder in Settings, and Mixdown "
-            + "saves " + (count == 1 ? "it." : "them.")
+        alert.messageText = warning.message
+        alert.informativeText = warning.information
         alert.addButton(withTitle: "Don't Quit")
         let quit = alert.addButton(withTitle: "Quit Anyway")
         quit.hasDestructiveAction = true
         NSApp.activate()
-        return alert.runModal() == .alertFirstButtonReturn ? .terminateCancel : .terminateNow
+        return alert.runModal() == .alertSecondButtonReturn
     }
 
     /// Opens the note, at the line, picked in Spotlight. See `NoteSpotlight`.

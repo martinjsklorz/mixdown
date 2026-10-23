@@ -137,7 +137,9 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             - From any other app, press ⌃⌥⌘R. Change that shortcut or turn it off under \
             **Settings → General → Global Shortcuts**.
 
-            Do the same again to stop. Recording carries on if you close the window.
+            Do the same again to stop. Recording carries on if you close the window. Mixdown warns \
+            you if you quit while recording, or before the note is saved, as the recording would be \
+            lost.
 
             ## Pause
 

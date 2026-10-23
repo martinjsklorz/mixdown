@@ -207,6 +207,17 @@ public final class RecordingCoordinator {
         if case .paused = phase { true } else { false }
     }
 
+    /// A finished recording, or the file `importingFileName` names, is being made into a note:
+    /// transcribed, its speakers told apart, translated or summarized, or waiting on the model to
+    /// download again. It's only in memory until the note is saved.
+    public var isMakingNote: Bool {
+        switch phase {
+        case .transcribing, .identifyingSpeakers, .translating, .summarizing: true
+        case .preparingModel: isPreparingModelForRecording
+        default: false
+        }
+    }
+
     /// Recording, or starting to. Stopping while the captures start ends the recording as soon as
     /// they have.
     public var canStopRecording: Bool {

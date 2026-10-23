@@ -95,12 +95,14 @@ struct AudioImportTests {
         #expect(coordinator.recordingSummaryTemplate == .general)
         #expect(!coordinator.canImportAudio)
         #expect(!coordinator.canStartRecording)
+        #expect(coordinator.isMakingNote)
         coordinator.chooseSummaryTemplate(.standup)
         await gate.open()
         await importing.value
 
         #expect(summarizer.receivedTemplates == [.standup])
         #expect(coordinator.recordingSummaryTemplate == nil)
+        #expect(!coordinator.isMakingNote)
     }
 
     @Test func liveEngineIsFedTheFileInPieces() async throws {
