@@ -7,9 +7,9 @@ public struct DefaultAudioCaptureFactory: AudioCaptureFactory {
     public func makeCapture(for device: AudioInputDevice) throws -> any AudioCapturing {
         switch device.kind {
         case .microphone:
-            try MicrophoneCapture(device: device)
+            try IOProcCapture(source: MicrophoneInput(device: device))
         case .systemAudio:
-            try SystemAudioCapture()
+            try IOProcCapture(source: SystemAudioTap())
         case .file:
             throw AudioCaptureError.deviceUnavailable("“\(device.name)” is a file, not an input.")
         }

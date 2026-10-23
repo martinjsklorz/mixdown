@@ -73,6 +73,7 @@ schemes:
       gatherCoverageData: true
       targets:
         - package: MixdownKit/MixdownCoreTests
+        - package: MixdownKit/MixdownAudioTests
         - package: MixdownKit/MixdownNotesTests
         - package: MixdownKit/MixdownSpeechSwiftTests
     profile:
