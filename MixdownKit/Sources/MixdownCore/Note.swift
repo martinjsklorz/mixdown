@@ -27,6 +27,9 @@ public struct Note: Sendable, Equatable {
     /// How long the user and the others talked, minute by minute. `nil` unless talk time was
     /// measured, both microphone and system audio were recorded and someone talked.
     public var talkTimeline: TalkTimeline?
+    /// The recording in the `RecordingStore` this note was made from, deleted once the note is
+    /// saved; `nil` if there's none to delete. Not part of what's written.
+    public var recordingID: UUID?
 
     public init(
         title: String,

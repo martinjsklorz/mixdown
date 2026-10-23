@@ -57,6 +57,7 @@ public enum NoteLibrary {
                     fileDate: values.creationDate ?? values.contentModificationDate ?? .distantPast
                 )
                 note.folder = folder.path
+                note.cachedFingerprint.value = NoteSearchIndex.fingerprint(of: note)
                 entries[url] = Cache.Entry(stamp: stamp, note: note)
             }
         }
@@ -66,6 +67,22 @@ public enum NoteLibrary {
         return entries.values.map(\.note).sorted {
             ($0.createdAt, $0.url.lastPathComponent) > ($1.createdAt, $1.url.lastPathComponent)
         }
+    }
+
+    /// The notes of `notes` whose title, text or folder contains `query`, ignoring case and accents,
+    /// for the sidebar's search. Looking through long transcripts takes a while, so it's meant to
+    /// run off the main thread, and throws `CancellationError` as soon as it's cancelled.
+    public static func search(_ notes: [NoteDocument], for query: String) throws -> Set<NoteDocument.ID> {
+        var matches = Set<NoteDocument.ID>()
+        for note in notes {
+            try Task.checkCancellation()
+            if note.title.localizedStandardContains(query) || note.folder?.localizedStandardContains(query) == true
+                || note.body.localizedStandardContains(query)
+            {
+                matches.insert(note.id)
+            }
+        }
+        return matches
     }
 
     /// The notes `loadNotes(in:cache:)` read last time, by file, so it can skip the ones whose
@@ -90,6 +107,12 @@ public enum NoteLibrary {
         var entries: [URL: Entry] = [:]
 
         public init() {}
+    }
+
+    /// The space the notes `loadNotes(in:cache:)` would list take up: Markdown files only, so
+    /// other files in a shared folder (an Obsidian vault's attachments, say) aren't counted.
+    public static func diskUsage(in directory: URL) -> DiskUsage {
+        DiskUsage.of(directory, options: [.skipsHiddenFiles, .skipsPackageDescendants], including: isNote)
     }
 
     /// Whether the file at `url` would be listed as a note, judged by its name alone: a Markdown

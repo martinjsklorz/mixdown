@@ -5,7 +5,8 @@ import os
 /// Saves finished notes with a `NoteWriting`, and keeps those it can't save yet until it can, e.g.
 /// because the notes folder is on a drive that was disconnected or asleep when the recording
 /// finished. They're saved as soon as there's a `noteWriter` again, and retried every
-/// `retryInterval` meanwhile. Only kept in memory, so they're lost if the app quits.
+/// `retryInterval` meanwhile. Only kept in memory, so they're lost if the app quits; a recording's
+/// audio stays in the `RecordingStore` until its note is saved, though.
 @MainActor
 @Observable
 final class NoteSaver {
@@ -28,6 +29,8 @@ final class NoteSaver {
     var retryInterval: Duration = .seconds(30)
     /// Called once `saveAll()` has saved every pending note.
     @ObservationIgnored var didSaveAll: () -> Void = {}
+    /// Called with each note once it's saved.
+    @ObservationIgnored var didSave: (Note) -> Void = { _ in }
 
     /// Changes with every `noteWriter`, so a save that failed can tell it has a new one to try.
     @ObservationIgnored private var generation = 0
@@ -70,6 +73,7 @@ final class NoteSaver {
                 let url = try await noteWriter.write(note)
                 pendingNotes.removeFirst()
                 lastNoteURL = url
+                didSave(note)
                 logger.info("Wrote note to \(url.path(percentEncoded: false), privacy: .private)")
             } catch {
                 // The folder changed while writing; try the new one.

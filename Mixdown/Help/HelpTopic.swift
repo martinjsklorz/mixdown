@@ -137,9 +137,9 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             - From any other app, press ⌃⌥⌘R. Change that shortcut or turn it off under \
             **Settings → General → Global Shortcuts**.
 
-            Do the same again to stop. Recording carries on if you close the window. Mixdown warns \
-            you if you quit while recording, or before the note is saved, as the recording would be \
-            lost.
+            Do the same again to stop. Recording carries on if you close the window. Mixdown asks \
+            first if you quit while recording, or before the note is saved. See \
+            [Troubleshooting](mixdown-help:troubleshooting).
 
             ## Pause
 
@@ -343,7 +343,8 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             **Settings → Transcription**, in one of two kinds:
 
             - **Live** models transcribe while you record, so the note is ready when you stop. The \
-            audio isn't kept, so an hours-long meeting takes no more memory than a short one.
+            audio isn't kept in memory, so an hours-long meeting takes no more memory than a short \
+            one.
             - **Offline** models transcribe the whole recording once you stop, keeping its audio in \
             memory until then. Qwen3 and MOSS are more accurate than the live model.
 
@@ -501,6 +502,20 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             never leave it. Only the speech models, and an open summary model if you pick one, \
             are downloaded.
 
+            Only the note is saved, to the folder you chose. Until then, where the audio is kept \
+            depends on **Settings → Recording → Keep audio until the note is saved**:
+
+            - **On Disk** (the default): while you record, the audio is also written to Mixdown's \
+            container, so quitting, a crash or a failed transcription doesn't lose it. It's \
+            deleted as soon as the note is saved. A recording whose note wasn't made stays there, \
+            under **Unfinished Recordings** on Record, until you transcribe or delete it.
+            - **In Memory Only**: no audio is written to disk. If transcribing fails, an offline \
+            model's recording stays under **Unfinished Recordings** until Mixdown quits. Quitting \
+            while recording, or a crash, loses the recording.
+
+            Recordings already on disk stay there when you switch to **In Memory Only**, until you \
+            transcribe or delete them.
+
             ## Permissions
 
             The first time, macOS asks for permission:
@@ -553,7 +568,24 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
 
             The notes folder couldn't be reached when the note was finished. Connect the folder's \
             drive, or choose another folder under **Settings → General**, and Mixdown saves it. \
-            Quitting before then loses the note. See [Notes](mixdown-help:notes).
+            Quitting before then loses the note, but not a recording's audio kept on disk: it comes \
+            back under **Unfinished Recordings**. See [Notes](mixdown-help:notes).
+
+            ## Unfinished Recordings on Record
+
+            Mixdown keeps a recording's audio on disk until its note is saved. If Mixdown quit or crashed \
+            while recording or making the note, or transcribing failed, the recording is listed \
+            under **Unfinished Recordings** on Record, and in the menu bar. Click **Transcribe** to \
+            make its note, or **Delete…** to throw the audio away.
+
+            Quitting while recording asks whether to stop and quit once the note is saved, or to \
+            quit now and keep the recording for later. Logging out, restarting or shutting down \
+            doesn't ask: the recording stops and is kept.
+
+            With **Settings → Recording → Keep audio until the note is saved** set to **In Memory \
+            Only**, only a recording whose transcription failed is listed, and only until Mixdown \
+            quits, which asks first. Quitting now while recording loses the recording; logging out \
+            stops it and waits for its note. See [Privacy](mixdown-help:privacy).
 
             ## The speech model is downloading again
 

@@ -85,6 +85,35 @@ struct NoteLibraryTests {
         #expect(try loadNotes(in: directory).map(\.title) == ["Root"])
     }
 
+    @Test func diskUsageCountsOnlyListedNotes() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fileManager = FileManager.default
+        for folder in ["Clients", ".obsidian"] {
+            try fileManager.createDirectory(
+                at: directory.appending(path: folder, directoryHint: .isDirectory),
+                withIntermediateDirectories: true
+            )
+        }
+        try write("# Root", to: "Root.md", in: directory)
+        try write("# Client", to: "Clients/Client.markdown", in: directory)
+        try write("Not a note", to: "Clients/Attachment.txt", in: directory)
+        try write("# Hidden", to: ".hidden.md", in: directory)
+        try write("# Settings", to: ".obsidian/Settings.md", in: directory)
+
+        let usage = NoteLibrary.diskUsage(in: directory)
+
+        #expect(usage.fileCount == 2)
+        #expect(usage.bytes > 0)
+    }
+
+    @Test func missingDirectoryUsesNoSpace() {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "NoteLibraryTests-missing-\(UUID().uuidString)", directoryHint: .isDirectory)
+
+        #expect(NoteLibrary.diskUsage(in: directory) == DiskUsage())
+    }
+
     @Test func missingDirectoryHasNoNotes() throws {
         let directory = FileManager.default.temporaryDirectory
             .appending(path: "NoteLibraryTests-missing-\(UUID().uuidString)", directoryHint: .isDirectory)
@@ -149,6 +178,46 @@ struct NoteLibraryTests {
         try FileManager.default.removeItem(at: second)
         #expect(try NoteLibrary.loadNotes(in: second, cache: &cache).isEmpty)
         #expect(try NoteLibrary.loadNotes(in: first, cache: &cache).map(\.title) == ["First"])
+    }
+
+    @Test func readNotesComeFingerprintedForIndexing() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let contents = "# Sync\n\nWe moved the release."
+        try write(contents, to: "Sync.md", in: directory)
+        var loaded = try #require(try loadNotes(in: directory).first)
+        let fresh = NoteDocument(url: loaded.url, contents: contents, fileDate: loaded.createdAt)
+        let state = NoteSearchIndex.update(from: .init(), to: [fresh]).state
+
+        // The fingerprint worked out on reading is the one the index would work out itself.
+        #expect(loaded == fresh)
+        #expect(NoteSearchIndex.update(from: state, to: [loaded]).isEmpty)
+
+        loaded.body += "\n\nAnd the budget."
+        #expect(!NoteSearchIndex.update(from: state, to: [loaded]).isEmpty)
+    }
+
+    @Test func searchFindsTitleTextAndFolderIgnoringCaseAndAccents() throws {
+        var inFolder = NoteDocument(url: URL(filePath: "/n/a.md"), contents: "# Standup\n\nNothing.", fileDate: .now)
+        inFolder.folder = "Clients/Zürich"
+        let notes = [
+            NoteDocument(url: URL(filePath: "/n/b.md"), contents: "# Café Plans\n\nNothing.", fileDate: .now),
+            NoteDocument(url: URL(filePath: "/n/c.md"), contents: "# Sync\n\nWe meet at the CAFE.", fileDate: .now),
+            inFolder,
+        ]
+
+        #expect(try NoteLibrary.search(notes, for: "cafe") == [notes[0].id, notes[1].id])
+        #expect(try NoteLibrary.search(notes, for: "zurich") == [inFolder.id])
+        #expect(try NoteLibrary.search(notes, for: "nowhere").isEmpty)
+    }
+
+    @Test func searchStopsWhenCancelled() async {
+        let notes = [NoteDocument(url: URL(filePath: "/n/a.md"), contents: "# A", fileDate: .now)]
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try NoteLibrary.search(notes, for: "a")
+        }
+        await #expect(throws: CancellationError.self) { try await task.value }
     }
 
     @Test func tellsChangesThatAffectNotes() {

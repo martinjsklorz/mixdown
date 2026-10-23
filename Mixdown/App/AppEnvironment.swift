@@ -38,6 +38,9 @@ final class AppEnvironment {
     /// Checks for and installs new releases; does nothing in builds from source.
     let updater = Updater()
     let notesFolder: NotesFolderStore
+    /// The notes in `notesFolder`, read and watched for as long as the app runs, for the main
+    /// window, Chat and Spotlight alike.
+    let library = NoteLibraryModel()
     let noteTrash: NoteTrash
     /// Chat across the notes, kept while the main window is closed.
     let noteChat: NoteChat
@@ -58,6 +61,8 @@ final class AppEnvironment {
     /// by every coordinator, like `echoCancellation`.
     private static let speakerDiarizer = NemotronSpeakerDiarizer()
     @ObservationIgnored private var deviceMonitor: Task<Void, Never>?
+    /// Reads `library`'s folder again whenever its files change.
+    @ObservationIgnored private var libraryWatch: (directory: URL?, task: Task<Void, Never>)?
     @ObservationIgnored private var recordingClock: Task<Void, Never>?
     @ObservationIgnored private var recordingClockStart: Date?
     @ObservationIgnored private var callPrompt: CallPrompt?
@@ -135,6 +140,7 @@ final class AppEnvironment {
         translator: any Translator,
         notesDirectory: URL?,
         pendingNotes: [Note] = [],
+        recordingsInMemory: RecordingsInMemory = RecordingsInMemory(),
         preferredDeviceIDs: [String],
         preferences: Preferences
     ) -> RecordingCoordinator {
@@ -146,6 +152,7 @@ final class AppEnvironment {
             engine: model.makeEngine(),
             noteWriter: notesDirectory.map { MarkdownNoteWriter(directory: $0) },
             pendingNotes: pendingNotes,
+            recordingsInMemory: recordingsInMemory,
             summarizer: nil,
             summaryTemplate: preferences.summaryTemplates.recordingTemplate,
             callSummaryTemplate: preferences.summaryTemplates.callTemplate,
@@ -156,7 +163,8 @@ final class AppEnvironment {
             preferredDeviceIDs: preferredDeviceIDs,
             playbackMonitor: CoreAudioPlaybackMonitor(),
             echoCancellation: echoCancellation,
-            audioFileDecoder: AudioFileDecoder()
+            audioFileDecoder: AudioFileDecoder(),
+            recordingStore: .default
         )
         configure(coordinator, with: preferences, summarizer: summarizer)
         return coordinator
@@ -174,6 +182,7 @@ final class AppEnvironment {
         coordinator.vocabulary = preferences.vocabulary
         coordinator.cancelsEcho = preferences.cancelsEcho
         coordinator.measuresTalkTime = preferences.measuresTalkTime
+        coordinator.keepsAudioOnDisk = preferences.keepsAudioOnDisk
         let minutes = preferences.stillRecordingMinutes
         coordinator.stillRecordingDelay = minutes > 0 ? .seconds(minutes * 60) : nil
         coordinator.speakerDiarizer = preferences.identifiesSpeakers ? speakerDiarizer : nil
@@ -346,8 +355,8 @@ final class AppEnvironment {
         AudioCues.play(cue, settings: settings)
     }
 
-    /// Points the coordinator at the notes folder whenever it's chosen, goes away or comes back.
-    /// Without one, recording is disabled.
+    /// Points the coordinator and `library` at the notes folder whenever it's chosen, goes away or
+    /// comes back. Without one, recording is disabled.
     private func observeNotesFolder() {
         let directory = withObservationTracking {
             notesFolder.directory
@@ -355,17 +364,36 @@ final class AppEnvironment {
             Task { @MainActor in self?.observeNotesFolder() }
         }
         coordinator.noteWriter = directory.map { MarkdownNoteWriter(directory: $0) }
+        watchLibrary(in: directory)
     }
 
-    /// Points Spotlight at the notes folder whenever it changes, and adds or removes the notes as
-    /// the preference is turned on or off.
+    /// Reads the notes in `directory` into `library`, and again whenever its files change, until
+    /// it's called with another folder.
+    private func watchLibrary(in directory: URL?) {
+        if let libraryWatch {
+            guard libraryWatch.directory != directory else { return }
+            libraryWatch.task.cancel()
+        }
+        let task = Task { [library] in
+            // Started first, so nothing that changes during the first reload is missed.
+            let changes = directory.map { NotesFolderWatcher.changes(in: $0) }
+            await library.reload(from: directory)
+            guard let changes else { return }
+            for await _ in changes { await library.reload(from: directory) }
+        }
+        libraryWatch = (directory, task)
+    }
+
+    /// Hands Spotlight the notes whenever they change, and adds or removes them as the preference
+    /// is turned on or off.
     private func observeSpotlight() {
-        let (directory, isEnabled) = withObservationTracking {
-            (notesFolder.directory, preferences.indexesNotesInSpotlight)
+        let (notes, isEnabled) = withObservationTracking {
+            // Without following the notes while it's off, so they aren't taken out on every change.
+            preferences.indexesNotesInSpotlight ? (library.folder.map { _ in library.notes }, true) : (nil, false)
         } onChange: { [weak self] in
             Task { @MainActor in self?.observeSpotlight() }
         }
-        noteSpotlight.update(directory: directory, isEnabled: isEnabled)
+        noteSpotlight.update(notes: notes, isEnabled: isEnabled)
     }
 
     /// Posts "Note Ready", and plays its cue, for every note the coordinator writes.
@@ -502,6 +530,7 @@ final class AppEnvironment {
             translator: translator,
             notesDirectory: notesFolder.directory,
             pendingNotes: coordinator.takePendingNotes(),
+            recordingsInMemory: coordinator.takeRecordingsInMemory(),
             preferredDeviceIDs: settings.selectedDeviceIDs,
             preferences: preferences
         )

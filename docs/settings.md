@@ -32,6 +32,8 @@ Press ⌘, or click the cog above the sidebar to open Settings. **Settings…** 
   be recorded. See [Recording calls](calls.md#talk-time).
 - **Silence**: **Ask if still recording after** 5, 10, 15 (the default), 30 or 60 minutes without
   speech, or **Never**. See [Recording](recording.md#while-recording).
+- **Audio**: **Keep audio until the note is saved** **On Disk** (the default) or **In Memory
+  Only**. See [Privacy](privacy.md).
 - **Calls**: **Notify when calls start and end** (on) and **Record calls automatically** (off).
   See [Recording calls](calls.md#call-detection).
 

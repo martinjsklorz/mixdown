@@ -8,33 +8,33 @@ import os
 /// Mixdown. See `NoteSearchIndex` for what each note becomes; clicking a result opens it (see
 /// `AppDelegate`).
 ///
-/// Watches the notes folder for as long as the app runs, not just while the main window is open,
-/// so notes recorded with it closed show up too. Only notes that changed since the last update
-/// are sent to Spotlight again, across launches too.
+/// Fed by `AppEnvironment` from its `library`, which reads the notes folder for as long as the app
+/// runs, so notes recorded with the main window closed show up too. Only notes that changed since
+/// the last update are sent to Spotlight again, across launches too.
 @MainActor
 final class NoteSpotlight {
     private let index = NoteSpotlightIndex()
-    /// The running update, or the watch for changes. Each call to `update(directory:isEnabled:)`
-    /// stops it and starts the next once it's done.
+    /// The running update. Each call to `update(notes:isEnabled:)` starts the next once it's done.
     private var task: Task<Void, Never>?
+    /// Counts calls to `update(notes:isEnabled:)`, so one that a newer call replaced before it
+    /// started is skipped.
+    private var requested = 0
 
-    /// Adds the notes in `directory` to Spotlight and keeps them up to date, or with `isEnabled`
-    /// off, takes them out. Without a `directory` (none chosen, or it can't be reached) Spotlight
-    /// keeps the notes it has; they're brought up to date once the folder is back.
-    func update(directory: URL?, isEnabled: Bool) {
+    /// Brings Spotlight in line with `notes`, the notes in the notes folder, or with `isEnabled`
+    /// off, takes them out. Without `notes` (no folder chosen, or it can't be read) Spotlight keeps
+    /// the notes it has; they're brought up to date once the folder is back.
+    func update(notes: [NoteDocument]?, isEnabled: Bool) {
+        requested += 1
+        let request = requested
         let previous = task
-        previous?.cancel()
         task = Task { [index] in
             await previous?.value
-            guard isEnabled else {
+            guard request == self.requested else { return }
+            if !isEnabled {
                 await index.removeAll()
-                return
+            } else if let notes {
+                await index.update(to: notes)
             }
-            guard let directory else { return }
-            // Started first, so nothing that changes during the first update is missed.
-            let changes = NotesFolderWatcher.changes(in: directory)
-            await index.update(notesIn: directory)
-            for await _ in changes { await index.update(notesIn: directory) }
         }
     }
 }
@@ -58,19 +58,10 @@ private actor NoteSpotlightIndex {
     private let stateURL = URL.applicationSupportDirectory.appending(path: "SpotlightIndex.json")
     /// What the index holds, once checked against it.
     private var state: NoteSearchIndex.State?
-    /// The notes read last time, so an update only reads the files that changed.
-    private var cache = NoteLibrary.Cache()
 
-    /// Brings the index in line with the notes in `directory`: adds new and changed notes, and
-    /// removes notes that are gone. Leaves it alone if the folder can't be read.
-    func update(notesIn directory: URL) async {
-        let notes: [NoteDocument]
-        do {
-            notes = try NoteLibrary.loadNotes(in: directory, cache: &cache)
-        } catch {
-            Self.logger.error("Couldn't read the notes folder for Spotlight: \(error.localizedDescription)")
-            return
-        }
+    /// Brings the index in line with `notes`: adds new and changed notes, and removes notes that
+    /// are gone.
+    func update(to notes: [NoteDocument]) async {
         let update = NoteSearchIndex.update(from: await checkedState(), to: notes)
         guard !update.isEmpty else { return }
 

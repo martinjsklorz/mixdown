@@ -33,6 +33,19 @@ extension NotePipeline {
         var untitledName: String?
         var moments: [Moment] = []
         var talkTimeline: TalkTimeline?
+        /// The recording in the `RecordingStore` the note is made from, deleted once the note is
+        /// saved; `nil` if there's none.
+        var recordingID: UUID?
+    }
+
+    /// How making a note went, when it didn't fail as a whole.
+    struct Outcome {
+        /// What to tell the user about, e.g. a track that couldn't be transcribed or a translation
+        /// that failed.
+        var messages: [String]
+        /// Whether every track was transcribed. If not, the note's `recordingID` is left out, so
+        /// saving it doesn't delete the recording.
+        var isComplete: Bool
     }
 
     /// Where a device's audio begins in a track, in seconds from its first sample.

@@ -5,7 +5,8 @@ import MixdownCore
 /// embedding of its meaning. A question is matched against them both by its words and by its
 /// meaning, so "When do we ship?" finds "The release moves to Friday."
 ///
-/// Kept between launches, so only notes that changed are embedded again.
+/// Kept between launches, so only notes that changed are embedded again, each note in a file of
+/// its own, so a change only rewrites that note's embeddings.
 public struct NoteChatIndex: Sendable {
     /// A few consecutive lines of one section of a note.
     public struct Passage: Sendable, Equatable {
@@ -66,6 +67,9 @@ public struct NoteChatIndex: Sendable {
 
     /// By the note's URL.
     var entries: [String: Entry] = [:]
+    /// Notes added or changed, and notes removed, since the last `save(in:)`.
+    private(set) var unsavedIDs: Set<String> = []
+    private var removedIDs: Set<String> = []
 
     public init() {}
 
@@ -156,7 +160,11 @@ public struct NoteChatIndex: Sendable {
     /// Drops the notes that aren't in `notes`.
     public mutating func removeNotes(notIn notes: [NoteDocument]) {
         let ids = Set(notes.map(\.url.absoluteString))
-        entries = entries.filter { ids.contains($0.key) }
+        for id in entries.keys where !ids.contains(id) {
+            entries[id] = nil
+            unsavedIDs.remove(id)
+            removedIDs.insert(id)
+        }
     }
 
     /// `note` in passages, embedded with `embedder` if there is one. If the embedder fails, the
@@ -189,6 +197,8 @@ public struct NoteChatIndex: Sendable {
     /// Adds a note made into passages, replacing what the index had of it.
     public mutating func insert(_ note: IndexedNote) {
         entries[note.id] = note.entry
+        removedIDs.remove(note.id)
+        unsavedIDs.insert(note.id)
     }
 
     /// Brings the index in line with `notes` with the methods above, calling `progress` after
@@ -224,8 +234,8 @@ public struct NoteChatIndex: Sendable {
     ///
     /// Ranks the passages by the query's words (BM25) and by similarity to `queryEmbeddings`
     /// (one per model in `embeddingModels`), and merges both rankings by reciprocal rank fusion.
-    /// A query with no words to search for, like "What happened last week?", gets the summaries of
-    /// the newest notes.
+    /// A query with no words to search for, like "What happened last week?", gets an overview: the
+    /// summaries of as many of the newest notes as `limit` allows.
     public func search(
         _ query: String,
         queryEmbeddings: [TextEmbedding],
@@ -263,14 +273,27 @@ public struct NoteChatIndex: Sendable {
         return Self.capped(ranked.lazy.map { candidates[$0] }, limit: limit, perNote: perNote)
     }
 
-    /// The summaries of `notes`, in their order, or the start of the notes without one.
+    /// The summaries of `notes`, or the start of the notes without one: the first passage of each
+    /// note in their order, then the second of each, and so on, so an overview covers up to `limit`
+    /// notes rather than a few in depth. Answers trim from the end, so the first passages go last.
     private func overview(of notes: [NoteDocument], limit: Int, perNote: Int) -> [Passage] {
-        let passages = notes.lazy.flatMap { note -> [Passage] in
-            let passages = entries[note.url.absoluteString]?.passages ?? []
+        var seen = Set<String>()
+        var byNote: [[Passage]] = []
+        // No more notes than `limit` get a passage in.
+        for note in notes where byNote.count < limit {
+            let id = note.url.absoluteString
+            guard seen.insert(id).inserted, let passages = entries[id]?.passages, !passages.isEmpty else { continue }
             let summary = passages.filter(\.isSummary)
-            return summary.isEmpty ? passages : summary
+            byNote.append(Array((summary.isEmpty ? passages : summary).prefix(perNote)))
         }
-        return Self.capped(passages, limit: limit, perNote: perNote)
+        var result: [Passage] = []
+        for round in 0..<perNote {
+            for passages in byNote where passages.count > round {
+                guard result.count < limit else { return result }
+                result.append(passages[round])
+            }
+        }
+        return result
     }
 
     private static func capped(_ passages: some Sequence<Passage>, limit: Int, perNote: Int) -> [Passage] {
@@ -306,24 +329,77 @@ public struct NoteChatIndex: Sendable {
 
     // MARK: Saving
 
-    private struct Saved: Codable {
+    /// One note's entry, in the file `save(in:)` writes for it.
+    private struct SavedNote: Codable {
+        var version: Int
+        var id: String
+        var entry: Entry
+    }
+
+    /// The whole index in one file, as earlier versions saved it.
+    struct LegacySaved: Codable {
         var version: Int
         var entries: [String: Entry]
     }
 
-    /// The index as a property list.
-    public func encoded() throws -> Data {
-        let encoder = PropertyListEncoder()
-        encoder.outputFormat = .binary
-        return try encoder.encode(Saved(version: Self.formatVersion, entries: entries))
+    /// The name of the file `save(in:)` writes the note with `id` to.
+    static func fileName(forID id: String) -> String {
+        NoteSearchIndex.hash([id]) + ".plist"
     }
 
-    /// An index `encoded()` saved, or an empty one if it's from another version or unreadable.
-    public static func decoded(from data: Data) -> NoteChatIndex {
-        guard let saved = try? PropertyListDecoder().decode(Saved.self, from: data), saved.version == formatVersion
+    /// Whether notes were added, changed or removed since the last `save(in:)`.
+    public var hasUnsavedChanges: Bool { !unsavedIDs.isEmpty || !removedIDs.isEmpty }
+
+    /// Writes each note added or changed since the last save to its own file in `directory`, and
+    /// deletes the files of notes removed since. Notes it couldn't write are written on the next
+    /// save.
+    public mutating func save(in directory: URL) throws {
+        let fileManager = FileManager.default
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        for id in removedIDs {
+            try? fileManager.removeItem(at: directory.appending(path: Self.fileName(forID: id)))
+        }
+        removedIDs = []
+        let encoder = PropertyListEncoder()
+        encoder.outputFormat = .binary
+        for id in unsavedIDs {
+            if let entry = entries[id] {
+                let data = try encoder.encode(SavedNote(version: Self.formatVersion, id: id, entry: entry))
+                try data.write(to: directory.appending(path: Self.fileName(forID: id)), options: .atomic)
+            }
+            unsavedIDs.remove(id)
+        }
+    }
+
+    /// The index `save(in:)` wrote to `directory`; empty if there's none. Files it can't use, like
+    /// ones from another version, are deleted, so their notes are indexed again.
+    public static func load(from directory: URL) -> NoteChatIndex {
+        let fileManager = FileManager.default
+        let files = (try? fileManager.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+        let decoder = PropertyListDecoder()
+        var index = NoteChatIndex()
+        for file in files where file.pathExtension == "plist" {
+            guard let data = try? Data(contentsOf: file),
+                let saved = try? decoder.decode(SavedNote.self, from: data),
+                saved.version == formatVersion, file.lastPathComponent == fileName(forID: saved.id)
+            else {
+                try? fileManager.removeItem(at: file)
+                continue
+            }
+            index.entries[saved.id] = saved.entry
+        }
+        return index
+    }
+
+    /// The index an earlier version saved in one file, with every note still to `save(in:)`.
+    /// Empty if it's from another format version or unreadable.
+    public static func decoded(fromLegacyFile data: Data) -> NoteChatIndex {
+        guard let saved = try? PropertyListDecoder().decode(LegacySaved.self, from: data),
+            saved.version == formatVersion
         else { return NoteChatIndex() }
         var index = NoteChatIndex()
         index.entries = saved.entries
+        index.unsavedIDs = Set(saved.entries.keys)
         return index
     }
 }

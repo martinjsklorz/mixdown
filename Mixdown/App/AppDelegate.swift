@@ -2,12 +2,13 @@ import AppKit
 import CoreSpotlight
 import MixdownCore
 import MixdownNotes
+import Observation
 import SwiftUI
 
 /// Brings the main window back when the Dock icon is clicked. SwiftUI does that for a
 /// `WindowGroup`, but not for a `Window` that has been closed. Also adds help topics to the Help
-/// menu's search, opens notes picked in Spotlight, and asks before quitting would lose a recording
-/// or a note.
+/// menu's search, opens notes picked in Spotlight, and asks before quitting while recording or
+/// making a note, or with notes or recordings only kept in memory.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Set by `capturesOpenWindow(for:navigation:environment:)`, which also gives it SwiftUI's
@@ -31,65 +32,194 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.helpSearch = helpSearch
     }
 
-    /// A recording, one being made into a note and notes waiting for the notes folder only live
-    /// in memory, so quitting would lose them.
+    /// Asks before quitting while recording or making a note, and with notes waiting for the notes
+    /// folder or recordings that couldn't be transcribed, which only live in memory. Logging out,
+    /// restarting or shutting down doesn't ask about recording, so it isn't held up: a recording
+    /// kept on disk stops, to make its note the next time Mixdown opens, like one being made into a
+    /// note already is. One only in memory stops, and Mixdown quits once its note is saved.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let coordinator = environment?.coordinator else { return .terminateNow }
-        for warning in [inProgressWarning(coordinator), unsavedNotesWarning(coordinator)] {
-            guard let warning else { continue }
-            guard confirmQuit(warning) else { return .terminateCancel }
+        if Self.isSessionEnding {
+            if coordinator.canStopRecording, coordinator.keepsRecordingWhenQuitting {
+                stopWithoutNoteThenQuit(coordinator)
+                return .terminateLater
+            } else if coordinator.canStopRecording {
+                Task { await coordinator.stopRecording() }
+                replyWhenDone(coordinator)
+                return .terminateLater
+            } else if coordinator.isMakingNote, !coordinator.keepsRecordingWhenQuitting,
+                coordinator.importingFileName == nil
+            {
+                replyWhenDone(coordinator)
+                return .terminateLater
+            }
+        } else if coordinator.canStopRecording {
+            return askToQuitWhileRecording(coordinator)
+        } else if coordinator.isMakingNote {
+            return askToQuitWhileMakingNote(coordinator)
         }
-        return .terminateNow
+        return askToQuitLosingWork(coordinator)
     }
 
-    private struct QuitWarning {
-        let message: String
-        let information: String
-    }
-
-    private func inProgressWarning(_ coordinator: RecordingCoordinator) -> QuitWarning? {
-        if coordinator.isRecording {
-            return QuitWarning(
-                message: "Mixdown is recording",
-                information: "If you quit now, the recording is lost. Stop it first, and Mixdown makes it into a note."
-            )
-        }
-        guard coordinator.isMakingNote else { return nil }
-        if let name = coordinator.importingFileName {
-            return QuitWarning(
-                message: "Mixdown is still importing “\(name)”",
-                information: "If you quit now, no note is saved. You can import the file again later."
-            )
-        }
-        return QuitWarning(
-            message: "Mixdown is still making a note of the recording",
-            information: "If you quit now, the recording is lost. Wait until the note is saved."
-        )
-    }
-
-    private func unsavedNotesWarning(_ coordinator: RecordingCoordinator) -> QuitWarning? {
-        let count = coordinator.pendingNotes.count
-        guard count > 0 else { return nil }
-        return QuitWarning(
-            message: count == 1 ? "A note hasn't been saved yet" : "\(count) notes haven't been saved yet",
-            information: "Mixdown couldn't reach the notes folder. If you quit now, "
-                + (count == 1 ? "the note is" : "the notes are")
-                + " lost. Connect the folder's drive, or choose another folder in Settings, and Mixdown "
-                + "saves " + (count == 1 ? "it." : "them.")
-        )
-    }
-
-    /// Whether the user chose to quit anyway.
-    private func confirmQuit(_ warning: QuitWarning) -> Bool {
+    private func askToQuitWhileRecording(_ coordinator: RecordingCoordinator) -> NSApplication.TerminateReply {
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = warning.message
-        alert.informativeText = warning.information
+        alert.messageText = "Mixdown is recording"
+        alert.informativeText =
+            "Stop the recording, and Mixdown quits once its note is saved. "
+            + (coordinator.keepsRecordingWhenQuitting
+                ? "If you quit now, Mixdown keeps the recording, to make its note the next time you open it."
+                : "If you quit now, the recording is lost.")
+        alert.addButton(withTitle: "Stop and Quit When Saved")
+        addDontQuitButton(to: alert)
+        let quit = alert.addButton(withTitle: "Quit Now")
+        quit.hasDestructiveAction = !coordinator.keepsRecordingWhenQuitting
+        NSApp.activate()
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            Task { await coordinator.stopRecording() }
+            quitWhenDone()
+            return .terminateCancel
+        case .alertThirdButtonReturn:
+            stopWithoutNoteThenQuit(coordinator)
+            return .terminateLater
+        default:
+            return .terminateCancel
+        }
+    }
+
+    private func askToQuitWhileMakingNote(_ coordinator: RecordingCoordinator) -> NSApplication.TerminateReply {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText =
+            if let name = coordinator.importingFileName {
+                "Mixdown is still importing “\(name)”"
+            } else {
+                "Mixdown is still making a note of the recording"
+            }
+        let quittingNow =
+            if let name = coordinator.importingFileName {
+                "If you quit now, import “\(name)” again later."
+            } else if coordinator.keepsRecordingWhenQuitting {
+                "If you quit now, Mixdown keeps the recording, to make its note the next time you open it."
+            } else {
+                "If you quit now, the recording is lost."
+            }
+        alert.informativeText = "Mixdown can quit once the note is saved. " + quittingNow
+        alert.addButton(withTitle: "Quit When Saved")
+        addDontQuitButton(to: alert)
+        let quit = alert.addButton(withTitle: "Quit Now")
+        quit.hasDestructiveAction = coordinator.importingFileName == nil && !coordinator.keepsRecordingWhenQuitting
+        NSApp.activate()
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            quitWhenDone()
+            return .terminateCancel
+        case .alertThirdButtonReturn:
+            return .terminateNow
+        default:
+            return .terminateCancel
+        }
+    }
+
+    /// Asks about notes waiting for the notes folder, then about recordings that couldn't be
+    /// transcribed and are only in memory, as quitting loses them.
+    private func askToQuitLosingWork(_ coordinator: RecordingCoordinator) -> NSApplication.TerminateReply {
+        guard askToQuitWithPendingNotes(coordinator) == .terminateNow else { return .terminateCancel }
+        return askToQuitWithRecordingsInMemory(coordinator)
+    }
+
+    private func askToQuitWithPendingNotes(_ coordinator: RecordingCoordinator) -> NSApplication.TerminateReply {
+        let count = coordinator.pendingNotes.count
+        guard count > 0 else { return .terminateNow }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = count == 1 ? "A note hasn't been saved yet" : "\(count) notes haven't been saved yet"
+        alert.informativeText =
+            "Mixdown couldn't reach the notes folder. If you quit now, "
+            + (count == 1 ? "the note is" : "the notes are")
+            + " lost. Connect the folder's drive, or choose another folder in Settings, and Mixdown "
+            + "saves " + (count == 1 ? "it." : "them.")
         alert.addButton(withTitle: "Don't Quit")
         let quit = alert.addButton(withTitle: "Quit Anyway")
         quit.hasDestructiveAction = true
         NSApp.activate()
-        return alert.runModal() == .alertSecondButtonReturn
+        return alert.runModal() == .alertFirstButtonReturn ? .terminateCancel : .terminateNow
+    }
+
+    private func askToQuitWithRecordingsInMemory(
+        _ coordinator: RecordingCoordinator
+    ) -> NSApplication.TerminateReply {
+        let count = coordinator.unfinishedRecordings.filter { !$0.isOnDisk }.count
+        guard count > 0 else { return .terminateNow }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText =
+            count == 1 ? "A recording hasn't been transcribed" : "\(count) recordings haven't been transcribed"
+        alert.informativeText =
+            "Mixdown keeps the audio in memory only, so if you quit now, "
+            + (count == 1 ? "the recording is" : "the recordings are")
+            + " lost. Transcribe " + (count == 1 ? "it" : "them") + " again from Record."
+        alert.addButton(withTitle: "Don't Quit")
+        let quit = alert.addButton(withTitle: "Quit Anyway")
+        quit.hasDestructiveAction = true
+        NSApp.activate()
+        return alert.runModal() == .alertFirstButtonReturn ? .terminateCancel : .terminateNow
+    }
+
+    /// Adds Don't Quit, which Escape presses too.
+    private func addDontQuitButton(to alert: NSAlert) {
+        alert.addButton(withTitle: "Don't Quit").keyEquivalent = "\u{1b}"
+    }
+
+    /// Quits once Mixdown has stopped recording and making notes. Quitting asks again about notes
+    /// and recordings only in memory.
+    private func quitWhenDone() {
+        guard let coordinator = environment?.coordinator else { return }
+        whenDone(coordinator) { NSApp.terminate(nil) }
+    }
+
+    /// Lets Mixdown quit once it has stopped recording and making notes, after asking about notes
+    /// and recordings only in memory. Answers a `.terminateLater`.
+    private func replyWhenDone(_ coordinator: RecordingCoordinator) {
+        whenDone(coordinator) { [weak self] in
+            let reply = self?.askToQuitLosingWork(coordinator) ?? .terminateNow
+            NSApp.reply(toApplicationShouldTerminate: reply == .terminateNow)
+        }
+    }
+
+    /// Runs `action` once `coordinator` has stopped recording and making notes.
+    private func whenDone(_ coordinator: RecordingCoordinator, _ action: @escaping @MainActor () -> Void) {
+        let isBusy = withObservationTracking {
+            coordinator.canStopRecording || coordinator.isMakingNote
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.whenDone(coordinator, action) }
+        }
+        if !isBusy { action() }
+    }
+
+    /// Stops the recording, keeping it to make its note the next time, then lets Mixdown quit.
+    /// Answers a `.terminateLater`.
+    private func stopWithoutNoteThenQuit(_ coordinator: RecordingCoordinator) {
+        Task {
+            await coordinator.stopRecordingWithoutNote()
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+    }
+
+    /// Whether Mixdown is asked to quit as the user logs out or the Mac restarts or shuts down,
+    /// by the quit event's reason.
+    private static var isSessionEnding: Bool {
+        // `kAEQuitReason`, and `kAELogOut`, `kAEReallyLogOut`, `kAEShowRestartDialog`,
+        // `kAEShowShutdownDialog`, `kAERestart` and `kAEShutDown`.
+        guard let event = NSAppleEventManager.shared().currentAppleEvent,
+            let reason = event.attributeDescriptor(forKeyword: fourCharCode("why?"))?.typeCodeValue
+        else { return false }
+        return ["logo", "rlgo", "rrst", "rsdn", "rest", "shut"].map(fourCharCode).contains(reason)
+    }
+
+    private static func fourCharCode(_ code: String) -> FourCharCode {
+        code.utf8.reduce(0) { $0 << 8 | FourCharCode($1) }
     }
 
     /// Opens the note, at the line, picked in Spotlight. See `NoteSpotlight`.

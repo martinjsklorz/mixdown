@@ -18,8 +18,14 @@ import os
 /// the note's duration and times count only what was recorded.
 ///
 /// Engines that transcribe live instead turn each input into text while it's recorded, shown as
-/// `liveTranscript`, and the note is written from that text. Their audio isn't kept, so a long
-/// recording takes no more memory than a short one.
+/// `liveTranscript`, and the note is written from that text. Their audio isn't kept in memory, so
+/// a long recording takes no more memory than a short one.
+///
+/// With a `recordingStore` and `keepsAudioOnDisk`, every recording's audio is also written to
+/// disk as it's recorded, and deleted once its note is saved. A recording whose note wasn't made,
+/// as Mixdown quit or crashed or transcribing it failed, stays there, listed in
+/// `unfinishedRecordings`. Without, a recording whose transcription failed is listed there too,
+/// but only kept in memory, until Mixdown quits.
 ///
 /// Audio and video files can be imported too, with `importAudio(from:)`. They're transcribed,
 /// translated and summarized like a recording, and saved as a note of their own.
@@ -108,6 +114,9 @@ public final class RecordingCoordinator {
     /// audio record, as `talkTime` and the note's `talkTimeline`. Changes apply to the next
     /// recording.
     public var measuresTalkTime = false
+    /// Whether recordings' audio is written to the `recordingStore` until their notes are saved, so
+    /// quitting or a crash doesn't lose them. Changes apply to the next recording.
+    public var keepsAudioOnDisk = true
     /// Tells apart the people on the system audio once a recording ends, labeling their lines
     /// "Speaker 1", "Speaker 2" and so on; `nil` while that's off. With a live engine, the system
     /// audio is kept for it while recording. Changes apply to the next recording.
@@ -186,6 +195,19 @@ public final class RecordingCoordinator {
     /// note is saved or it fails; `nil` otherwise.
     public internal(set) var importingFileName: String?
 
+    /// Recordings kept without a note, oldest first: in the `recordingStore`, from before Mixdown
+    /// last quit or whose transcription failed, and in memory, whose transcription failed since.
+    /// See `transcribe(_:)` and `discard(_:)`.
+    public internal(set) var unfinishedRecordings: [UnfinishedRecording] = []
+    /// The audio of `unfinishedRecordings` that aren't on disk, and of the recording being made
+    /// into a note if it isn't, to keep should that fail.
+    var recordingsInMemory: [UUID: RecordingStore.StoredRecording] = [:]
+    /// Whether the recording being made into a note is in the `recordingStore`.
+    var isMakingNoteOfStoredRecording = false
+
+    /// True while `transcribe(_:)` makes a note of one of `unfinishedRecordings`.
+    public internal(set) var isTranscribingUnfinishedRecording = false
+
     /// Idle, there's an `audioFileDecoder`, the model is downloaded and there's a `noteWriter`.
     public var canImportAudio: Bool {
         audioFileDecoder != nil && isIdle && isModelDownloaded && noteWriter != nil
@@ -207,9 +229,8 @@ public final class RecordingCoordinator {
         if case .paused = phase { true } else { false }
     }
 
-    /// A finished recording, or the file `importingFileName` names, is being made into a note:
-    /// transcribed, its speakers told apart, translated or summarized, or waiting on the model to
-    /// download again. It's only in memory until the note is saved.
+    /// A recording, an unfinished recording or an imported file is being made into a note: it's
+    /// transcribed, its speakers told apart, translated or summarized, or it waits on the model.
     public var isMakingNote: Bool {
         switch phase {
         case .transcribing, .identifyingSpeakers, .translating, .summarizing: true
@@ -257,6 +278,9 @@ public final class RecordingCoordinator {
     let echoCancellation: (any EchoCancellation)?
     /// Reads the files `importAudio(from:)` imports; without one, there's no importing.
     let audioFileDecoder: (any AudioFileDecoding)?
+    /// Keeps each recording's audio on disk until its note is saved; without one, it's only kept
+    /// in memory.
+    let recordingStore: RecordingStore?
     /// Transcribes, translates, summarizes and saves recordings and imports.
     let pipeline: NotePipeline
     let now: @Sendable () -> Date
@@ -304,12 +328,16 @@ public final class RecordingCoordinator {
     /// - Parameters:
     ///   - pendingNotes: Notes still to be saved, from the coordinator this one replaces. See
     ///     `takePendingNotes()`.
+    ///   - recordingsInMemory: Unfinished recordings only kept in memory, from the coordinator this
+    ///     one replaces. See `takeRecordingsInMemory()`.
     ///   - preferredDeviceIDs: Devices to select when they're available, e.g. the user's last choice.
     ///   - playbackMonitor: Tells silent system audio with nothing playing from a missing permission.
     ///     Without one, system audio is flagged like a microphone.
     ///   - echoCancellation: Takes the echo of the system audio out of the microphones. See
     ///     `cancelsEcho`.
     ///   - audioFileDecoder: Reads files for `importAudio(from:)`.
+    ///   - recordingStore: Keeps the audio of recordings on disk until their notes are saved. Its
+    ///     recordings, other than those of `pendingNotes`, become `unfinishedRecordings`.
     ///   - now: Clock used for recording start times. Injectable for tests.
     ///   - hostClock: Seconds on the clock of `AudioChunk.hostTime`, to measure pauses with.
     ///     `systemUptime` counts `mach_absolute_time` on macOS. Injectable for tests.
@@ -319,6 +347,7 @@ public final class RecordingCoordinator {
         engine: any TranscriptionEngine,
         noteWriter: (any NoteWriting)?,
         pendingNotes: [Note] = [],
+        recordingsInMemory: RecordingsInMemory = RecordingsInMemory(),
         summarizer: (any Summarizer)? = nil,
         summaryTemplate: SummaryTemplate = .general,
         callSummaryTemplate: SummaryTemplate = .general,
@@ -330,6 +359,7 @@ public final class RecordingCoordinator {
         playbackMonitor: (any AudioPlaybackMonitoring)? = nil,
         echoCancellation: (any EchoCancellation)? = nil,
         audioFileDecoder: (any AudioFileDecoding)? = nil,
+        recordingStore: RecordingStore? = nil,
         now: @escaping @Sendable () -> Date = { Date() },
         hostClock: @escaping @Sendable () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     ) {
@@ -355,10 +385,19 @@ public final class RecordingCoordinator {
         self.playbackMonitor = playbackMonitor
         self.echoCancellation = echoCancellation
         self.audioFileDecoder = audioFileDecoder
+        self.recordingStore = recordingStore
         self.now = now
         self.hostClock = hostClock
         pipeline.didChangeStage = { [weak self] stage in self?.pipelineDidChange(to: stage) }
         pipeline.saver.didSaveAll = { [weak self] in self?.pendingNotesDidSave() }
+        pipeline.saver.didSave = { note in
+            if let id = note.recordingID { recordingStore?.delete(id) }
+        }
+        loadUnfinishedRecordings(except: Set(pendingNotes.compactMap(\.recordingID)))
+        for (recording, audio) in recordingsInMemory.recordings {
+            self.recordingsInMemory[recording.id] = audio
+            keep(recording)
+        }
     }
 
     // MARK: - Recording

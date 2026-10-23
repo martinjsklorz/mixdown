@@ -68,7 +68,7 @@ final class NotePipeline {
     /// transcribed, without saving anything, and if the task is cancelled.
     /// - Parameter template: The summary template, asked for just before summarizing, as the user
     ///   may pick another while the recording is transcribed.
-    func makeNote(from input: Input, template: () -> SummaryTemplate) async throws -> [String] {
+    func makeNote(from input: Input, template: () -> SummaryTemplate) async throws -> Outcome {
         var (transcripts, trackFailure) = try await transcribe(input)
         let diarizedLanes: Set<Int>
         (transcripts, diarizedLanes) = try await identifySpeakers(in: transcripts, using: input.diarizer)
@@ -76,20 +76,23 @@ final class NotePipeline {
         // With no speech from the tracks that worked, the note would only be empty, so it fails as
         // a whole.
         if let trackFailure, transcript.isEmpty { throw trackFailure.error }
-        let (note, translationError) = try await makeNote(
+        var (note, translationError) = try await makeNote(
             transcript: transcript,
             namingSpeakers: namable,
             template: template,
             details: input.details
         )
+        // The recording is kept to transcribe again, with the track that failed.
+        note.recordingID = trackFailure == nil ? input.details.recordingID : nil
         // Kept until it's saved: the folder can go away while recording or transcribing, e.g.
         // when its drive is disconnected or goes to sleep.
         let saveError = await saver.save(note)
-        return [
+        let messages = [
             trackFailure.map { RecordingCoordinator.untranscribedMessage(for: $0.devices, error: $0.error) },
             translationError.map(RecordingCoordinator.untranslatedMessage(for:)),
             saveError.map(RecordingCoordinator.unsavedMessage(for:)),
-        ].compactMap { $0 }
+        ]
+        return Outcome(messages: messages.compactMap { $0 }, isComplete: trackFailure == nil)
     }
 
     /// Corrects `transcript` with the vocabulary, names its speakers, translates and summarizes it.

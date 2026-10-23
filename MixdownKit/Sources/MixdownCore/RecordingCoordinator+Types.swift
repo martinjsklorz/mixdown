@@ -16,6 +16,11 @@ extension RecordingCoordinator {
         let measuresTalkTime: Bool
         /// `speakerDiarizer` as the recording started.
         let diarizer: (any SpeakerDiarizer)?
+        /// `keepsAudioOnDisk` as the recording started.
+        var keepsAudioOnDisk = false
+        /// Whether the recording's description is in the `recordingStore`, so its audio is written
+        /// there too.
+        var isStored = false
         /// Whether the recording was started for a call, from a notification or automatically.
         var isCall = false
         var trigger = RecordingTrigger.manual
@@ -134,6 +139,17 @@ extension RecordingCoordinator {
         var parts: [NotePipeline.DevicePart] = []
         /// When there was speech, in seconds from the track's first sample.
         var speech: [Range<TimeInterval>] = []
+
+        /// Adds `track`, what a capture of `device` recorded, after the audio so far, with the time
+        /// between them filled with silence. `speech` is in seconds from the track's first sample.
+        mutating func append(_ track: AudioTrack, from device: AudioInputDevice, speech: [Range<TimeInterval>]) {
+            self.track.append(track)
+            // Counted by length, as live tracks keep no samples.
+            guard track.duration > 0 else { return }
+            let start = self.track.duration - track.duration
+            parts.append(NotePipeline.DevicePart(device: device, start: start))
+            self.speech += NotePipeline.shifted(speech, by: start)
+        }
     }
 
     typealias CaptureStream = AsyncThrowingStream<AudioChunk, any Error>

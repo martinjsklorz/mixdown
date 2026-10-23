@@ -6,11 +6,14 @@ import SwiftUI
 /// to pause while recording, the state Mixdown is in, and a summary of what it records with. The inputs
 /// themselves are chosen in the Recording menu or Settings.
 /// While recording with the live model, the text recognized so far replaces the summary.
+/// Recordings Mixdown kept without a note are listed above the summary, to transcribe again.
 struct RecorderView: View {
     @Environment(AppEnvironment.self) private var environment
     private var preferences: Preferences { environment.preferences }
     @Environment(MainNavigation.self) private var navigation
     @Environment(\.openSettings) private var openSettings
+    /// The unfinished recording Delete was clicked for, while its confirmation shows.
+    @State private var recordingToDelete: UnfinishedRecording?
 
     var body: some View {
         let coordinator = environment.coordinator
@@ -29,8 +32,11 @@ struct RecorderView: View {
                     hero(for: coordinator)
                         .frame(maxWidth: 420)
                     Spacer(minLength: 24)
-                    setup
-                        .frame(maxWidth: 420)
+                    VStack(spacing: 16) {
+                        unfinishedRecordings(for: coordinator)
+                        setup
+                    }
+                    .frame(maxWidth: 420)
                 }
             }
         }
@@ -95,9 +101,7 @@ struct RecorderView: View {
                 caption("Paused · nothing is recorded until you resume")
                 summaryTemplatePicker(for: coordinator)
 
-            // The live model only finishes its last fraction of a second, too quick to track. An
-            // imported file it transcribes whole.
-            case .transcribing where environment.model.isLive && coordinator.importingFileName == nil:
+            case .transcribing where isFinishingLiveRecording(coordinator):
                 headline("Finishing…", detail: "Your note appears in the sidebar in a moment.")
                 ProgressView()
                     .controlSize(.large)
@@ -204,8 +208,15 @@ struct RecorderView: View {
         }
     }
 
-    /// Stops an import without saving a note. A recording has no such button, as its audio
-    /// isn't kept anywhere else.
+    /// Whether the live model is finishing the recording that just ended: only its last fraction of
+    /// a second, too quick to track. An imported file or an unfinished recording it transcribes
+    /// whole.
+    private func isFinishingLiveRecording(_ coordinator: RecordingCoordinator) -> Bool {
+        environment.model.isLive && coordinator.importingFileName == nil
+            && !coordinator.isTranscribingUnfinishedRecording
+    }
+
+    /// Stops an import without saving a note. The file stays where it is.
     @ViewBuilder
     private func cancelImportButton(for coordinator: RecordingCoordinator) -> some View {
         if coordinator.importingFileName != nil {
@@ -323,6 +334,78 @@ struct RecorderView: View {
         Text(text)
             .font(.callout)
             .foregroundStyle(.secondary)
+    }
+
+    // MARK: Unfinished recordings
+
+    /// Recordings kept without a note, from before Mixdown last quit or whose transcription failed,
+    /// each with Transcribe and Delete. Hidden while recording.
+    @ViewBuilder
+    private func unfinishedRecordings(for coordinator: RecordingCoordinator) -> some View {
+        if !coordinator.unfinishedRecordings.isEmpty, !coordinator.canStopRecording {
+            GroupBox {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Mixdown kept these recordings because their notes weren't made.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    ForEach(coordinator.unfinishedRecordings) { recording in
+                        unfinishedRecordingRow(recording, for: coordinator)
+                    }
+                }
+                .padding(6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } label: {
+                Text("Unfinished Recordings")
+            }
+            .confirmationDialog(
+                "Delete this recording?",
+                isPresented: Binding(
+                    get: { recordingToDelete != nil },
+                    set: { if !$0 { recordingToDelete = nil } }
+                ),
+                presenting: recordingToDelete
+            ) { recording in
+                Button("Delete", role: .destructive) { coordinator.discard(recording) }
+            } message: { _ in
+                Text("Its audio is deleted without making a note.")
+            }
+        }
+    }
+
+    private func unfinishedRecordingRow(
+        _ recording: UnfinishedRecording,
+        for coordinator: RecordingCoordinator
+    ) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(recording.startedAt.formatted(date: .abbreviated, time: .shortened))
+                Text(unfinishedRecordingDetail(recording))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                if !recording.isOnDisk {
+                    Text("In memory only, until Mixdown quits")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            Button("Transcribe") {
+                Task { await coordinator.transcribe(recording) }
+            }
+            .disabled(!coordinator.canTranscribeUnfinishedRecordings)
+            Button("Delete…") { recordingToDelete = recording }
+                .disabled(!coordinator.isIdle)
+        }
+    }
+
+    /// "12 min · MacBook Pro Microphone, System Audio"
+    private func unfinishedRecordingDetail(_ recording: UnfinishedRecording) -> String {
+        let duration = Duration.seconds(max(recording.duration.rounded(), 1))
+            .formatted(.units(allowed: [.hours, .minutes, .seconds], width: .abbreviated, maximumUnitCount: 2))
+        let sources = recording.sources.map(\.name).formatted(.list(type: .and))
+        return "\(duration) · \(sources)"
     }
 
     // MARK: Setup
