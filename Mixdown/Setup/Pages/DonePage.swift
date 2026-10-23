@@ -68,7 +68,7 @@ struct DonePage: View {
     /// How to start recording, with the global shortcut if it's on.
     private var startHint: String {
         let inApp = "Click the red button in Record, or press ⌘R, to start recording."
-        guard environment.isRecordingShortcutEnabled,
+        guard environment.preferences.isRecordingShortcutEnabled,
             let shortcut = KeyboardShortcuts.getShortcut(for: .toggleRecording)
         else { return inApp }
         return inApp + " From any other app, press \(shortcut.description)."

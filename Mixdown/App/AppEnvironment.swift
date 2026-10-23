@@ -11,8 +11,8 @@ import MixdownSpeechSwift
 import Observation
 import UniformTypeIdentifiers
 
-/// Composition root: wires concrete implementations into the `RecordingCoordinator` and keeps
-/// app preferences in sync with it.
+/// Composition root: wires concrete implementations into the `RecordingCoordinator` and hands it
+/// the user's `preferences`.
 @MainActor @Observable
 final class AppEnvironment {
     /// Replaced (never mutated in place) when the transcription model changes, because the coordinator
@@ -24,27 +24,17 @@ final class AppEnvironment {
     /// Makes the summaries and catch-ups with `summaryModel`; `coordinator` only has it while
     /// summaries are on. Replaced when the model changes.
     private(set) var summarizer: any Summarizer
-    /// How much of `summaryModel` has downloaded, 0...1, while it downloads; `nil` otherwise.
-    private(set) var summaryModelProgress: Double?
-    /// Why `summaryModel` couldn't be downloaded or deleted, until the next try.
-    private(set) var summaryModelError: String?
-    /// Whether `summaryModel` is on disk; always true for Apple's, which macOS provides. Kept here
-    /// so views update when a download finishes, which `summarizer.availability` alone wouldn't do.
-    private(set) var isSummaryModelDownloaded: Bool
-    private(set) var isDeletingSummaryModel = false
-    /// Whether the model that tells speakers apart is on disk. Kept here so views update when a
-    /// download finishes.
-    private(set) var isSpeakerModelDownloaded: Bool
-    /// How much of that model has downloaded, 0...1, while it downloads; `nil` otherwise.
-    private(set) var speakerModelProgress: Double?
-    /// Why that model couldn't be downloaded or deleted, until the next try.
-    private(set) var speakerModelError: String?
-    private(set) var isDeletingSpeakerModel = false
+    /// Downloads `summaryModel`; `nil` for one macOS provides.
+    private(set) var summaryModelDownload: ModelDownload?
+    /// Downloads the model that tells speakers apart. A recording that ends without it downloads
+    /// it then.
+    let speakerModelDownload: ModelDownload
     /// Translates transcripts, into the coordinator's `translationLanguage` when there is one.
     let translator: any Translator
-    /// The BCP 47 identifier of the language notes are translated into while `translatesNotes`;
-    /// kept while that's off.
-    private(set) var translationLanguage: String
+    /// The user's preferences, which views change directly. `applyPreferences()` hands them on.
+    let preferences: Preferences
+    /// The Dynamic Island, and the moment field and Catch Me Up card under the notch.
+    let island = IslandController()
     let notesFolder: NotesFolderStore
     let noteTrash: NoteTrash
     /// Chat across the notes, kept while the main window is closed.
@@ -59,60 +49,17 @@ final class AppEnvironment {
     /// doesn't run `TimelineView` or `.task`.
     private(set) var recordingElapsed: Int?
 
-    /// Whether to post notifications when calls start and end. See `CallPrompt`.
-    private(set) var notifiesAboutCalls: Bool
-    /// Whether to start and stop recording with calls, without asking. See `CallPrompt`.
-    private(set) var recordsCallsAutomatically: Bool
-    /// Minutes without speech before Mixdown asks whether it's still recording; 0 for never. See
-    /// `StillRecordingPrompt`.
-    private(set) var stillRecordingMinutes: Int
-    /// Whether the global shortcut (`KeyboardShortcuts.Name.toggleRecording`) starts and stops
-    /// recording. Off, the shortcut is kept but released, so other apps get those keys.
-    private(set) var isRecordingShortcutEnabled: Bool
-    /// Whether a recording shows in the Dynamic Island rather than the menu bar. See `DynamicIsland`.
-    private(set) var showsRecordingInDynamicIsland: Bool
-    /// What the Dynamic Island shows, and where.
-    private(set) var islandLayout: DynamicIsland.Layout
-    /// Whether the notes are in Spotlight. See `NoteSpotlight`.
-    private(set) var indexesNotesInSpotlight: Bool
-    /// Whether Chat is in the sidebar and the View menu. Off, it doesn't read the notes. See
-    /// `NoteChat`.
-    private(set) var isChatEnabled: Bool
-    /// Whether the Dynamic Island is showing the recording time where it can always be seen, so
-    /// the menu bar leaves it out. See `DynamicIsland.showsTimeAlone`.
-    private(set) var dynamicIslandShowsTimeAlone = false
-    /// The moment just marked while the user writes a note on it under the notch; `nil` once the
-    /// field closes. See `markMoment()`.
-    private var momentDraft: MomentDraft?
-    /// The catch-up asked for last, while it's summed up and shown under the notch; `nil` once
-    /// its card closes. See `catchUp()`.
-    private var catchUpRequest: CatchUpRequest?
-    /// How many of the last minutes of a recording `catchUp()` sums up.
-    private(set) var catchUpMinutes: Int
-
     private let settings: AppSettings
     /// Shared by every coordinator, so the canceller it keeps loaded survives a model change.
     private static let echoCancellation = LocalVQEEchoCancellation()
-    /// Tells speakers apart once a recording ends, while `identifiesSpeakers`. Shared by every
-    /// coordinator, like `echoCancellation`.
+    /// Tells speakers apart once a recording ends, while `Preferences.identifiesSpeakers`. Shared
+    /// by every coordinator, like `echoCancellation`.
     private static let speakerDiarizer = NemotronSpeakerDiarizer()
     @ObservationIgnored private var deviceMonitor: Task<Void, Never>?
-    @ObservationIgnored private var summaryModelDownload: Task<Void, Never>?
-    @ObservationIgnored private var speakerModelDownload: Task<Void, Never>?
     @ObservationIgnored private var recordingClock: Task<Void, Never>?
     @ObservationIgnored private var recordingClockStart: Date?
     @ObservationIgnored private var callPrompt: CallPrompt?
     @ObservationIgnored private var stillRecordingPrompt: StillRecordingPrompt?
-    /// Created the first time it's shown.
-    @ObservationIgnored private var dynamicIsland: DynamicIsland?
-    /// The field for `momentDraft`. Created the first time it's shown.
-    @ObservationIgnored private var momentEntry: MomentEntry?
-    /// Closes the field for `momentDraft` if nothing is typed in time.
-    @ObservationIgnored private var momentDraftTimeout: Task<Void, Never>?
-    /// The card for `catchUpRequest`. Created the first time it's shown.
-    @ObservationIgnored private var catchUpCard: CatchUpCard?
-    /// Sums up `catchUpRequest`, then closes its card once it's had time to be read.
-    @ObservationIgnored private var catchingUp: Task<Void, Never>?
     /// Opens Record in the main window.
     private let showRecorder: () -> Void
     /// Switches the main window from Chat to the notes, if it's showing Chat.
@@ -124,6 +71,7 @@ final class AppEnvironment {
 
     init(navigation: MainNavigation, settings: AppSettings = AppSettings()) {
         let notesFolder = NotesFolderStore(settings: settings)
+        let preferences = Preferences(settings: settings)
         let model = settings.transcriptionModel
         // `SummaryModel.makeSummarizer()` is the ONE place the summarizer is chosen. To add a
         // backend, give it a case there; nothing else here changes.
@@ -136,25 +84,24 @@ final class AppEnvironment {
         // Likewise the ONE place Chat's model and embeddings are chosen.
         self.noteChat = NoteChat(answerer: AppleIntelligenceAnswerer(), embedder: NaturalLanguageEmbedder())
         self.settings = settings
+        self.preferences = preferences
         self.model = model
         self.summaryModel = summaryModel
         self.summarizer = summarizer
-        self.isSummaryModelDownloaded = (summarizer as? MLXSummarizer)?.isDownloaded ?? true
-        self.isSpeakerModelDownloaded = Self.speakerDiarizer.isDownloaded
+        self.summaryModelDownload = Self.makeDownload(for: summarizer)
+        self.speakerModelDownload = Self.makeSpeakerModelDownload()
         self.translator = translator
-        self.translationLanguage = settings.translationLanguage
-        self.summaryTemplates = settings.summaryTemplates
         self.notesFolder = notesFolder
         self.noteTrash = noteTrash
         self.noteReady = noteReady
         self.notificationResponder = NotificationResponder(noteTrash: noteTrash, noteReady: noteReady)
         self.coordinator = Self.makeCoordinator(
             model: model,
-            summarizer: settings.summarizesNotes ? summarizer : nil,
-            speakerNamer: settings.identifiesSpeakers && settings.namesSpeakers ? summarizer : nil,
+            summarizer: summarizer,
             translator: translator,
             notesDirectory: notesFolder.directory,
-            settings: settings
+            preferredDeviceIDs: settings.selectedDeviceIDs,
+            preferences: preferences
         )
         self.showRecorder = { [weak navigation] in
             guard let navigation, let openWindow = navigation.openWindow else { return }
@@ -163,41 +110,31 @@ final class AppEnvironment {
         self.leaveChat = { [weak navigation] in
             if navigation?.destination == .chat { navigation?.destination = .notes }
         }
-        self.notifiesAboutCalls = settings.notifiesAboutCalls
-        self.recordsCallsAutomatically = settings.recordsCallsAutomatically
-        self.stillRecordingMinutes = settings.stillRecordingMinutes
-        self.isRecordingShortcutEnabled = settings.isRecordingShortcutEnabled
-        self.showsRecordingInDynamicIsland = settings.showsRecordingInDynamicIsland
-        self.islandLayout = settings.islandLayout
-        self.indexesNotesInSpotlight = settings.indexesNotesInSpotlight
-        self.isChatEnabled = settings.isChatEnabled
-        self.catchUpMinutes = settings.catchUpMinutes
 
         startCoordinatorTasks()
         observeRecording()
-        observeDynamicIsland()
-        observeMoments()
-        observeCatchUp()
         observePhaseForCues()
         observeNotesFolder()
+        observeSpotlight()
         observeNewNotes()
         listenForRecordingShortcut()
-        listenForMomentShortcut()
-        listenForCatchUpShortcut()
         startCallPrompt()
         startStillRecordingPrompt()
+        island.start(environment: self, openRecorder: showRecorder)
+        preferences.didChange = { [weak self] in self?.applyPreferences() }
+        applyPreferences()
     }
 
     // MARK: Composition
 
     private static func makeCoordinator(
         model: TranscriptionModel,
-        summarizer: (any Summarizer)?,
-        speakerNamer: (any Summarizer)?,
+        summarizer: any Summarizer,
         translator: any Translator,
         notesDirectory: URL?,
         pendingNotes: [Note] = [],
-        settings: AppSettings
+        preferredDeviceIDs: [String],
+        preferences: Preferences
     ) -> RecordingCoordinator {
         let coordinator = RecordingCoordinator(
             deviceProvider: CoreAudioDeviceProvider(),
@@ -207,26 +144,83 @@ final class AppEnvironment {
             engine: model.makeEngine(),
             noteWriter: notesDirectory.map { MarkdownNoteWriter(directory: $0) },
             pendingNotes: pendingNotes,
-            summarizer: summarizer,
-            summaryTemplate: settings.summaryTemplate,
-            callSummaryTemplate: settings.callSummaryTemplate,
+            summarizer: nil,
+            summaryTemplate: preferences.summaryTemplates.recordingTemplate,
+            callSummaryTemplate: preferences.summaryTemplates.callTemplate,
             translator: translator,
-            translationLanguage: settings.translatesNotes ? settings.translationLanguage : nil,
-            options: TranscriptionOptions(language: settings.language),
-            sourceLabels: settings.sourceLabels,
-            preferredDeviceIDs: settings.selectedDeviceIDs,
+            translationLanguage: nil,
+            options: TranscriptionOptions(language: preferences.language),
+            sourceLabels: preferences.sourceLabels,
+            preferredDeviceIDs: preferredDeviceIDs,
             playbackMonitor: CoreAudioPlaybackMonitor(),
             echoCancellation: echoCancellation,
             audioFileDecoder: AudioFileDecoder()
         )
-        coordinator.cancelsEcho = settings.cancelsEcho
-        coordinator.measuresTalkTime = settings.measuresTalkTime
-        coordinator.speakerDiarizer = settings.identifiesSpeakers ? speakerDiarizer : nil
-        coordinator.speakerNamer = speakerNamer
-        coordinator.stillRecordingDelay = stillRecordingDelay(minutes: settings.stillRecordingMinutes)
-        coordinator.translatesLiveText = settings.translatesLiveText
-        coordinator.vocabulary = settings.vocabulary
+        configure(coordinator, with: preferences, summarizer: summarizer)
         return coordinator
+    }
+
+    /// Hands `coordinator` everything in `preferences` it uses. Assigning a value it already has
+    /// changes nothing.
+    private static func configure(
+        _ coordinator: RecordingCoordinator,
+        with preferences: Preferences,
+        summarizer: any Summarizer
+    ) {
+        coordinator.options.language = preferences.language
+        coordinator.sourceLabels = preferences.sourceLabels
+        coordinator.vocabulary = preferences.vocabulary
+        coordinator.cancelsEcho = preferences.cancelsEcho
+        coordinator.measuresTalkTime = preferences.measuresTalkTime
+        let minutes = preferences.stillRecordingMinutes
+        coordinator.stillRecordingDelay = minutes > 0 ? .seconds(minutes * 60) : nil
+        coordinator.speakerDiarizer = preferences.identifiesSpeakers ? speakerDiarizer : nil
+        coordinator.speakerNamer = preferences.identifiesSpeakers && preferences.namesSpeakers ? summarizer : nil
+        coordinator.summarizer = preferences.summarizesNotes ? summarizer : nil
+        let templates = preferences.summaryTemplates
+        coordinator.summaryTemplate = templates.recordingTemplate
+        coordinator.callSummaryTemplate = templates.callTemplate
+        coordinator.updateRecordingSummaryTemplate(from: templates.templates)
+        coordinator.translationLanguage = preferences.translatesNotes ? preferences.translationLanguage : nil
+        coordinator.translatesLiveText = preferences.translatesLiveText
+    }
+
+    /// Hands the preferences to the coordinator, the call prompt and the recording shortcut. Runs
+    /// whenever one changes.
+    private func applyPreferences() {
+        Self.configure(coordinator, with: preferences, summarizer: summarizer)
+        if let callPrompt {
+            callPrompt.notifies = preferences.notifiesAboutCalls
+            if callPrompt.recordsAutomatically != preferences.recordsCallsAutomatically {
+                callPrompt.recordsAutomatically = preferences.recordsCallsAutomatically
+            }
+        }
+        if preferences.isRecordingShortcutEnabled {
+            KeyboardShortcuts.enable(.toggleRecording)
+        } else {
+            KeyboardShortcuts.disable(.toggleRecording)
+        }
+    }
+
+    /// A download for `summarizer`'s model, if Mixdown downloads it.
+    private static func makeDownload(for summarizer: any Summarizer) -> ModelDownload? {
+        guard let summarizer = summarizer as? MLXSummarizer else { return nil }
+        return ModelDownload(
+            name: summarizer.model.displayName,
+            isDownloaded: { summarizer.isDownloaded },
+            download: { try await summarizer.download(progress: $0) },
+            delete: { try await summarizer.deleteModel() }
+        )
+    }
+
+    private static func makeSpeakerModelDownload() -> ModelDownload {
+        let diarizer = speakerDiarizer
+        return ModelDownload(
+            name: "the speaker model",
+            isDownloaded: { diarizer.isDownloaded },
+            download: { try await diarizer.prepare(progress: $0) },
+            delete: { try await diarizer.deleteModel() }
+        )
     }
 
     /// Starts what a new coordinator needs running: device monitoring, and checking whether the
@@ -243,7 +237,8 @@ final class AppEnvironment {
         }
     }
 
-    /// Watches for calls, to offer to record them or record them automatically.
+    /// Watches for calls, to offer to record them or record them automatically. Told what to do by
+    /// `applyPreferences()`.
     private func startCallPrompt() {
         let callPrompt = CallPrompt(
             isRecording: { [weak self] in self?.coordinator.canStopRecording ?? false },
@@ -252,8 +247,6 @@ final class AppEnvironment {
             markRecordingAsCall: { [weak self] in self?.coordinator.markRecordingAsCall(automatically: $0) },
             showRecorder: showRecorder
         )
-        callPrompt.notifies = notifiesAboutCalls
-        callPrompt.recordsAutomatically = recordsCallsAutomatically
         notificationResponder.callPrompt = callPrompt
         self.callPrompt = callPrompt
     }
@@ -267,10 +260,6 @@ final class AppEnvironment {
         notificationResponder.stillRecordingPrompt = prompt
         stillRecordingPrompt = prompt
         observeStillRecording()
-    }
-
-    private static func stillRecordingDelay(minutes: Int) -> Duration? {
-        minutes > 0 ? .seconds(minutes * 60) : nil
     }
 
     // MARK: Observation
@@ -329,84 +318,6 @@ final class AppEnvironment {
         recordingClockStart = nil
     }
 
-    /// Shows the Dynamic Island while recording, if it's turned on, and lays it out again when its
-    /// settings change.
-    private func observeDynamicIsland() {
-        let (shows, layout) = withObservationTracking {
-            var layout = islandLayout
-            // Only a live model has words to show while recording.
-            layout.showsLiveText = layout.showsLiveText && coordinator.showsLiveTranscript
-            return (coordinator.isRecording && showsRecordingInDynamicIsland, layout)
-        } onChange: { [weak self] in
-            Task { @MainActor in self?.observeDynamicIsland() }
-        }
-        if shows {
-            let island =
-                dynamicIsland
-                ?? DynamicIsland(
-                    environment: self,
-                    openRecorder: showRecorder,
-                    showsTimeAloneChanged: { [weak self] in self?.dynamicIslandShowsTimeAlone = $0 }
-                )
-            dynamicIsland = island
-            island.show(layout)
-        } else {
-            dynamicIsland?.hide()
-        }
-    }
-
-    /// Takes the Mark Moment shortcut only while recording, so other apps get those keys
-    /// otherwise, and shows the field for `momentDraft` while there is one. A recording that
-    /// stops closes the field, dropping a moment not yet added with Return.
-    private func observeMoments() {
-        let (isRecording, draft) = withObservationTracking {
-            (coordinator.isRecording, momentDraft)
-        } onChange: { [weak self] in
-            Task { @MainActor in self?.observeMoments() }
-        }
-        if isRecording {
-            KeyboardShortcuts.enable(.markMoment)
-        } else {
-            KeyboardShortcuts.disable(.markMoment)
-            closeMomentDraft()
-        }
-        if let draft, isRecording {
-            let entry =
-                momentEntry
-                ?? MomentEntry(environment: self, islandFrame: { [weak self] in self?.dynamicIsland?.frame })
-            momentEntry = entry
-            entry.show(draft)
-        } else {
-            momentEntry?.hide()
-        }
-    }
-
-    /// Takes the Catch Me Up shortcut only while recording, so other apps get those keys
-    /// otherwise, and shows the card for `catchUpRequest` while there is one. A recording that
-    /// stops closes the card.
-    private func observeCatchUp() {
-        let (isRecording, request) = withObservationTracking {
-            (coordinator.isRecording, catchUpRequest)
-        } onChange: { [weak self] in
-            Task { @MainActor in self?.observeCatchUp() }
-        }
-        if isRecording {
-            KeyboardShortcuts.enable(.catchUp)
-        } else {
-            KeyboardShortcuts.disable(.catchUp)
-            closeCatchUp()
-        }
-        if let request, isRecording {
-            let card =
-                catchUpCard
-                ?? CatchUpCard(environment: self, islandFrame: { [weak self] in self?.dynamicIsland?.frame })
-            catchUpCard = card
-            card.show(request)
-        } else {
-            catchUpCard?.hide()
-        }
-    }
-
     /// Posts "Still Recording?" while the coordinator asks, and takes it away once answered.
     private func observeStillRecording() {
         let isAsking = withObservationTracking {
@@ -433,8 +344,8 @@ final class AppEnvironment {
         AudioCues.play(cue, settings: settings)
     }
 
-    /// Points the coordinator and Spotlight at the notes folder whenever it's chosen, goes away or
-    /// comes back. Without one, recording is disabled.
+    /// Points the coordinator at the notes folder whenever it's chosen, goes away or comes back.
+    /// Without one, recording is disabled.
     private func observeNotesFolder() {
         let directory = withObservationTracking {
             notesFolder.directory
@@ -442,7 +353,17 @@ final class AppEnvironment {
             Task { @MainActor in self?.observeNotesFolder() }
         }
         coordinator.noteWriter = directory.map { MarkdownNoteWriter(directory: $0) }
-        noteSpotlight.update(directory: directory, isEnabled: indexesNotesInSpotlight)
+    }
+
+    /// Points Spotlight at the notes folder whenever it changes, and adds or removes the notes as
+    /// the preference is turned on or off.
+    private func observeSpotlight() {
+        let (directory, isEnabled) = withObservationTracking {
+            (notesFolder.directory, preferences.indexesNotesInSpotlight)
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.observeSpotlight() }
+        }
+        noteSpotlight.update(directory: directory, isEnabled: isEnabled)
     }
 
     /// Posts "Note Ready", and plays its cue, for every note the coordinator writes.
@@ -505,131 +426,24 @@ final class AppEnvironment {
         settings.selectedDeviceIDs = selection.map(\.id)
     }
 
-    /// Whether to take the system audio's echo out of the microphone. Takes effect from the next
-    /// recording.
-    var cancelsEcho: Bool {
-        get { coordinator.cancelsEcho }
-        set {
-            settings.cancelsEcho = newValue
-            coordinator.cancelsEcho = newValue
-        }
-    }
-
-    /// Whether to time how long the user and the others talk while both a microphone and system
-    /// audio record. Takes effect from the next recording.
-    var measuresTalkTime: Bool {
-        get { coordinator.measuresTalkTime }
-        set {
-            settings.measuresTalkTime = newValue
-            coordinator.measuresTalkTime = newValue
-        }
-    }
-
     // MARK: Speakers
 
-    /// Whether the people on the system audio are told apart once a recording ends. Takes effect
-    /// from the next recording. Turning it on downloads the model if it isn't on disk.
-    var identifiesSpeakers: Bool {
-        get { coordinator.speakerDiarizer != nil }
-        set {
-            settings.identifiesSpeakers = newValue
-            coordinator.speakerDiarizer = newValue ? Self.speakerDiarizer : nil
-            coordinator.speakerNamer = newValue && settings.namesSpeakers ? summarizer : nil
-            if newValue, !isSpeakerModelDownloaded { downloadSpeakerModel() }
-            if !newValue { cancelSpeakerModelDownload() }
-        }
-    }
-
-    /// Whether the speakers told apart are named after what's said, by the summary model. Takes
-    /// effect from the next transcription.
-    var namesSpeakers: Bool {
-        get { settings.namesSpeakers }
-        set {
-            settings.namesSpeakers = newValue
-            coordinator.speakerNamer = newValue && identifiesSpeakers ? summarizer : nil
-        }
-    }
-
-    /// Downloads the model that tells speakers apart, showing progress in `speakerModelProgress`.
-    /// Keeps going while Settings is closed. A recording that ends without it downloads it then.
-    func downloadSpeakerModel() {
-        guard speakerModelDownload == nil else { return }
-        let diarizer = Self.speakerDiarizer
-        speakerModelError = nil
-        speakerModelProgress = 0
-        let reportProgress: @Sendable (Double) -> Void = { [weak self] fraction in
-            Task { @MainActor in
-                guard let self, let progress = self.speakerModelProgress else { return }
-                // Hops to the main actor can arrive out of order.
-                self.speakerModelProgress = max(progress, fraction)
-            }
-        }
-        speakerModelDownload = Task { [weak self] in
-            var failure: String?
-            do {
-                try await diarizer.prepare(progress: reportProgress)
-            } catch {
-                failure = "Couldn't download the speaker model: \(error.localizedDescription)"
-            }
-            // Cancelled: `cancelSpeakerModelDownload()` reset the state.
-            guard !Task.isCancelled, let self else { return }
-            self.speakerModelDownload = nil
-            self.speakerModelProgress = nil
-            self.speakerModelError = failure
-            self.isSpeakerModelDownloaded = diarizer.isDownloaded
-        }
-    }
-
-    /// Stops downloading the speaker model. What's on disk is kept, so a new download resumes.
-    func cancelSpeakerModelDownload() {
-        speakerModelDownload?.cancel()
-        speakerModelDownload = nil
-        speakerModelProgress = nil
+    /// Turns telling apart the people on the system audio on or off. Turning it on downloads the
+    /// model if it isn't on disk; turning it off stops a download.
+    func setIdentifiesSpeakers(_ enabled: Bool) {
+        preferences.identifiesSpeakers = enabled
+        if enabled, !speakerModelDownload.isDownloaded { speakerModelDownload.start() }
+        if !enabled { speakerModelDownload.cancel() }
     }
 
     /// Removes the speaker model's files. Turns telling speakers apart off, as it would only
     /// download them again.
     func deleteSpeakerModel() async {
-        isDeletingSpeakerModel = true
-        defer { isDeletingSpeakerModel = false }
-        identifiesSpeakers = false
-        do {
-            try await Self.speakerDiarizer.deleteModel()
-        } catch {
-            speakerModelError = "Couldn't delete the speaker model: \(error.localizedDescription)"
-        }
-        isSpeakerModelDownloaded = Self.speakerDiarizer.isDownloaded
-    }
-
-    /// Speaker names for multi-source recordings. Takes effect from the next transcription.
-    var sourceLabels: SourceLabels {
-        get { coordinator.sourceLabels }
-        set {
-            settings.sourceLabels = newValue
-            coordinator.sourceLabels = newValue
-        }
-    }
-
-    /// Takes effect right away, even while recording.
-    func setStillRecordingMinutes(_ minutes: Int) {
-        settings.stillRecordingMinutes = minutes
-        stillRecordingMinutes = settings.stillRecordingMinutes
-        coordinator.stillRecordingDelay = Self.stillRecordingDelay(minutes: stillRecordingMinutes)
+        setIdentifiesSpeakers(false)
+        await speakerModelDownload.delete()
     }
 
     // MARK: Calls
-
-    func setNotifiesAboutCalls(_ enabled: Bool) {
-        settings.notifiesAboutCalls = enabled
-        notifiesAboutCalls = enabled
-        callPrompt?.notifies = enabled
-    }
-
-    func setRecordsCallsAutomatically(_ enabled: Bool) {
-        settings.recordsCallsAutomatically = enabled
-        recordsCallsAutomatically = enabled
-        callPrompt?.recordsAutomatically = enabled
-    }
 
     /// Starts recording a call: with system audio on, so the other people are recorded too, and the
     /// microphone if one is selected. Returns `false` if recording can't start, e.g. as the model
@@ -653,7 +467,7 @@ final class AppEnvironment {
     /// Starts or stops recording on the global shortcut, from any app. While busy downloading,
     /// transcribing, translating or summarizing, it beeps, as recording can start once that's done.
     /// When recording can't start for something the user has to do (no notes folder, model or
-    /// input), it opens Record instead, which says what.
+    /// input), it opens Record instead, which says what. `applyPreferences()` turns it on or off.
     private func listenForRecordingShortcut() {
         KeyboardShortcuts.onKeyUp(for: .toggleRecording) { [weak self] in
             guard let self else { return }
@@ -666,184 +480,9 @@ final class AppEnvironment {
                 self.showRecorder()
             }
         }
-        if !isRecordingShortcutEnabled {
-            KeyboardShortcuts.disable(.toggleRecording)
-        }
-    }
-
-    func setRecordingShortcutEnabled(_ enabled: Bool) {
-        settings.isRecordingShortcutEnabled = enabled
-        isRecordingShortcutEnabled = enabled
-        if enabled {
-            KeyboardShortcuts.enable(.toggleRecording)
-        } else {
-            KeyboardShortcuts.disable(.toggleRecording)
-        }
-    }
-
-    // MARK: Moments
-
-    /// How long the field for a new moment waits for typing before it closes.
-    private static let momentDraftTimeoutDuration = Duration.seconds(5)
-
-    /// Starts on the Mark Moment shortcut, from any app. `observeMoments()` takes it only while
-    /// recording.
-    private func listenForMomentShortcut() {
-        KeyboardShortcuts.onKeyUp(for: .markMoment) { [weak self] in
-            self?.markMoment()
-        }
-        KeyboardShortcuts.disable(.markMoment)
-    }
-
-    /// Marks the point the recording has reached, and opens a field under the notch to write a
-    /// few words about it. Return adds the moment to the note; Escape, clicking elsewhere, or
-    /// `momentDraftTimeoutDuration` without typing drops it. Beeps when not recording.
-    func markMoment() {
-        guard let time = coordinator.momentTime else {
-            NSSound.beep()
-            return
-        }
-        // Both would go under the notch.
-        closeCatchUp()
-        let draft = MomentDraft(time: time)
-        momentDraft = draft
-        momentDraftTimeout?.cancel()
-        momentDraftTimeout = Task { [weak self] in
-            try? await Task.sleep(for: Self.momentDraftTimeoutDuration)
-            guard let self, !Task.isCancelled, self.momentDraft === draft, draft.text.isEmpty else { return }
-            self.closeMomentDraft()
-        }
-    }
-
-    /// Adds `momentDraft` to the note, with what was typed, and closes its field.
-    func addMomentDraft() {
-        guard let momentDraft else { return }
-        coordinator.addMoment(at: momentDraft.time, text: momentDraft.text)
-        closeMomentDraft()
-    }
-
-    /// Closes the field for `momentDraft`, dropping the moment unless it was added.
-    func closeMomentDraft() {
-        guard momentDraft != nil else { return }
-        momentDraft = nil
-        momentDraftTimeout?.cancel()
-        momentDraftTimeout = nil
-    }
-
-    // MARK: Catch Me Up
-
-    /// How long a catch-up stays up once it's in: long enough to read, at about three words a
-    /// second, and at least 15 seconds. A failure, which only says why, goes sooner.
-    private static func catchUpReadingTime(for state: CatchUpRequest.State) -> Duration {
-        switch state {
-        case .summarizing:
-            return .zero
-        case .ready(let catchUp):
-            let words = catchUp.points.reduce(0) { $0 + $1.split(whereSeparator: \.isWhitespace).count }
-            return max(.seconds(15), .seconds(5) + .milliseconds(words * 350))
-        case .failed:
-            return .seconds(8)
-        }
-    }
-
-    /// Starts on the Catch Me Up shortcut, from any app. `observeCatchUp()` takes it only while
-    /// recording.
-    private func listenForCatchUpShortcut() {
-        KeyboardShortcuts.onKeyUp(for: .catchUp) { [weak self] in
-            self?.catchUp()
-        }
-        KeyboardShortcuts.disable(.catchUp)
-    }
-
-    /// Has Apple Intelligence sum up the last `catchUpMinutes` of the live text, on this Mac, in a
-    /// card under the notch, for when the user drifted off. If the card is open already, closes
-    /// it instead. It closes by itself once it's had time to be read, unless the pointer is over
-    /// it. Beeps when not recording.
-    func catchUp() {
-        guard catchUpRequest == nil else {
-            closeCatchUp()
-            return
-        }
-        guard coordinator.isRecording else {
-            NSSound.beep()
-            return
-        }
-        // Both would go under the notch.
-        closeMomentDraft()
-        let request = CatchUpRequest(minutes: catchUpMinutes)
-        catchUpRequest = request
-        catchingUp = Task { [weak self, coordinator, summarizer] in
-            do {
-                let catchUp = try await coordinator.catchUp(
-                    onLast: TimeInterval(request.minutes * 60),
-                    with: summarizer
-                )
-                request.state = .ready(catchUp)
-                Self.announce(catchUp.points.joined(separator: " "))
-            } catch {
-                if error is CancellationError || Task.isCancelled { return }
-                let message: String
-                if case SummarizationError.unavailable(let reason) = error {
-                    // What to turn on, without "Summaries aren't available".
-                    message = reason
-                } else {
-                    message = error.localizedDescription
-                }
-                request.state = .failed(message)
-                Self.announce(message)
-            }
-            try? await Task.sleep(for: Self.catchUpReadingTime(for: request.state))
-            // Not while it's being read.
-            while !Task.isCancelled, request.isHovered {
-                try? await Task.sleep(for: .seconds(1))
-            }
-            guard !Task.isCancelled, let self, self.catchUpRequest === request else { return }
-            self.closeCatchUp()
-        }
-    }
-
-    /// Closes the card for `catchUpRequest`, stopping the catch-up if it's still being summed up.
-    func closeCatchUp() {
-        guard catchUpRequest != nil else { return }
-        catchUpRequest = nil
-        catchingUp?.cancel()
-        catchingUp = nil
-    }
-
-    /// Reads `text` out with VoiceOver, as the card never has the focus.
-    private static func announce(_ text: String) {
-        NSAccessibility.post(
-            element: NSApp as Any,
-            notification: .announcementRequested,
-            userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue]
-        )
-    }
-
-    func setCatchUpMinutes(_ minutes: Int) {
-        settings.catchUpMinutes = minutes
-        catchUpMinutes = settings.catchUpMinutes
-    }
-
-    // MARK: Design
-
-    func setShowsRecordingInDynamicIsland(_ enabled: Bool) {
-        settings.showsRecordingInDynamicIsland = enabled
-        showsRecordingInDynamicIsland = enabled
-    }
-
-    func setIslandLayout(_ layout: DynamicIsland.Layout) {
-        settings.islandLayout = layout
-        islandLayout = layout
     }
 
     // MARK: Transcription
-
-    var language: String? { coordinator.options.language }
-
-    func setLanguage(_ language: String?) {
-        settings.language = language
-        coordinator.options.language = language
-    }
 
     /// Whether the coordinator can be replaced: nothing is recording, starting, downloading,
     /// transcribing or saving.
@@ -857,17 +496,20 @@ final class AppEnvironment {
         self.model = model
         coordinator = Self.makeCoordinator(
             model: model,
-            summarizer: coordinator.summarizer,
-            speakerNamer: coordinator.speakerNamer,
+            summarizer: summarizer,
             translator: translator,
             notesDirectory: notesFolder.directory,
             pendingNotes: coordinator.takePendingNotes(),
-            settings: settings
+            preferredDeviceIDs: settings.selectedDeviceIDs,
+            preferences: preferences
         )
         startCoordinatorTasks()
     }
 
     // MARK: Summary
+
+    /// Whether `summaryModel` is on disk; always true for one macOS provides.
+    var isSummaryModelDownloaded: Bool { summaryModelDownload?.isDownloaded ?? true }
 
     /// Whether `summarizer` can summarize right now, and if not, why. Read this rather than
     /// `summarizer.availability` in views, so they update when the model finishes downloading.
@@ -880,189 +522,15 @@ final class AppEnvironment {
     /// under way finishes with the old model. Stops a download of the old model.
     func setSummaryModel(_ model: SummaryModel) {
         guard model != summaryModel else { return }
-        cancelSummaryModelDownload()
+        summaryModelDownload?.cancel()
         settings.summaryModel = model
         summaryModel = model
         summarizer = model.makeSummarizer()
-        summaryModelError = nil
-        isSummaryModelDownloaded = (summarizer as? MLXSummarizer)?.isDownloaded ?? true
-        if coordinator.summarizer != nil { coordinator.summarizer = summarizer }
-        if coordinator.speakerNamer != nil { coordinator.speakerNamer = summarizer }
-    }
-
-    /// Downloads `summaryModel` if Mixdown downloads it, showing progress in
-    /// `summaryModelProgress`. Keeps going while Settings is closed.
-    func downloadSummaryModel() {
-        guard summaryModelDownload == nil, let summarizer = summarizer as? MLXSummarizer else { return }
-        summaryModelError = nil
-        summaryModelProgress = 0
-        let reportProgress: @Sendable (Double) -> Void = { [weak self] fraction in
-            guard let self else { return }
-            Task { @MainActor in self.reportSummaryModelProgress(fraction, of: summarizer) }
-        }
-        summaryModelDownload = Task { [weak self] in
-            var failure: String?
-            do {
-                try await summarizer.download(progress: reportProgress)
-            } catch {
-                failure = "Couldn't download \(summarizer.model.displayName): \(error.localizedDescription)"
-            }
-            // Cancelled: `cancelSummaryModelDownload()` reset the state, and another download, or
-            // model, may have taken over since.
-            guard !Task.isCancelled, let self else { return }
-            self.summaryModelDownload = nil
-            self.summaryModelProgress = nil
-            self.summaryModelError = failure
-            self.isSummaryModelDownloaded = summarizer.isDownloaded
-        }
-    }
-
-    private func reportSummaryModelProgress(_ fraction: Double, of summarizer: MLXSummarizer) {
-        guard self.summarizer as? MLXSummarizer === summarizer, let progress = summaryModelProgress else { return }
-        // Hops to the main actor can arrive out of order.
-        summaryModelProgress = max(progress, fraction)
-    }
-
-    /// Stops downloading `summaryModel`. What's on disk is kept, so a new download resumes.
-    func cancelSummaryModelDownload() {
-        summaryModelDownload?.cancel()
-        summaryModelDownload = nil
-        summaryModelProgress = nil
-    }
-
-    /// Removes `summaryModel`'s files, if Mixdown downloaded them.
-    func deleteSummaryModel() async {
-        guard let summarizer = summarizer as? MLXSummarizer else { return }
-        isDeletingSummaryModel = true
-        defer { isDeletingSummaryModel = false }
-        do {
-            try await summarizer.deleteModel()
-        } catch {
-            summaryModelError = "Couldn't delete \(summarizer.model.displayName): \(error.localizedDescription)"
-        }
-        guard self.summarizer as? MLXSummarizer === summarizer else { return }
-        isSummaryModelDownloaded = summarizer.isDownloaded
-    }
-
-    /// Whether notes get a summary. Takes effect from the next recording, even if the summarizer
-    /// is unavailable right now; it's skipped until it becomes available.
-    var summarizesNotes: Bool {
-        get { coordinator.summarizer != nil }
-        set {
-            settings.summarizesNotes = newValue
-            coordinator.summarizer = newValue ? summarizer : nil
-        }
-    }
-
-    /// Every summary template on offer: the built-ins, edited or not, then the user's own. Changed
-    /// with the methods below.
-    private(set) var summaryTemplates: [SummaryTemplate]
-
-    /// Saves the user's changes to a template. Takes effect from the next summary, including that
-    /// of the recording in progress.
-    func updateSummaryTemplate(_ template: SummaryTemplate) {
-        guard let index = summaryTemplates.firstIndex(where: { $0.id == template.id }) else { return }
-        var template = template
-        template.instructions = String(template.instructions.prefix(SummaryTemplate.maximumInstructionsLength))
-        guard summaryTemplates[index] != template else { return }
-        summaryTemplates[index] = template
-        saveSummaryTemplates()
-    }
-
-    /// Adds a template of the user's, a copy of `original` or else a blank one, and returns it.
-    func addSummaryTemplate(copying original: SummaryTemplate? = nil) -> SummaryTemplate {
-        let template =
-            original.map { SummaryTemplate.copy(of: $0, in: summaryTemplates) }
-            ?? SummaryTemplate.new(in: summaryTemplates)
-        summaryTemplates.append(template)
-        saveSummaryTemplates()
-        return template
-    }
-
-    /// Deletes a template of the user's. Recordings set to use it get General instead. Built-ins
-    /// can't be deleted.
-    func deleteSummaryTemplate(id: String) {
-        guard SummaryTemplate.builtIn(id: id) == nil else { return }
-        summaryTemplates.removeAll { $0.id == id }
-        let general = summaryTemplates.first { $0.id == SummaryTemplate.general.id } ?? .general
-        if summaryTemplate.id == id { summaryTemplate = general }
-        if callSummaryTemplate.id == id { callSummaryTemplate = general }
-        saveSummaryTemplates()
-    }
-
-    /// Puts a built-in template back the way it came.
-    func restoreSummaryTemplate(id: String) {
-        guard let original = SummaryTemplate.builtIn(id: id) else { return }
-        updateSummaryTemplate(original)
-    }
-
-    /// Stores `summaryTemplates` and hands the coordinator the current version of each template it
-    /// holds.
-    private func saveSummaryTemplates() {
-        settings.summaryTemplates = summaryTemplates
-        coordinator.summaryTemplate = settings.summaryTemplate
-        coordinator.callSummaryTemplate = settings.callSummaryTemplate
-        coordinator.updateRecordingSummaryTemplate(from: summaryTemplates)
-    }
-
-    /// The summary template for recordings started by hand. Takes effect from the next summary.
-    var summaryTemplate: SummaryTemplate {
-        get { coordinator.summaryTemplate }
-        set {
-            settings.summaryTemplate = newValue
-            coordinator.summaryTemplate = newValue
-        }
-    }
-
-    /// The summary template for recordings started for a call, from the call notification or
-    /// automatically. Takes effect from the next summary.
-    var callSummaryTemplate: SummaryTemplate {
-        get { coordinator.callSummaryTemplate }
-        set {
-            settings.callSummaryTemplate = newValue
-            coordinator.callSummaryTemplate = newValue
-        }
-    }
-
-    // MARK: Translation
-
-    /// Whether notes are translated into `translationLanguage`. Takes effect from the next note.
-    var translatesNotes: Bool {
-        get { coordinator.translationLanguage != nil }
-        set {
-            settings.translatesNotes = newValue
-            coordinator.translationLanguage = newValue ? translationLanguage : nil
-        }
-    }
-
-    /// Picks the language notes are translated into. Takes effect from the next note.
-    func setTranslationLanguage(_ language: String) {
-        settings.translationLanguage = language
-        translationLanguage = language
-        if translatesNotes { coordinator.translationLanguage = language }
-    }
-
-    /// Whether the live text is translated into `translationLanguage` while recording, too. Takes
-    /// effect from the next recording.
-    var translatesLiveText: Bool {
-        get { coordinator.translatesLiveText }
-        set {
-            settings.translatesLiveText = newValue
-            coordinator.translatesLiveText = newValue
-        }
+        summaryModelDownload = Self.makeDownload(for: summarizer)
+        applyPreferences()
     }
 
     // MARK: Vocabulary
-
-    /// Words to correct in transcripts. Takes effect from the next transcription; notes already
-    /// written change only with `correctNotes(with:)`.
-    var vocabulary: Vocabulary {
-        get { coordinator.vocabulary }
-        set {
-            settings.vocabulary = newValue
-            coordinator.vocabulary = newValue
-        }
-    }
 
     /// Whether `correctNotes(with:)` is running.
     private(set) var isCorrectingNotes = false
@@ -1080,15 +548,9 @@ final class AppEnvironment {
 
     // MARK: Notes
 
-    func setIndexesNotesInSpotlight(_ enabled: Bool) {
-        settings.indexesNotesInSpotlight = enabled
-        indexesNotesInSpotlight = enabled
-        noteSpotlight.update(directory: notesFolder.directory, isEnabled: enabled)
-    }
-
+    /// Turns Chat on or off. Off, the main window leaves Chat, and Chat stops reading the notes.
     func setChatEnabled(_ enabled: Bool) {
-        settings.isChatEnabled = enabled
-        isChatEnabled = enabled
+        preferences.isChatEnabled = enabled
         guard !enabled else { return }
         leaveChat()
         noteChat.stop()

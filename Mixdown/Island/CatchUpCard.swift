@@ -3,7 +3,7 @@ import MixdownCore
 import SwiftUI
 
 /// A catch-up the user asked for, while it's summed up and then shown. See
-/// `AppEnvironment.catchUp()`.
+/// `IslandController.catchUp()`.
 @MainActor @Observable
 final class CatchUpRequest {
     enum State: Equatable {
@@ -29,14 +29,14 @@ final class CatchUpRequest {
 ///
 /// Unlike the field for a moment, it never takes the keyboard, so the app in front keeps it. It
 /// closes when clicked, on the Catch Me Up shortcut again, or a while after it's been read (see
-/// `AppEnvironment.catchUp()`).
+/// `IslandController.catchUp()`).
 @MainActor
 final class CatchUpCard {
     static let width: CGFloat = 360
     /// Space between the card and the notch or island above it.
     private static let spacing: CGFloat = 6
 
-    private let environment: AppEnvironment
+    private let island: IslandController
     /// The Dynamic Island's frame while it's shown, to go under it.
     private let islandFrame: () -> NSRect?
     /// Created on the first `show(_:)`, as windows shouldn't be made before the app has launched.
@@ -48,8 +48,8 @@ final class CatchUpCard {
     /// About the height of the card while it's summing up, until the view has measured itself.
     private static let initialHeight: CGFloat = 40
 
-    init(environment: AppEnvironment, islandFrame: @escaping () -> NSRect?) {
-        self.environment = environment
+    init(island: IslandController, islandFrame: @escaping () -> NSRect?) {
+        self.island = island
         self.islandFrame = islandFrame
     }
 
@@ -63,7 +63,7 @@ final class CatchUpCard {
         let panel = panel ?? makePanel()
         let hostingView = NSHostingView(
             rootView: CatchUpView(
-                environment: environment,
+                island: island,
                 request: request,
                 heightChanged: { [weak self] height in self?.heightChanged(height) }
             )
@@ -116,7 +116,7 @@ final class CatchUpCard {
 /// What was missed, as a few points under a heading, in black like the island. While Apple
 /// Intelligence is at it, a spinner; if it can't, why not.
 private struct CatchUpView: View {
-    let environment: AppEnvironment
+    let island: IslandController
     let request: CatchUpRequest
     /// Called with the card's height whenever that changes.
     let heightChanged: (CGFloat) -> Void
@@ -171,7 +171,7 @@ private struct CatchUpView: View {
         .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { heightChanged($0) }
         .environment(\.colorScheme, .dark)
         .contentShape(RoundedRectangle(cornerRadius: 12))
-        .onTapGesture { environment.closeCatchUp() }
+        .onTapGesture { island.closeCatchUp() }
         .onHover { request.isHovered = $0 }
         .help("Click to close")
         .scaleEffect(isExpanded ? 1 : 0.9, anchor: .top)

@@ -10,13 +10,13 @@ struct RecordingShortcutToggle: View {
         Toggle(
             "Start and stop recording from any app",
             isOn: Binding(
-                get: { environment.isRecordingShortcutEnabled },
-                set: { environment.setRecordingShortcutEnabled($0) }
+                get: { environment.preferences.isRecordingShortcutEnabled },
+                set: { environment.preferences.isRecordingShortcutEnabled = $0 }
             )
         )
         // Hidden rather than disabled: the recorder is an AppKit field that ignores SwiftUI's
         // `disabled`.
-        if environment.isRecordingShortcutEnabled {
+        if environment.preferences.isRecordingShortcutEnabled {
             KeyboardShortcuts.Recorder("Shortcut", name: .toggleRecording)
         }
     }

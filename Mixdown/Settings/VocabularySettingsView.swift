@@ -5,12 +5,13 @@ import SwiftUI
 /// instead. Also corrects the notes already written.
 struct VocabularySettingsView: View {
     @Environment(AppEnvironment.self) private var environment
+    private var preferences: Preferences { environment.preferences }
     @State private var isConfirmingCorrection = false
     /// What correcting the notes did last, or why it failed.
     @State private var correctionResult: String?
 
     var body: some View {
-        let entries = environment.vocabulary.entries
+        let entries = preferences.vocabulary.entries
 
         Form {
             Section {
@@ -34,7 +35,7 @@ struct VocabularySettingsView: View {
                     }
                 }
                 Button("Add Word", systemImage: "plus") {
-                    environment.vocabulary.entries.append(.init(term: "", soundsLike: []))
+                    preferences.vocabulary.entries.append(.init(term: "", soundsLike: []))
                 }
             } header: {
                 Text("Vocabulary")
@@ -52,7 +53,7 @@ struct VocabularySettingsView: View {
                 HStack {
                     Button("Correct Existing Notes…") { isConfirmingCorrection = true }
                         .disabled(
-                            environment.vocabulary.isEmpty || environment.notesFolder.directory == nil
+                            preferences.vocabulary.isEmpty || environment.notesFolder.directory == nil
                                 || environment.isCorrectingNotes
                         )
                     if environment.isCorrectingNotes {
@@ -78,7 +79,7 @@ struct VocabularySettingsView: View {
         }
         // Rows added but never filled in.
         .onDisappear {
-            environment.vocabulary.entries.removeAll {
+            preferences.vocabulary.entries.removeAll {
                 $0.term.trimmingCharacters(in: .whitespaces).isEmpty
                     && $0.soundsLike.allSatisfy { $0.trimmingCharacters(in: .whitespaces).isEmpty }
             }
@@ -93,7 +94,7 @@ struct VocabularySettingsView: View {
                 .labelsHidden()
                 .frame(width: 140)
             Button("Remove", systemImage: "minus.circle") {
-                environment.vocabulary.entries.removeAll { $0.id == entry.id }
+                preferences.vocabulary.entries.removeAll { $0.id == entry.id }
             }
             .labelStyle(.iconOnly)
             .buttonStyle(.borderless)
@@ -103,10 +104,10 @@ struct VocabularySettingsView: View {
 
     private func binding(for id: UUID, _ keyPath: WritableKeyPath<Vocabulary.Entry, String>) -> Binding<String> {
         Binding(
-            get: { environment.vocabulary.entries.first { $0.id == id }?[keyPath: keyPath] ?? "" },
+            get: { preferences.vocabulary.entries.first { $0.id == id }?[keyPath: keyPath] ?? "" },
             set: { value in
-                guard let index = environment.vocabulary.entries.firstIndex(where: { $0.id == id }) else { return }
-                environment.vocabulary.entries[index][keyPath: keyPath] = value
+                guard let index = preferences.vocabulary.entries.firstIndex(where: { $0.id == id }) else { return }
+                preferences.vocabulary.entries[index][keyPath: keyPath] = value
             }
         )
     }
@@ -115,19 +116,19 @@ struct VocabularySettingsView: View {
     /// the space after its comma, so the text reads back the way it was typed.
     private func soundsLikeBinding(for id: UUID) -> Binding<String> {
         Binding(
-            get: { environment.vocabulary.entries.first { $0.id == id }?.soundsLike.joined(separator: ", ") ?? "" },
+            get: { preferences.vocabulary.entries.first { $0.id == id }?.soundsLike.joined(separator: ", ") ?? "" },
             set: { value in
-                guard let index = environment.vocabulary.entries.firstIndex(where: { $0.id == id }) else { return }
+                guard let index = preferences.vocabulary.entries.firstIndex(where: { $0.id == id }) else { return }
                 let items = value.components(separatedBy: ",").enumerated().map { index, item in
                     index > 0 && item.hasPrefix(" ") ? String(item.dropFirst()) : item
                 }
-                environment.vocabulary.entries[index].soundsLike = items
+                preferences.vocabulary.entries[index].soundsLike = items
             }
         )
     }
 
     private func correctNotes() {
-        let vocabulary = environment.vocabulary
+        let vocabulary = preferences.vocabulary
         correctionResult = nil
         Task {
             do {

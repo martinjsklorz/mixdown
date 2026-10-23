@@ -13,7 +13,7 @@ struct MenuBarLabel: View {
     var body: some View {
         // Whole seconds recorded so far, while recording; `nil` while the Dynamic Island alone shows
         // them, which also spares the label redrawing every second.
-        let recordingElapsed = environment.dynamicIslandShowsTimeAlone ? nil : environment.recordingElapsed
+        let recordingElapsed = environment.island.showsTimeAlone ? nil : environment.recordingElapsed
         let phase = coordinator.phase
         let remaining = coordinator.timeRemaining
         HStack(spacing: 4) {

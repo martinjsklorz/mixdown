@@ -6,6 +6,7 @@ import SwiftUI
 /// recordings and for detected calls.
 struct SummarySettingsView: View {
     @Environment(AppEnvironment.self) private var environment
+    private var preferences: Preferences { environment.preferences }
     @Environment(MainNavigation.self) private var navigation
     @State private var isConfirmingDelete = false
 
@@ -15,8 +16,8 @@ struct SummarySettingsView: View {
                 Toggle(
                     "Summarize recordings",
                     isOn: Binding(
-                        get: { environment.summarizesNotes },
-                        set: { environment.summarizesNotes = $0 }
+                        get: { preferences.summarizesNotes },
+                        set: { preferences.summarizesNotes = $0 }
                     )
                 )
             } footer: {
@@ -27,15 +28,15 @@ struct SummarySettingsView: View {
                 templatePicker(
                     "Manual recordings",
                     selection: Binding(
-                        get: { environment.summaryTemplate },
-                        set: { environment.summaryTemplate = $0 }
+                        get: { preferences.summaryTemplates.recordingTemplate },
+                        set: { preferences.summaryTemplates.recordingTemplate = $0 }
                     )
                 )
                 templatePicker(
                     "Detected calls",
                     selection: Binding(
-                        get: { environment.callSummaryTemplate },
-                        set: { environment.callSummaryTemplate = $0 }
+                        get: { preferences.summaryTemplates.callTemplate },
+                        set: { preferences.summaryTemplates.callTemplate = $0 }
                     )
                 )
                 Button("Edit Templates…") { navigation.settingsTab = .templates }
@@ -47,7 +48,7 @@ struct SummarySettingsView: View {
                         + "Change what each template looks out for, or add your own, under Templates."
                 )
             }
-            .disabled(!environment.summarizesNotes)
+            .disabled(!preferences.summarizesNotes)
 
             Section {
                 LabeledContent("Model") {
@@ -91,10 +92,10 @@ struct SummarySettingsView: View {
             title,
             selection: Binding(
                 get: { selection.wrappedValue.id },
-                set: { id in environment.summaryTemplates.first { $0.id == id }.map { selection.wrappedValue = $0 } }
+                set: { selection.wrappedValue = preferences.summaryTemplates.template(id: $0) }
             )
         ) {
-            ForEach(environment.summaryTemplates) { template in
+            ForEach(preferences.summaryTemplates.templates) { template in
                 Text(template.displayName).tag(template.id)
             }
         }
@@ -116,14 +117,14 @@ struct SummarySettingsView: View {
     /// A row under the model while it downloads or after a download failed.
     @ViewBuilder
     private var modelStatus: some View {
-        if let progress = environment.summaryModelProgress {
+        if let progress = environment.summaryModelDownload?.progress {
             ProgressView(value: progress) {
                 Text("Downloading \(environment.summaryModel.displayName)…")
             } currentValueLabel: {
                 Text(progress.formatted(.percent.precision(.fractionLength(0))))
                     .monospacedDigit()
             }
-        } else if let error = environment.summaryModelError {
+        } else if let error = environment.summaryModelDownload?.error {
             Text(error)
                 .foregroundStyle(.red)
         }
@@ -135,9 +136,9 @@ struct SummarySettingsView: View {
     private var downloadAccessory: some View {
         if environment.summaryModel.isManagedBySystem {
             EmptyView()
-        } else if environment.summaryModelProgress != nil {
-            Button("Cancel", systemImage: "xmark.circle") { environment.cancelSummaryModelDownload() }
-        } else if environment.isDeletingSummaryModel {
+        } else if environment.summaryModelDownload?.progress != nil {
+            Button("Cancel", systemImage: "xmark.circle") { environment.summaryModelDownload?.cancel() }
+        } else if environment.summaryModelDownload?.isDeleting == true {
             ProgressView()
                 .controlSize(.small)
         } else if environment.isSummaryModelDownloaded {
@@ -151,13 +152,13 @@ struct SummarySettingsView: View {
                     isPresented: $isConfirmingDelete
                 ) {
                     Button("Delete", role: .destructive) {
-                        Task { await environment.deleteSummaryModel() }
+                        Task { await environment.summaryModelDownload?.delete() }
                     }
                 } message: {
                     Text("This frees up disk space. You'll need to download the model again to get summaries.")
                 }
         } else {
-            Button("Download", systemImage: "arrow.down.circle") { environment.downloadSummaryModel() }
+            Button("Download", systemImage: "arrow.down.circle") { environment.summaryModelDownload?.start() }
         }
     }
 

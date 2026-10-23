@@ -70,7 +70,7 @@ struct AddToVocabularySheet: View {
         guard canAdd else { return }
         let soundsLike = trimmed(soundsLike)
         let term = trimmed(term)
-        environment.vocabulary = environment.vocabulary.adding(soundsLike, for: term)
+        environment.preferences.vocabulary = environment.preferences.vocabulary.adding(soundsLike, for: term)
         dismiss()
         guard correctsExistingNotes else { return }
 

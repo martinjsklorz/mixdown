@@ -5,6 +5,7 @@ import SwiftUI
 /// menu bar.
 struct RecordingSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
+    private var preferences: Preferences { environment.preferences }
 
     var body: some View {
         let hasSystemAudio = environment.coordinator.devices.contains { $0.kind == .systemAudio }
@@ -29,8 +30,8 @@ struct RecordingSettingsView: View {
                     Toggle(
                         "Remove echo from the microphone",
                         isOn: Binding(
-                            get: { environment.cancelsEcho },
-                            set: { environment.cancelsEcho = $0 }
+                            get: { preferences.cancelsEcho },
+                            set: { preferences.cancelsEcho = $0 }
                         )
                     )
                 } header: {
@@ -47,8 +48,8 @@ struct RecordingSettingsView: View {
                     Toggle(
                         "Measure talk time",
                         isOn: Binding(
-                            get: { environment.measuresTalkTime },
-                            set: { environment.measuresTalkTime = $0 }
+                            get: { preferences.measuresTalkTime },
+                            set: { preferences.measuresTalkTime = $0 }
                         )
                     )
                 } header: {
@@ -66,8 +67,8 @@ struct RecordingSettingsView: View {
                 Picker(
                     "Ask if still recording after",
                     selection: Binding(
-                        get: { environment.stillRecordingMinutes },
-                        set: { environment.setStillRecordingMinutes($0) }
+                        get: { preferences.stillRecordingMinutes },
+                        set: { preferences.stillRecordingMinutes = $0 }
                     )
                 ) {
                     ForEach(AppSettings.stillRecordingMinuteChoices, id: \.self) { minutes in

@@ -8,6 +8,7 @@ import SwiftUI
 /// While recording with the live model, the text recognized so far replaces the summary.
 struct RecorderView: View {
     @Environment(AppEnvironment.self) private var environment
+    private var preferences: Preferences { environment.preferences }
     @Environment(MainNavigation.self) private var navigation
     @Environment(\.openSettings) private var openSettings
 
@@ -123,7 +124,7 @@ struct RecorderView: View {
                 headline(
                     "Translating…",
                     detail: "\(environment.translator.info.displayName) is translating the transcript into "
-                        + "\(TranslationSettingsView.name(of: environment.translationLanguage))."
+                        + "\(TranslationSettingsView.name(of: preferences.translationLanguage))."
                 )
                 ProgressView()
                     .controlSize(.large)
@@ -189,7 +190,7 @@ struct RecorderView: View {
     /// the other.
     private func recordingControls(for coordinator: RecordingCoordinator) -> some View {
         HStack(spacing: 20) {
-            MomentButton(momentCount: coordinator.moments.count) { environment.markMoment() }
+            MomentButton(momentCount: coordinator.moments.count) { environment.island.markMoment() }
             stopButton(for: coordinator)
             PauseButton(isPaused: coordinator.isPaused) {
                 Task { await coordinator.togglePause() }
@@ -228,11 +229,11 @@ struct RecorderView: View {
     /// changeable until the summary is begun.
     @ViewBuilder
     private func summaryTemplatePicker(for coordinator: RecordingCoordinator) -> some View {
-        if environment.summarizesNotes, let template = coordinator.recordingSummaryTemplate {
+        if preferences.summarizesNotes, let template = coordinator.recordingSummaryTemplate {
             // Still offered if it was deleted while recording, so the picker isn't blank.
             let templates =
-                environment.summaryTemplates.contains { $0.id == template.id }
-                ? environment.summaryTemplates : environment.summaryTemplates + [template]
+                preferences.summaryTemplates.templates.contains { $0.id == template.id }
+                ? preferences.summaryTemplates.templates : preferences.summaryTemplates.templates + [template]
             Picker(
                 "Summary:",
                 selection: Binding(
@@ -380,7 +381,7 @@ struct RecorderView: View {
     }
 
     private var summaryName: String {
-        guard environment.summarizesNotes else { return "Off" }
+        guard preferences.summarizesNotes else { return "Off" }
         let name = environment.summarizer.info.displayName
         guard case .available = environment.summaryAvailability else { return "\(name) (not available)" }
         return name
@@ -388,7 +389,7 @@ struct RecorderView: View {
 
     /// Models that detect the language themselves ignore the setting.
     private var languageName: String {
-        guard environment.model.supportsLanguageSelection, let code = environment.language else {
+        guard environment.model.supportsLanguageSelection, let code = preferences.language else {
             return "Automatic"
         }
         return LanguagePicker.displayName(for: code)
