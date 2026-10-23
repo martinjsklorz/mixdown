@@ -4,7 +4,7 @@ Mixdown turns speech into text with a model that runs on your Mac. Choose one un
 **Settings → Transcription**, in one of two kinds:
 
 - **Live** models transcribe while you record, so the note is ready when you stop. The audio isn't
-  kept, so an hours-long meeting takes no more memory than a short one.
+  kept in memory, so an hours-long meeting takes no more memory than a short one.
 - **Offline** models transcribe the whole recording once you stop, keeping its audio in memory
   until then. Qwen3 and MOSS are more accurate than the live model, and MOSS can tell speakers
   apart.

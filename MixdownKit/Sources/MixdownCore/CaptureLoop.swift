@@ -5,8 +5,8 @@ import os
 ///
 /// On the way it fills gaps with silence, moves the audio back by the time the recording spent
 /// paused, writes system audio into the echo reference and takes the echo out of microphones,
-/// measures the level and finds speech, and hands the audio to a live session in
-/// `RecordingCoordinator.liveFeedSampleCount` pieces.
+/// measures the level and finds speech, hands the audio to a live session in
+/// `RecordingCoordinator.liveFeedSampleCount` pieces, and keeps it on disk.
 struct CaptureLoop: Sendable {
     /// Audio handed to a live session.
     struct LiveFeed: Sendable {
@@ -28,6 +28,9 @@ struct CaptureLoop: Sendable {
     let deviceName: String
     /// Whether the track keeps its samples, rather than only counting them.
     let keepsAudio: Bool
+    /// Where the audio is written as it's kept, once the echo is out, for `RecordingStore`; `nil`
+    /// to keep it in memory only, if at all.
+    let audioFile: URL?
     /// Taken off every chunk's host time: the time the recording spent paused before the capture
     /// started, so the pauses leave no gap to fill.
     let hostTimeShift: TimeInterval
@@ -66,7 +69,9 @@ struct CaptureLoop: Sendable {
         var speechDetector = SpeechActivityDetector()
         var unsentSpeech: TimeInterval = 0
         var unfed: [Float] = []
+        let writer = audioFile.map(CaptureAudioWriter.init)
         defer {
+            writer?.close()
             if kind == .systemAudio { echoReference?.endWriting() }
             if !unfed.isEmpty {
                 liveFeed?.yield(LiveFeed(samples: unfed, startHostTime: track.startHostTime))
@@ -77,6 +82,7 @@ struct CaptureLoop: Sendable {
             guard !samples.isEmpty else { return }
             unsentSpeech += speechDetector.add(samples)
             track.append(AudioChunk(samples: samples, hostTime: timeline.startHostTime.map { $0 + track.duration }))
+            writer?.write(samples, startHostTime: track.startHostTime)
             guard let liveFeed else { return }
             unfed.append(contentsOf: samples)
             if unfed.count >= RecordingCoordinator.liveFeedSampleCount {

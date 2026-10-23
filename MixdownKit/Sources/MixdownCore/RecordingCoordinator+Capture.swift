@@ -48,6 +48,8 @@ extension RecordingCoordinator {
         recordingSummaryTemplate = summaryTemplate
         isRecordingSummaryTemplateChosen = false
         moments = []
+        session.keepsAudioOnDisk = keepsAudioOnDisk
+        storeDescription(of: session)
         if engine.transcribesLive {
             liveTranscript = LiveTranscript(speakers: [])
             showsLiveTranscript = true
@@ -105,6 +107,8 @@ extension RecordingCoordinator {
             kind: kind,
             deviceName: started.device.name,
             keepsAudio: session.keepsAudio(of: kind, transcribesLive: transcribesLive),
+            audioFile: session.isStored
+                ? recordingStore?.audioURL(of: session.id, lane: lane.index, capture: lane.captures.count) : nil,
             hostTimeShift: session.pausedDuration,
             echoReference: echoReference,
             echoCancellation: echoReference == nil ? nil : echoCancellation,
@@ -129,6 +133,7 @@ extension RecordingCoordinator {
         }
         let capture = Capture(device: started.device, capture: started.capture, consumer: consumer, live: live)
         lane.add(capture)
+        storeDescription(of: session)
         Task { [weak self] in
             let result = await consumer.value
             await self?.captureDidEnd(capture, of: lane, in: session, result: result)
@@ -227,7 +232,7 @@ extension RecordingCoordinator {
     }
 
     /// Stops every capture of `session` and joins what each lane recorded into one track per lane.
-    private func endCaptures(of session: Session) async -> [LaneAudio] {
+    func endCaptures(of session: Session) async -> [LaneAudio] {
         await Self.stop(session.takeCurrentCaptures().map(\.capture))
         var lanes: [LaneAudio] = []
         for lane in session.lanes {
@@ -235,13 +240,7 @@ extension RecordingCoordinator {
             var audio = LaneAudio(track: AudioTrack(keepsSamples: keepsAudio))
             for capture in lane.captures {
                 let result = await capture.consumer.value
-                let track = result.track
-                audio.track.append(track)
-                // Counted by length, as live tracks keep no samples.
-                guard track.duration > 0 else { continue }
-                let start = audio.track.duration - track.duration
-                audio.parts.append(NotePipeline.DevicePart(device: capture.device, start: start))
-                audio.speech += NotePipeline.shifted(result.speech, by: start)
+                audio.append(result.track, from: capture.device, speech: result.speech)
             }
             lanes.append(audio)
         }

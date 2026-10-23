@@ -269,7 +269,7 @@ struct RecordingCoordinatorTests {
         await coordinator.startRecording()
         await coordinator.stopRecording()
 
-        #expect(coordinator.phase == .failed(message: error.localizedDescription))
+        #expect(coordinator.phase == .failed(message: keepingRecording(error.localizedDescription, in: coordinator)))
         #expect(coordinator.modelError == nil)
         #expect(coordinator.lastNoteURL == nil)
         #expect(await writer.notes.isEmpty)
@@ -286,7 +286,7 @@ struct RecordingCoordinatorTests {
         await coordinator.startRecording()
         await coordinator.stopRecording()
 
-        #expect(coordinator.phase == .failed(message: error.localizedDescription))
+        #expect(coordinator.phase == .failed(message: keepingRecording(error.localizedDescription, in: coordinator)))
         #expect(coordinator.modelError == error.localizedDescription)
     }
 
@@ -690,7 +690,12 @@ struct RecordingCoordinatorTests {
         #expect(coordinator.lastNoteURL != nil)
         #expect(
             coordinator.phase
-                == .failed(message: RecordingCoordinator.untranscribedMessage(for: [.systemAudio], error: error))
+                == .failed(
+                    message: keepingRecording(
+                        RecordingCoordinator.untranscribedMessage(for: [.systemAudio], error: error),
+                        in: coordinator
+                    )
+                )
         )
         #expect(coordinator.modelError == nil)
     }
@@ -716,7 +721,7 @@ struct RecordingCoordinatorTests {
         await coordinator.startRecording()
         await coordinator.stopRecording()
 
-        #expect(coordinator.phase == .failed(message: error.localizedDescription))
+        #expect(coordinator.phase == .failed(message: keepingRecording(error.localizedDescription, in: coordinator)))
         #expect(coordinator.lastNoteURL == nil)
         #expect(await writer.notes.isEmpty)
     }
@@ -1575,7 +1580,7 @@ struct RecordingCoordinatorTests {
         await coordinator.stopRecording()
 
         let message = TranscriptionError.modelUnavailable("offline").localizedDescription
-        #expect(coordinator.phase == .failed(message: message))
+        #expect(coordinator.phase == .failed(message: keepingRecording(message, in: coordinator)))
         #expect(coordinator.modelError == message)
         #expect(!coordinator.isPreparingModelForRecording)
         #expect(!coordinator.isModelDownloaded)
@@ -1758,4 +1763,14 @@ struct RecordingCoordinatorTests {
         #expect(summarizer.receivedTranscripts == [note.transcript])
         #expect(coordinator.phase == .failed(message: RecordingCoordinator.untranslatedMessage(for: error)))
     }
+}
+
+/// `message` followed by the one saying the recording that failed is kept, as the only one of
+/// `coordinator`'s `unfinishedRecordings`.
+@MainActor
+func keepingRecording(_ message: String, in coordinator: RecordingCoordinator) -> String {
+    guard coordinator.unfinishedRecordings.count == 1, let recording = coordinator.unfinishedRecordings.first else {
+        return message
+    }
+    return "\(message) \(RecordingCoordinator.keptRecordingMessage(for: recording))"
 }

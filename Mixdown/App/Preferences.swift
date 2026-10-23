@@ -18,6 +18,10 @@ final class Preferences {
     /// Whether to time how long the user and the others talk while both a microphone and system
     /// audio record. Takes effect from the next recording.
     var measuresTalkTime: Bool { didSet { save { $0.measuresTalkTime = measuresTalkTime } } }
+    /// Whether recordings' audio is written to disk until their notes are saved, so quitting or a
+    /// crash doesn't lose them; otherwise it's only kept in memory. Takes effect from the next
+    /// recording.
+    var keepsAudioOnDisk: Bool { didSet { save { $0.keepsAudioOnDisk = keepsAudioOnDisk } } }
     /// Minutes without speech before Mixdown asks whether it's still recording; 0 for never. Takes
     /// effect right away, even while recording. See `StillRecordingPrompt`.
     var stillRecordingMinutes: Int { didSet { save { $0.stillRecordingMinutes = stillRecordingMinutes } } }
@@ -101,6 +105,7 @@ final class Preferences {
         self.settings = settings
         cancelsEcho = settings.cancelsEcho
         measuresTalkTime = settings.measuresTalkTime
+        keepsAudioOnDisk = settings.keepsAudioOnDisk
         stillRecordingMinutes = settings.stillRecordingMinutes
         isRecordingShortcutEnabled = settings.isRecordingShortcutEnabled
         catchUpMinutes = settings.catchUpMinutes
