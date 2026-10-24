@@ -242,9 +242,9 @@ public protocol Summarizer: Sendable {
     /// turns a system feature on. Read on the main actor; keep it cheap.
     var availability: SummarizerAvailability { get }
 
-    /// Summarizes a transcript, which isn't empty, in the shape of `template`. Honors task
-    /// cancellation.
-    func summarize(_ transcript: Transcript, template: SummaryTemplate) async throws -> NoteSummary
+    /// Summarizes a transcript, which isn't empty, in the shape of `template`, making sure to
+    /// cover `moments`, the ones the user marked while recording. Honors task cancellation.
+    func summarize(_ transcript: Transcript, moments: [Moment], template: SummaryTemplate) async throws -> NoteSummary
 
     /// Tells someone who drifted off what they missed in `transcript`, the last few minutes of a
     /// recording still under way, which isn't empty: a few short points, in the order they came
@@ -262,7 +262,7 @@ extension Summarizer {
     /// The key points of a general summary, or else its overview, for a backend without a
     /// catch-up of its own. Ignores `language`.
     public func catchUp(on transcript: Transcript, language: String?) async throws -> [String] {
-        let summary = try await summarize(transcript, template: .general)
+        let summary = try await summarize(transcript, moments: [], template: .general)
         let points = summary.keyPoints.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         let overview = summary.overview.trimmingCharacters(in: .whitespacesAndNewlines)
         return points.isEmpty && !overview.isEmpty ? [overview] : points
@@ -298,7 +298,8 @@ public enum SummarizationError: LocalizedError, Sendable, Equatable {
 /// when every piece of a pass fails does the summary fail.
 public struct ChunkedSummarizer: Sendable {
     public enum Step: Sendable, Equatable {
-        /// The text is consecutive lines of the transcript, `Speaker: text` where known.
+        /// The text is consecutive lines of the transcript, `Speaker: text` where known, with the
+        /// moments the user marked among them.
         case transcript
         /// The text is summaries of consecutive parts of one recording, in order.
         case combine
@@ -320,15 +321,21 @@ public struct ChunkedSummarizer: Sendable {
         self.maxCombinePasses = max(maxCombinePasses, 0)
     }
 
+    /// - Parameter moments: Marked in the transcript where they were, for the model to cover.
     /// - Parameter step: Summarizes one piece of text of the given kind; called one at a time.
     ///   Throws `SummarizationError.tooLong` if the text doesn't fit the model, and the piece is
     ///   summarized in smaller pieces instead.
     public func summarize(
         _ transcript: Transcript,
+        moments: [Moment] = [],
         step: (_ text: String, _ kind: Step) async throws -> NoteSummary
     ) async throws -> NoteSummary {
         var separator = "\n"
-        var pieces = Self.groups(of: Self.lines(of: transcript), maxTokens: maxTokens, separator: separator)
+        var pieces = Self.groups(
+            of: Self.lines(of: transcript, moments: moments),
+            maxTokens: maxTokens,
+            separator: separator
+        )
         var kind = Step.transcript
         for _ in 0...maxCombinePasses {
             if pieces.count == 1 {
@@ -397,20 +404,36 @@ public struct ChunkedSummarizer: Sendable {
 
     // MARK: - Pieces
 
-    /// One line per turn: consecutive segments of the same speaker are joined.
-    static func lines(of transcript: Transcript) -> [String] {
-        var turns: [(speaker: String?, text: String)] = []
+    /// One line per turn: consecutive segments of the same speaker are joined. Each of `moments`
+    /// is a line of its own (see `SummaryPrompt.momentLine(for:)`) after the segments that started
+    /// by then, as `Transcript.segment(at:)` reckons what it's about, so it stays in the piece
+    /// with what was said.
+    static func lines(of transcript: Transcript, moments: [Moment] = []) -> [String] {
+        var lines: [String] = []
+        var turn: (speaker: String?, text: String)?
+        func endTurn() {
+            if let turn { lines.append(turn.speaker.map { "\($0): \(turn.text)" } ?? turn.text) }
+            turn = nil
+        }
+        var moments = moments.sorted { $0.time < $1.time }[...]
         for segment in transcript.segments {
             let text = singleLine(segment.text)
             guard !text.isEmpty else { continue }
+            while let moment = moments.first, moment.time < segment.start {
+                endTurn()
+                lines.append(SummaryPrompt.momentLine(for: moment))
+                moments.removeFirst()
+            }
             let speaker = segment.speaker.map(singleLine).flatMap { $0.isEmpty ? nil : $0 }
-            if let last = turns.last, last.speaker == speaker {
-                turns[turns.count - 1].text += " " + text
+            if let current = turn, current.speaker == speaker {
+                turn?.text += " " + text
             } else {
-                turns.append((speaker, text))
+                endTurn()
+                turn = (speaker, text)
             }
         }
-        return turns.map { turn in turn.speaker.map { "\($0): \(turn.text)" } ?? turn.text }
+        endTurn()
+        return lines + moments.map(SummaryPrompt.momentLine(for:))
     }
 
     /// Packs `items` into as few pieces as fit `maxTokens` each, in order, keeping each piece's
@@ -470,7 +493,7 @@ public struct ChunkedSummarizer: Sendable {
         (text.utf8.count + 2) / 3
     }
 
-    private static func singleLine(_ text: String) -> String {
+    static func singleLine(_ text: String) -> String {
         text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 }

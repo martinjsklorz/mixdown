@@ -80,12 +80,21 @@ public final class MLXSummarizer: Summarizer {
         summaryLogger.info("Deleted \(self.model.displayName, privacy: .public)")
     }
 
-    public func summarize(_ transcript: Transcript, template: SummaryTemplate) async throws -> NoteSummary {
+    public func summarize(
+        _ transcript: Transcript,
+        moments: [Moment],
+        template: SummaryTemplate
+    ) async throws -> NoteSummary {
         if case .unavailable(let reason) = availability { throw SummarizationError.unavailable(reason) }
         let language = TranscriptLanguage.code(of: transcript)
         let chunked = ChunkedSummarizer(maxTokens: Self.pieceTokens)
-        var summary = try await chunked.summarize(transcript) { text, kind in
-            let instructions = SummaryPrompt.instructions(for: kind, template: template, language: language)
+        var summary = try await chunked.summarize(transcript, moments: moments) { text, kind in
+            let instructions = SummaryPrompt.instructions(
+                for: kind,
+                template: template,
+                language: language,
+                hasMoments: !moments.isEmpty
+            )
             return try await parsedAnswer(
                 instructions: instructions + "\n" + JSONSummary.format(for: template, language: language),
                 prompt: SummaryPrompt.prompt(for: text, kind: kind),

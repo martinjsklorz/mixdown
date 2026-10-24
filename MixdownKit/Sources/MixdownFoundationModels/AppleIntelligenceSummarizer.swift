@@ -20,8 +20,12 @@ public struct AppleIntelligenceSummarizer: Summarizer {
     }
 
     // Qualified because FoundationModels has a `Transcript` of its own.
-    public func summarize(_ transcript: MixdownCore.Transcript, template: SummaryTemplate) async throws -> NoteSummary {
-        try await SystemModelSummary.summarize(transcript, template: template)
+    public func summarize(
+        _ transcript: MixdownCore.Transcript,
+        moments: [Moment],
+        template: SummaryTemplate
+    ) async throws -> NoteSummary {
+        try await SystemModelSummary.summarize(transcript, moments: moments, template: template)
     }
 
     public func catchUp(on transcript: MixdownCore.Transcript, language: String?) async throws -> [String] {
@@ -68,12 +72,28 @@ enum SystemModelSummary {
         }
     }
 
-    static func summarize(_ transcript: MixdownCore.Transcript, template: SummaryTemplate) async throws -> NoteSummary {
+    static func summarize(
+        _ transcript: MixdownCore.Transcript,
+        moments: [Moment],
+        template: SummaryTemplate
+    ) async throws -> NoteSummary {
         let language = TranscriptLanguage.code(of: transcript)
-        // The template's instructions are the user's to write, so they're reckoned with on top.
-        let instructionTokens = SummaryPrompt.focus(of: template).map { ChunkedSummarizer.estimatedTokens(in: $0) } ?? 0
-        var summary = try await summarizeInPieces(transcript, instructionTokens: instructionTokens) { text, kind in
-            try await respond(to: text, kind: kind, template: template, language: language)
+        let hasMoments = !moments.isEmpty
+        // The template's instructions are the user's to write, so they're reckoned with on top,
+        // as is what the instructions say about marked moments.
+        let extraInstructions = [
+            SummaryPrompt.focus(of: template),
+            hasMoments ? SummaryPrompt.momentsRule(for: .transcript) : nil,
+        ]
+        let instructionTokens = extraInstructions.compactMap { $0 }.reduce(0) {
+            $0 + ChunkedSummarizer.estimatedTokens(in: $1)
+        }
+        var summary = try await summarizeInPieces(
+            transcript,
+            moments: moments,
+            instructionTokens: instructionTokens
+        ) { text, kind in
+            try await respond(to: text, kind: kind, template: template, language: language, hasMoments: hasMoments)
         }
         summary.language = language
         return summary
@@ -92,14 +112,15 @@ enum SystemModelSummary {
         return summary.keyPoints
     }
 
-    /// `transcript` summarized by `ChunkedSummarizer`, in pieces that fit the model's context.
-    /// Throws `SummarizationError.unavailable` if the model can't be used.
+    /// `transcript` summarized by `ChunkedSummarizer`, in pieces that fit the model's context, with
+    /// `moments` marked in it. Throws `SummarizationError.unavailable` if the model can't be used.
     ///
     /// `estimatedTokens` guesses high, but the model's tokenizer can still disagree. A piece that
     /// overflows the context is split again. `instructionTokens` are kept free on top of
-    /// `reservedTokens`, for instructions the user wrote.
+    /// `reservedTokens`, for instructions that vary, such as the ones the user wrote.
     private static func summarizeInPieces(
         _ transcript: MixdownCore.Transcript,
+        moments: [Moment] = [],
         instructionTokens: Int = 0,
         step: (_ text: String, _ kind: ChunkedSummarizer.Step) async throws -> NoteSummary
     ) async throws -> NoteSummary {
@@ -111,7 +132,7 @@ enum SystemModelSummary {
             ),
             minTokens: minimumPieceTokens
         )
-        return try await summarizer.summarize(transcript) { text, kind in
+        return try await summarizer.summarize(transcript, moments: moments) { text, kind in
             do {
                 return try await step(text, kind)
             } catch let error where isContextOverflow(error) {
@@ -126,9 +147,15 @@ enum SystemModelSummary {
         to text: String,
         kind: ChunkedSummarizer.Step,
         template: SummaryTemplate,
-        language: String?
+        language: String?,
+        hasMoments: Bool
     ) async throws -> NoteSummary {
-        let rules = SummaryPrompt.instructions(for: kind, template: template, language: language)
+        let rules = SummaryPrompt.instructions(
+            for: kind,
+            template: template,
+            language: language,
+            hasMoments: hasMoments
+        )
         let session = makeSession(instructions: rules)
         let prompt = SummaryPrompt.prompt(for: text, kind: kind)
         // The explicit `includeSchemaInPrompt` picks the macOS 26 overload over macOS 27's
@@ -162,7 +189,7 @@ enum SystemModelSummary {
         ) { text, speakers in
             let session = makeSession(instructions: SpeakerNaming.instructions)
             let prompt = SpeakerNaming.prompt(for: text, speakers: speakers)
-            // See `respond(to:kind:template:language:)`.
+            // See `respond(to:kind:template:language:hasMoments:)`.
             let response = try await session.respond(
                 generating: GeneratedSpeakerNames.self,
                 includeSchemaInPrompt: true
@@ -181,7 +208,7 @@ enum SystemModelSummary {
     ) async throws -> [String] {
         let session = makeSession(instructions: SummaryPrompt.catchUpInstructions(for: kind, language: language))
         let prompt = SummaryPrompt.prompt(for: text, kind: kind)
-        // See `respond(to:kind:template:language:)`.
+        // See `respond(to:kind:template:language:hasMoments:)`.
         let response = try await session.respond(generating: GeneratedCatchUp.self, includeSchemaInPrompt: true) {
             prompt
         }

@@ -109,7 +109,7 @@ final class NotePipeline {
         let (translation, translationError) = await translate(transcript)
         try Task.checkCancellation()
         let template = template()
-        let summary = await summarize(translation ?? transcript, template: template)
+        let summary = await summarize(translation ?? transcript, moments: details.moments, template: template)
         try Task.checkCancellation()
         let summaryTitle = summary.map(\.title).flatMap {
             $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0
@@ -158,9 +158,14 @@ final class NotePipeline {
         }
     }
 
-    /// The transcript's summary, or `nil` if there's no summarizer, it isn't available or it
-    /// fails. The note is saved either way, so a failure is only logged.
-    private func summarize(_ transcript: Transcript, template: SummaryTemplate) async -> NoteSummary? {
+    /// The transcript's summary, covering the moments the user marked, or `nil` if there's no
+    /// summarizer, it isn't available or it fails. The note is saved either way, so a failure is
+    /// only logged.
+    private func summarize(
+        _ transcript: Transcript,
+        moments: [Moment],
+        template: SummaryTemplate
+    ) async -> NoteSummary? {
         guard let summarizer, !transcript.isEmpty else { return nil }
         let name = summarizer.info.displayName
         if case .unavailable(let reason) = summarizer.availability {
@@ -169,7 +174,7 @@ final class NotePipeline {
         }
         didChangeStage(.summarizing)
         do {
-            let summary = try await summarizer.summarize(transcript, template: template)
+            let summary = try await summarizer.summarize(transcript, moments: moments, template: template)
             return summary.isEmpty ? nil : summary
         } catch {
             logger.error(

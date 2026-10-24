@@ -10,7 +10,11 @@ struct CatchUpTests {
         let availability = SummarizerAvailability.available
         let summary: NoteSummary
 
-        func summarize(_ transcript: Transcript, template: SummaryTemplate) async throws -> NoteSummary {
+        func summarize(
+            _ transcript: Transcript,
+            moments: [Moment],
+            template: SummaryTemplate
+        ) async throws -> NoteSummary {
             summary
         }
     }

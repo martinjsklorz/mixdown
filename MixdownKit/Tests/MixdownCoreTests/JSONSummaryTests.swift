@@ -82,6 +82,19 @@ struct JSONSummaryTests {
         #expect(catchUp.contains("You MUST write in the language of the transcript."))
     }
 
+    @Test func instructionsExplainMarkedMomentsOnlyWhenThereAreSome() throws {
+        let rule = try #require(SummaryPrompt.momentsRule(for: .transcript))
+        let review = SummaryTemplate(id: "custom-1", name: "Review", instructions: "Look out for demos.")
+        let marked = SummaryPrompt.instructions(for: .transcript, template: review, language: nil, hasMoments: true)
+        #expect(marked.contains("name.\n\(rule)\nLook out for demos.\n"))
+        #expect(!SummaryPrompt.instructions(for: .transcript, template: review, language: nil).contains(rule))
+        #expect(SummaryPrompt.momentsRule(for: .combine) == nil)
+        #expect(
+            SummaryPrompt.instructions(for: .combine, template: .general, language: nil, hasMoments: true)
+                == SummaryPrompt.instructions(for: .combine, template: .general, language: nil)
+        )
+    }
+
     @Test func instructionsIncludeTheTemplatesOwn() {
         let review = SummaryTemplate(id: "custom-1", name: "Review", instructions: "  Look out for demos.\n")
         let instructions = SummaryPrompt.instructions(for: .transcript, template: review, language: nil)

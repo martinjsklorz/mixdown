@@ -858,12 +858,16 @@ struct RecordingCoordinatorTests {
 
     // MARK: - Moments
 
-    @Test func addedMomentsGoIntoTheNote() async throws {
+    @Test func addedMomentsGoIntoTheNoteAndToTheSummarizer() async throws {
         let date = LockedValue(Fixtures.startDate)
         let writer = InMemoryNoteWriter()
+        let summarizer = MockSummarizer()
+        let transcript = Transcript(segments: [TranscriptSegment(start: 0, end: 3, text: "Approved.")])
         let coordinator = makeCoordinator(
             capture: MockCapture(chunks: [Fixtures.chunk(seconds: 10)]),
+            engine: MockEngine(transcript: transcript),
             writer: writer,
+            summarizer: summarizer,
             now: { date.current }
         )
         await coordinator.monitorDevices()
@@ -886,6 +890,7 @@ struct RecordingCoordinatorTests {
         #expect(
             note.moments == [Moment(id: first.id, time: 3, text: "Budget approved"), Moment(id: second.id, time: 10)]
         )
+        #expect(summarizer.receivedMoments == [note.moments])
         #expect(coordinator.moments.isEmpty)
         // Too late for that note.
         #expect(coordinator.addMoment(at: 5) == nil)
