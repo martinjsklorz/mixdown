@@ -67,6 +67,8 @@ final class AppEnvironment {
     @ObservationIgnored private var recordingClockStart: Date?
     @ObservationIgnored private var callPrompt: CallPrompt?
     @ObservationIgnored private var stillRecordingPrompt: StillRecordingPrompt?
+    /// What the main window shows. Kept by the app.
+    @ObservationIgnored private weak var navigation: MainNavigation?
     /// Opens Record in the main window.
     private let showRecorder: () -> Void
     /// Switches the main window from Chat to the notes, if it's showing Chat.
@@ -110,6 +112,7 @@ final class AppEnvironment {
             preferredDeviceIDs: settings.selectedDeviceIDs,
             preferences: preferences
         )
+        self.navigation = navigation
         self.showRecorder = { [weak navigation] in
             guard let navigation, let openWindow = navigation.openWindow else { return }
             navigation.show(.recorder, using: openWindow)
@@ -494,22 +497,108 @@ final class AppEnvironment {
 
     // MARK: Global shortcut
 
-    /// Starts or stops recording on the global shortcut, from any app. While busy downloading,
-    /// transcribing, translating or summarizing, it beeps, as recording can start once that's done.
-    /// When recording can't start for something the user has to do (no notes folder, model or
-    /// input), it opens Record instead, which says what. `applyPreferences()` turns it on or off.
+    /// Starts or stops recording on the global shortcut, from any app. `applyPreferences()` turns
+    /// it on or off.
     private func listenForRecordingShortcut() {
         KeyboardShortcuts.onKeyUp(for: .toggleRecording) { [weak self] in
-            guard let self else { return }
-            let coordinator = self.coordinator
-            if coordinator.canStopRecording || coordinator.canStartRecording {
-                Task { await coordinator.toggleRecording() }
-            } else if !coordinator.isIdle {
-                NSSound.beep()
-            } else {
-                self.showRecorder()
-            }
+            self?.toggleRecordingFromOutside()
         }
+    }
+
+    /// Starts or stops recording from another app: the global shortcut or a `mixdown://` link.
+    /// See `startRecordingFromOutside()`.
+    private func toggleRecordingFromOutside() {
+        if coordinator.canStopRecording {
+            Task { [coordinator] in await coordinator.stopRecording() }
+        } else {
+            startRecordingFromOutside()
+        }
+    }
+
+    /// Starts recording from another app. While busy downloading, transcribing, translating or
+    /// summarizing, it beeps, as recording can start once that's done. When recording can't start
+    /// for something the user has to do (no notes folder, model or input), it opens Record
+    /// instead, which says what.
+    private func startRecordingFromOutside() {
+        if coordinator.canStartRecording {
+            Task { [coordinator] in await coordinator.startRecording() }
+        } else if !coordinator.isIdle {
+            NSSound.beep()
+        } else {
+            showRecorder()
+        }
+    }
+
+    // MARK: Links
+
+    /// Does what a `mixdown://` link asks, for Raycast, Stream Deck, Keyboard Maestro and the like.
+    /// Starting and stopping work like the global shortcut. Starting while recording, stopping
+    /// while not, and the like do nothing, so a script can ask without checking first; pausing,
+    /// resuming and marking a moment beep when not recording, like the Mark Moment shortcut. Only
+    /// opening, and starting when recording can't start, bring the main window forward.
+    func perform(_ command: URLCommand) {
+        switch command {
+        case .toggleRecording:
+            toggleRecordingFromOutside()
+        case .startRecording:
+            guard !coordinator.canStopRecording else { return }
+            startRecordingFromOutside()
+        case .stopRecording:
+            guard coordinator.canStopRecording else { return }
+            Task { [coordinator] in await coordinator.stopRecording() }
+        case .pauseRecording, .resumeRecording, .togglePause:
+            guard coordinator.isRecording else {
+                NSSound.beep()
+                return
+            }
+            // Pausing while paused and resuming while recording are ignored.
+            Task { [coordinator] in
+                switch command {
+                case .pauseRecording: await coordinator.pauseRecording()
+                case .resumeRecording: await coordinator.resumeRecording()
+                default: await coordinator.togglePause()
+                }
+            }
+        case .markMoment(nil):
+            island.markMoment()
+        case .markMoment(let text?):
+            guard let time = coordinator.momentTime else {
+                NSSound.beep()
+                return
+            }
+            coordinator.addMoment(at: time, text: text)
+        case .open(nil):
+            showMainWindow()
+        case .open(let reference?):
+            Task { await openNote(reference) }
+        }
+    }
+
+    /// Opens the note `reference` names (see `NoteLibrary.note(for:in:directory:)`), reading the
+    /// notes folder again first if it isn't among the notes read so far: at launch, or just
+    /// written. Without such a note, it beeps and opens Notes.
+    private func openNote(_ reference: String) async {
+        func find() -> NoteDocument? {
+            guard let directory = library.folder else { return nil }
+            return NoteLibrary.note(for: reference, in: library.notes, directory: directory)
+        }
+        var note = find()
+        if note == nil {
+            await library.reload(from: notesFolder.directory)
+            note = find()
+        }
+        if let note {
+            navigation?.showNote(at: note.url)
+        } else {
+            NSSound.beep()
+            showMainWindow(at: .notes)
+        }
+    }
+
+    /// Brings the main window forward, at `destination` or where it was.
+    private func showMainWindow(at destination: MainNavigation.Destination? = nil) {
+        guard let navigation, let openWindow = navigation.openWindow else { return }
+        navigation.show(destination ?? navigation.destination, using: openWindow)
     }
 
     // MARK: Transcription

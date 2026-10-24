@@ -552,6 +552,26 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             - ⌘⌫: Move the open note to the Trash
             - ⌘,: Open Settings
             - ⌘?: Open Mixdown Help
+
+            ## Links for other apps
+
+            Raycast, Stream Deck, Keyboard Maestro, Shortcuts and scripts can control Mixdown with \
+            these links:
+
+            - `mixdown://toggle`: Start or stop recording
+            - `mixdown://start` and `mixdown://stop`: Start or stop recording, doing nothing if it \
+            already is or isn't
+            - `mixdown://pause`, `mixdown://resume` and `mixdown://toggle-pause`: Pause or resume \
+            the recording
+            - `mixdown://mark`: Mark a moment and write a few words about it under the notch
+            - `mixdown://mark?text=Follow%20up`: Mark a moment with these words
+            - `mixdown://open`: Open the Mixdown window
+            - `mixdown://open?note=latest`: Open the newest note
+            - `mixdown://open?note=Weekly%20Sync`: Open a note by its title, or by its path in the \
+            notes folder
+
+            Write a space as `%20`. To keep the app you're in at the front, open the link in the \
+            background, like `open -g mixdown://toggle` in a shell script.
             """
         case .troubleshooting:
             """

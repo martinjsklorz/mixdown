@@ -20,7 +20,8 @@ The same topics are in the app under **Help → Mixdown Help** (⌘?).
 - [Chat](chat.md): questions across your notes, with citations and exact counts
 - [Notifications and sounds](notifications-and-sounds.md)
 - [Settings](settings.md): every setting, tab by tab
-- [Keyboard shortcuts](keyboard-shortcuts.md)
+- [Keyboard shortcuts](keyboard-shortcuts.md): and `mixdown://` links for Raycast, Stream Deck
+  and Keyboard Maestro
 - [Privacy and permissions](privacy.md)
 - [Troubleshooting](troubleshooting.md)
 

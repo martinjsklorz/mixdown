@@ -7,8 +7,8 @@ import SwiftUI
 
 /// Brings the main window back when the Dock icon is clicked. SwiftUI does that for a
 /// `WindowGroup`, but not for a `Window` that has been closed. Also adds help topics to the Help
-/// menu's search, opens notes picked in Spotlight, and asks before quitting while recording or
-/// making a note, or with notes or recordings only kept in memory.
+/// menu's search, opens notes picked in Spotlight, follows `mixdown://` links, and asks before
+/// quitting while recording or making a note, or with notes or recordings only kept in memory.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Set by `capturesOpenWindow(for:navigation:environment:)`, which also gives it SwiftUI's
@@ -18,6 +18,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var helpSearch: HelpSearch?
     /// A note picked in Spotlight before `navigation` was set, at launch.
     private var pendingSpotlightItem: (url: URL, line: Int?)?
+    /// `mixdown://` links opened before `environment` was set, e.g. the one that launched Mixdown.
+    private var pendingURLCommands: [URLCommand] = []
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Before the first window appears, so it doesn't flash in the system's appearance.
@@ -243,6 +245,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         navigation.showNote(at: item.url, line: item.line)
     }
 
+    /// Follows `mixdown://` links (see `URLCommand`), from Raycast, Stream Deck, Keyboard Maestro
+    /// or `open`. Handled here, SwiftUI doesn't open a window for them, so starting or stopping
+    /// a recording leaves the screen as it was. Links Mixdown doesn't know are ignored.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        pendingURLCommands += urls.compactMap(URLCommand.init(url:))
+        performPendingURLCommands()
+    }
+
+    fileprivate func performPendingURLCommands() {
+        guard let environment else { return }
+        let commands = pendingURLCommands
+        pendingURLCommands = []
+        for command in commands {
+            environment.perform(command)
+        }
+    }
+
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         // Regardless of `flag`: the menu bar extra's window can count as visible.
         navigation?.openWindow?(id: MainView.windowID)
@@ -274,6 +293,7 @@ private struct OpenWindowCapture: ViewModifier {
             delegate.navigation = navigation
             delegate.environment = environment
             delegate.showPendingSpotlightItem()
+            delegate.performPendingURLCommands()
         }
     }
 }
