@@ -29,6 +29,8 @@ extension NotePipeline {
         var sources: [AudioInputDevice]
         var trigger: RecordingTrigger
         var isCall: Bool
+        /// The app the call was in, e.g. `Zoom`; `nil` if not a call or not known.
+        var callApp: String? = nil
         /// The title without a summary to name the note after; `nil` for one after the time recorded.
         var untitledName: String?
         var moments: [Moment] = []

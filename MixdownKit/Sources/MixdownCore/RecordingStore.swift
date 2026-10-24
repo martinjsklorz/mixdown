@@ -77,6 +77,8 @@ public struct RecordingStore: Sendable {
         var language: String?
         var trigger: String
         var isCall: Bool
+        /// Missing from recordings stored before Mixdown kept it.
+        var callApp: String?
         var lanes: [Lane]
         var moments: [Mark]
     }

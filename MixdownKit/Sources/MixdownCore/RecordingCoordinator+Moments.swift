@@ -2,11 +2,13 @@ import Foundation
 import os
 
 extension RecordingCoordinator {
-    /// Marks the recording in progress as a call, so its note is titled as one, e.g. "Call about …",
-    /// and, if Mixdown started it by itself, as started automatically. Ignored when not recording.
-    public func markRecordingAsCall(automatically: Bool = false) {
+    /// Marks the recording in progress as a call in `app`, if known, so its note says so and is
+    /// titled as one, e.g. "Zoom call about …", and, if Mixdown started it by itself, as started
+    /// automatically. Ignored when not recording.
+    public func markRecordingAsCall(in app: String? = nil, automatically: Bool = false) {
         guard let session else { return }
         session.isCall = true
+        session.callApp = app
         if automatically { session.trigger = .automatic }
         if !isRecordingSummaryTemplateChosen {
             recordingSummaryTemplate = callSummaryTemplate

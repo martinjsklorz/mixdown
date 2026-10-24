@@ -49,6 +49,9 @@ public enum MarkdownNoteRenderer {
         lines.append("engine: \(yamlQuoted(note.engine.displayName))")
         lines.append("trigger: \(note.trigger.rawValue)")
         if note.isCall { lines.append("call: true") }
+        if note.isCall, let app = note.callApp.map(singleLine), !app.isEmpty {
+            lines.append("call_app: \(yamlQuoted(app))")
+        }
         // `general` says nothing about the kind of recording. Built-ins go by their id, so a note
         // still counts as a 1:1 after the user renames that template; the user's own by name.
         if let template = note.template, template.id != SummaryTemplate.general.id {

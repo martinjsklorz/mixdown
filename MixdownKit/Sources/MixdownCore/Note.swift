@@ -19,6 +19,8 @@ public struct Note: Sendable, Equatable {
     public var trigger: RecordingTrigger
     /// Whether the recording was started for a call, from the call notification or automatically.
     public var isCall: Bool
+    /// The app the call was in, e.g. `Zoom`; `nil` if not a call or not known.
+    public var callApp: String?
     /// The template the recording was summarized with, which says what kind of recording it is
     /// (a 1:1, a standup). `nil` when summaries are off. Kept when summarizing fails.
     public var template: SummaryTemplate?
@@ -42,6 +44,7 @@ public struct Note: Sendable, Equatable {
         summary: NoteSummary? = nil,
         trigger: RecordingTrigger = .manual,
         isCall: Bool? = nil,
+        callApp: String? = nil,
         template: SummaryTemplate? = nil,
         moments: [Moment] = [],
         talkTimeline: TalkTimeline? = nil
@@ -57,6 +60,7 @@ public struct Note: Sendable, Equatable {
         self.trigger = trigger
         // Mixdown only starts recordings by itself for calls.
         self.isCall = isCall ?? (trigger == .automatic)
+        self.callApp = callApp
         self.template = template
         self.moments = moments
         self.talkTimeline = talkTimeline

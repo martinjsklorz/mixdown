@@ -19,9 +19,10 @@ import os
 ///   recordings started for a call: one started by hand goes on, and it asks instead (if
 ///   notifying), as a call app may just have used the microphone briefly.
 ///
-/// A recording it starts, from a notification or automatically, is marked as a call, so its note
-/// is titled as one. Recordings started any other way aren't, even during a call. Only automatic
-/// ones are marked as started automatically: clicking a notification is the user's choice.
+/// A recording it starts, from a notification or automatically, is marked as a call in its app, so
+/// its note says which app and is titled as a call. Recordings started any other way aren't, even
+/// during a call. Only automatic ones are marked as started automatically: clicking a notification
+/// is the user's choice.
 ///
 /// Call `recordingDidStart()` and `recordingDidStop()` as recordings come and go.
 /// `NotificationResponder` hands it the buttons, on notifications from an earlier run, too.
@@ -44,7 +45,7 @@ final class CallPrompt {
     private let isRecording: () -> Bool
     private let startRecording: () -> Bool
     private let stopRecording: () -> Void
-    private let markRecordingAsCall: (_ automatically: Bool) -> Void
+    private let markRecordingAsCall: (_ app: String?, _ automatically: Bool) -> Void
     private let showRecorder: () -> Void
     private var detector: CallDetector?
     private var detection: Task<Void, Never>?
@@ -57,6 +58,9 @@ final class CallPrompt {
     /// Whether a recording was started for a call, from a notification or automatically, until it
     /// has started.
     private var isStartingCall = false
+    /// The name of the app the call being started for is in, if known, until the recording has
+    /// started.
+    private var startingCallApp: String?
     /// Whether the recording going on was started for a call, from a notification or automatically.
     private var isRecordingCall = false
     /// The notification saying an automatic recording is going on.
@@ -66,6 +70,8 @@ final class CallPrompt {
     nonisolated static let endedCategoryIdentifier = "callEnded"
     private nonisolated static let recordAction = "record"
     private nonisolated static let stopAction = "stop"
+    /// The record prompt's `userInfo` key for the call app's name.
+    private nonisolated static let appKey = "callApp"
     private static let logger = Logger(subsystem: "app.mixdown", category: "CallPrompt")
 
     /// The Record button, registered by `NotificationResponder`.
@@ -86,14 +92,14 @@ final class CallPrompt {
     ///   - isRecording: Whether Mixdown is recording, or starting to.
     ///   - startRecording: Starts recording, returning `false` if it can't.
     ///   - stopRecording: Stops recording.
-    ///   - markRecordingAsCall: Marks the recording in progress as a call, and whether it was
-    ///     started automatically rather than from a notification.
+    ///   - markRecordingAsCall: Marks the recording in progress as a call in the app with the given
+    ///     name, if known, and whether it was started automatically rather than from a notification.
     ///   - showRecorder: Opens Record in the main window.
     init(
         isRecording: @escaping () -> Bool,
         startRecording: @escaping () -> Bool,
         stopRecording: @escaping () -> Void,
-        markRecordingAsCall: @escaping (_ automatically: Bool) -> Void,
+        markRecordingAsCall: @escaping (_ app: String?, _ automatically: Bool) -> Void,
         showRecorder: @escaping () -> Void
     ) {
         self.isRecording = isRecording
@@ -103,13 +109,15 @@ final class CallPrompt {
         self.showRecorder = showRecorder
     }
 
-    /// Records from the record prompt, or opens Record if it can't, which says why.
-    private func recordFromPrompt() {
+    /// Records the call in `app` from the record prompt, or opens Record if it can't, which says why.
+    private func recordFromPrompt(app: String?) {
         // A recording that's going on already wasn't started for the call.
         guard !isRecording() else { return }
         isStartingCall = true
+        startingCallApp = app
         guard !startRecording() else { return }
         isStartingCall = false
+        startingCallApp = nil
         showRecorder()
     }
 
@@ -151,8 +159,9 @@ final class CallPrompt {
         isRecordingCall = isStartingCall
         if isStartingCall {
             isStartingCall = false
-            markRecordingAsCall(startingFor != nil)
+            markRecordingAsCall(startingCallApp, startingFor != nil)
         }
+        startingCallApp = nil
         guard let app = startingFor else { return }
         startingFor = nil
         guard notifies else { return }
@@ -166,6 +175,7 @@ final class CallPrompt {
         withdrawStopPrompt()
         startingFor = nil
         isStartingCall = false
+        startingCallApp = nil
         isRecordingCall = false
         withdrawRecordingNotice()
     }
@@ -210,12 +220,14 @@ final class CallPrompt {
         if recordsAutomatically {
             startingFor = app
             isStartingCall = true
+            startingCallApp = app.name
             if startRecording() {
                 Self.logger.info("\(app.name, privacy: .public) started a call; recording it")
                 return
             }
             startingFor = nil
             isStartingCall = false
+            startingCallApp = nil
             Self.logger.info("\(app.name, privacy: .public) started a call; can't record it")
         }
         guard notifies else {
@@ -229,6 +241,7 @@ final class CallPrompt {
             title: "Record This Call?",
             body: "\(app.name) is using the microphone. Click to record.",
             category: Self.startedCategoryIdentifier,
+            userInfo: [Self.appKey: app.name],
             id: id
         )
     }
@@ -269,9 +282,21 @@ final class CallPrompt {
         )
     }
 
-    private func post(title: String, body: String, category: String? = nil, id: String = UUID().uuidString) {
+    private func post(
+        title: String,
+        body: String,
+        category: String? = nil,
+        userInfo: [String: String] = [:],
+        id: String = UUID().uuidString
+    ) {
         Task {
-            await Notifications.post(title: title, body: body, categoryIdentifier: category, id: id)
+            await Notifications.post(
+                title: title,
+                body: body,
+                categoryIdentifier: category,
+                userInfo: userInfo,
+                id: id
+            )
         }
     }
 }
@@ -283,7 +308,8 @@ extension CallPrompt {
         let clicks = [Self.recordAction, Self.stopAction, UNNotificationDefaultActionIdentifier]
         guard clicks.contains(response.actionIdentifier) else { return }
         if category == Self.startedCategoryIdentifier {
-            await recordFromPrompt()
+            let app = response.notification.request.content.userInfo[Self.appKey] as? String
+            await recordFromPrompt(app: app)
         } else {
             await stopFromPrompt()
         }

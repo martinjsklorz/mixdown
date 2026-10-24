@@ -113,7 +113,7 @@ struct UnfinishedRecordingTests {
         await quitting.monitorDevices()
         await quitting.startRecording()
         try await waitUntil { store.recordings().first?.duration == 2 }
-        quitting.markRecordingAsCall(automatically: true)
+        quitting.markRecordingAsCall(in: "Zoom", automatically: true)
         quitting.addMoment(at: 1, text: "Budget")
 
         await quitting.stopRecordingWithoutNote()
@@ -129,6 +129,7 @@ struct UnfinishedRecordingTests {
 
         let note = try #require(await writer.notes.first)
         #expect(note.isCall)
+        #expect(note.callApp == "Zoom")
         #expect(note.trigger == .automatic)
         #expect(note.moments.map(\.text) == ["Budget"])
         #expect(note.moments.map(\.time) == [1])

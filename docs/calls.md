@@ -71,6 +71,8 @@ With both switches off, calls aren't watched. Turning off **Show notifications**
 
 ## Titles and templates for calls
 
-A call recorded from the call notification, or automatically, is titled as one, e.g. "Call about
-Release timeline", and gets the summary template chosen for **Detected calls**. Recordings started
-any other way aren't, even during a call. See [Summaries](summaries.md).
+A call recorded from the call notification, or automatically, is titled as one with its app, e.g.
+"Zoom call about Release timeline", and gets the summary template chosen for **Detected calls**. Recordings started
+any other way aren't, even during a call. Calls in a browser, such as Google Meet, are titled
+"Call about …", without the browser. The app is saved in the note's `call_app` field too. See
+[Summaries](summaries.md).

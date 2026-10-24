@@ -19,6 +19,7 @@ struct RecordingStoreTests {
             language: "de",
             trigger: RecordingTrigger.automatic.rawValue,
             isCall: true,
+            callApp: "Zoom",
             lanes: lanes,
             moments: [RecordingStore.Description.Mark(id: UUID(), time: 1, text: "Budget")]
         )
@@ -70,6 +71,7 @@ struct RecordingStoreTests {
         #expect(stored.description.language == "de")
         #expect(stored.description.recordingTrigger == .automatic)
         #expect(stored.description.isCall)
+        #expect(stored.description.callApp == "Zoom")
         #expect(stored.description.recordedMoments.map(\.text) == ["Budget"])
         #expect(stored.lanes.map(\.device.id) == [Fixtures.builtInMic.id, AudioInputDevice.systemAudioID])
         let microphone = stored.lanes[0].audio

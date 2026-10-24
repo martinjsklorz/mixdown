@@ -58,6 +58,7 @@ extension RecordingCoordinator {
                 sources: description.sources,
                 trigger: description.recordingTrigger,
                 isCall: description.isCall,
+                callApp: description.callApp,
                 moments: description.recordedMoments
                     .map { Moment(id: $0.id, time: min($0.time, duration), text: $0.text) }
                     .sorted { $0.time < $1.time },
@@ -188,6 +189,7 @@ extension RecordingCoordinator {
             language: session.options.language,
             trigger: session.trigger.rawValue,
             isCall: session.isCall,
+            callApp: session.callApp,
             lanes: session.lanes.map { lane in
                 RecordingStore.Description.Lane(
                     kind: lane.kind.rawValue,
