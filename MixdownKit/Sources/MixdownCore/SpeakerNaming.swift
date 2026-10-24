@@ -211,17 +211,17 @@ public enum SpeakerNaming {
         let words = text.split { !($0.isLetter || $0 == "'" || $0 == "’" || $0 == "-") }
             .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "'’-")) }
             .filter { !$0.isEmpty }
-        return words + words.compactMap { word in
+        let possessives = words.compactMap { word in
             word.hasSuffix("'s") || word.hasSuffix("’s") ? String(word.dropLast(2)) : nil
         }
+        return words + possessives
     }
 
     /// `guess` without quotes, a trailing period or extra spaces, or `nil` if it can't be a name,
     /// such as a description ("Chris, the Nemotron voice") or a label.
     static func cleanedName(_ guess: String) -> String? {
         let trimmed = CharacterSet(charactersIn: "\"'“”„‘’*.,:;").union(.whitespacesAndNewlines)
-        let name = guess
-            .trimmingCharacters(in: trimmed)
+        let name = guess.trimmingCharacters(in: trimmed)
             .split(whereSeparator: \.isWhitespace)
             .joined(separator: " ")
         let words = name.split(separator: " ")
