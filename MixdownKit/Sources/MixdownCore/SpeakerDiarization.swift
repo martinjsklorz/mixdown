@@ -127,8 +127,8 @@ public enum SpeakerAssignment {
             var piece = segment
             piece.text = part.map(\.text).joined(separator: " ")
             // The first and last pieces keep the segment's own bounds.
-            piece.start = index == 0 ? segment.start : part.first!.start
-            piece.end = index == runs.count - 1 ? segment.end : part.last!.end
+            piece.start = index == 0 ? segment.start : tokens[run.start].start
+            piece.end = index == runs.count - 1 ? segment.end : tokens[end - 1].end
             return (piece, run.speaker)
         }
     }

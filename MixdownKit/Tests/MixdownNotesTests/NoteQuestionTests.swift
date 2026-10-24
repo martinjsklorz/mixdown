@@ -7,7 +7,7 @@ import Testing
 struct NoteQuestionTests {
     private static let calendar: Calendar = {
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC")!
+        calendar.timeZone = TimeZone(identifier: "UTC") ?? .gmt
         calendar.firstWeekday = 2
         return calendar
     }()
@@ -16,7 +16,7 @@ struct NoteQuestionTests {
     private static let now = date(2026, 10, 21, hour: 12)
 
     private static func date(_ year: Int, _ month: Int, _ day: Int, hour: Int = 0) -> Date {
-        calendar.date(from: DateComponents(year: year, month: month, day: day, hour: hour))!
+        calendar.date(from: DateComponents(year: year, month: month, day: day, hour: hour)) ?? .distantPast
     }
 
     private func parse(_ question: String) -> NoteQuestion {
