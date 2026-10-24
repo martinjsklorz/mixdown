@@ -53,6 +53,55 @@ struct ChunkedSummarizerTests {
         )
     }
 
+    @Test func momentsAreLinesAfterWhatWasSaidByThen() {
+        let transcript = Transcript(segments: [
+            TranscriptSegment(start: 0, end: 2, text: "We need a budget.", speaker: "Me"),
+            TranscriptSegment(start: 2, end: 4, text: "It's approved.", speaker: "Me"),
+            TranscriptSegment(start: 4, end: 6, text: "Great.", speaker: "Others"),
+        ])
+        let moments = [
+            Moment(time: 9, text: "Wrap-up"),
+            Moment(time: 2.5, text: "  Budget\napproved "),
+            Moment(time: 2, text: " "),
+        ]
+
+        #expect(
+            ChunkedSummarizer.lines(of: transcript, moments: moments) == [
+                "Me: We need a budget. It's approved.",
+                "[Marked by the user]",
+                "[Marked by the user: Budget approved]",
+                "Others: Great.",
+                "[Marked by the user: Wrap-up]",
+            ]
+        )
+        #expect(ChunkedSummarizer.lines(of: transcript, moments: [Moment(time: -1)]).first == "[Marked by the user]")
+    }
+
+    @Test func momentSplitsATurn() {
+        let transcript = Transcript(segments: [
+            TranscriptSegment(start: 0, end: 1, text: "One.", speaker: "Me"),
+            TranscriptSegment(start: 1, end: 2, text: "Two.", speaker: "Me"),
+        ])
+
+        #expect(
+            ChunkedSummarizer.lines(of: transcript, moments: [Moment(time: 0.5, text: "First")]) == [
+                "Me: One.", "[Marked by the user: First]", "Me: Two.",
+            ]
+        )
+    }
+
+    @Test func momentsAreHandedToTheStep() async throws {
+        let recorder = StepRecorder()
+        _ = try await ChunkedSummarizer(maxTokens: 1000).summarize(
+            transcript(["Hello.", "Bye."], speaker: "Me"),
+            moments: [Moment(time: 0.5, text: "Greeting")]
+        ) { text, kind in
+            recorder.step(text, kind)
+        }
+
+        #expect(recorder.steps.map(\.text) == ["Me: Hello.\n[Marked by the user: Greeting]\nMe: Bye."])
+    }
+
     // MARK: - Estimates and pieces
 
     /// A third of a token per ASCII letter, two thirds per Cyrillic letter, a whole one per CJK

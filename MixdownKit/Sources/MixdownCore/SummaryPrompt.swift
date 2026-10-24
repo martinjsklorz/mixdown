@@ -5,10 +5,13 @@ import Foundation
 /// models that answer in plain text.
 public enum SummaryPrompt {
     /// Instructions for summarizing one piece of a recording of `kind`, in the shape of `template`.
+    /// - Parameter hasMoments: Whether the user marked moments in the recording, which are lines
+    ///   of the transcript; see `momentLine(for:)`.
     public static func instructions(
         for kind: ChunkedSummarizer.Step,
         template: SummaryTemplate,
-        language: String?
+        language: String?,
+        hasMoments: Bool = false
     ) -> String {
         let task =
             switch kind {
@@ -25,10 +28,30 @@ public enum SummaryPrompt {
                 decision and action item. Drop questions that a later part answers.
                 """
             }
+        let moments = hasMoments ? momentsRule(for: kind).map { "\n" + $0 } ?? "" : ""
         return """
-            \(task)\(focus(of: template).map { "\n" + $0 } ?? "")
+            \(task)\(moments)\(focus(of: template).map { "\n" + $0 } ?? "")
             Only use what's in the text; don't add anything. Be brief and concrete. \(languageRule(language))
             """
+    }
+
+    /// What the lines from `momentLine(for:)` are and what to do with them, for a step of `kind`.
+    /// `nil` when combining, as the summaries of the parts don't say which points were marked;
+    /// they're asked to cover them, and combining keeps what matters.
+    public static func momentsRule(for kind: ChunkedSummarizer.Step) -> String? {
+        guard kind == .transcript else { return nil }
+        return """
+            Lines starting with "[Marked by the user" are moments the user marked as important \
+            while recording, right after what they're about was said, sometimes with a note of \
+            their own. Make sure the summary covers what was said there, and use their note to \
+            tell what mattered. They aren't part of what was said.
+            """
+    }
+
+    /// `moment` as a line of the transcript handed to the model, with the user's note if any.
+    public static func momentLine(for moment: Moment) -> String {
+        let note = ChunkedSummarizer.singleLine(moment.text)
+        return note.isEmpty ? "[Marked by the user]" : "[Marked by the user: \(note)]"
     }
 
     /// What kind of recording `template` is for, and what matters in one: its instructions, cut
