@@ -88,7 +88,48 @@ struct GeneralSettingsView: View {
             Section("Startup") {
                 LaunchAtLoginToggle()
             }
+
+            UpdatesSection()
         }
         .formStyle(.grouped)
+    }
+}
+
+/// Only in release builds, which have an updater. Sparkle asks on the second launch whether to
+/// check automatically; these change the answer.
+private struct UpdatesSection: View {
+    @Environment(AppEnvironment.self) private var environment
+
+    var body: some View {
+        @Bindable var updater = environment.updater
+        if updater.isAvailable {
+            Section {
+                Toggle("Check for updates automatically", isOn: $updater.automaticallyChecksForUpdates)
+                Toggle("Download and install updates automatically", isOn: $updater.automaticallyDownloadsUpdates)
+                    .disabled(!updater.automaticallyChecksForUpdates)
+                HStack {
+                    Caption("Mixdown \(Bundle.main.versionDescription)")
+                    Spacer()
+                    Button("Check Now") { updater.checkForUpdates() }
+                        .disabled(!updater.canCheckForUpdates)
+                }
+            } header: {
+                Text("Updates")
+            } footer: {
+                Caption(
+                    "Mixdown looks for new versions on GitHub once a day, sending only its version, "
+                        + "nothing about you or your notes. Updates downloaded automatically are installed when you quit."
+                )
+            }
+        }
+    }
+}
+
+extension Bundle {
+    /// “0.2.0 (318)”, from the version and build in Info.plist.
+    fileprivate var versionDescription: String {
+        let version = object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+        let build = object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
+        return "\(version) (\(build))"
     }
 }

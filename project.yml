@@ -14,7 +14,11 @@ settings:
   base:
     SWIFT_VERSION: "6.0"
     SWIFT_STRICT_CONCURRENCY: complete
+    # The version a release is tagged with (`v0.1.0`). Bump it before `make release`, which
+    # refuses to ship a version that's already tagged.
     MARKETING_VERSION: "0.1.0"
+    # `make release` overrides this with the number of commits on main, so every release has a
+    # higher build than the last, which is what Sparkle compares.
     CURRENT_PROJECT_VERSION: "1"
     CODE_SIGN_STYLE: Automatic
     # Set your Apple Developer team ID here (or pass DEVELOPMENT_TEAM=… to xcodebuild).
@@ -22,6 +26,14 @@ settings:
     DEVELOPMENT_TEAM: ""
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     DEAD_CODE_STRIPPING: YES
+    # Sparkle's appcast, attached to every GitHub release by `make release`. `latest` follows
+    # the newest release, so the URL never changes.
+    SPARKLE_FEED_URL: https://github.com/martinjsklorz/mixdown/releases/latest/download/appcast.xml
+  configs:
+    Release:
+      # Sparkle's EdDSA public key (`make sparkle-key` prints it). Only Release builds have it,
+      # so builds from source (Debug) don't offer to replace themselves with the latest release.
+      SPARKLE_PUBLIC_KEY: ""
 
 packages:
   MixdownKit:
@@ -30,6 +42,10 @@ packages:
   KeyboardShortcuts:
     url: https://github.com/sindresorhus/KeyboardShortcuts
     from: "3.1.0"
+  # Updates, from the appcast on GitHub releases.
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: "2.10.0"
 
 targets:
   Mixdown:
@@ -50,6 +66,7 @@ targets:
           - MixdownNaturalLanguage
           - MixdownNotes
       - package: KeyboardShortcuts
+      - package: Sparkle
     settings:
       base:
         PRODUCT_NAME: Mixdown

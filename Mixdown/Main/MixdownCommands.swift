@@ -6,8 +6,8 @@ import SwiftUI
 
 /// The main menu. The View menu's sections switch what the main window shows; the File menu has
 /// the notes files and the shown note, the Recording menu recording and inputs, the Help menu
-/// Mixdown Help. About Mixdown adds how much space models and notes take up. Settings… comes with
-/// the `Settings` scene.
+/// Mixdown Help. About Mixdown adds how much space models and notes take up, and Check for
+/// Updates… follows it. Settings… comes with the `Settings` scene.
 struct MixdownCommands: Commands {
     let environment: AppEnvironment
     let navigation: MainNavigation
@@ -16,6 +16,8 @@ struct MixdownCommands: Commands {
     var body: some Commands {
         CommandGroup(replacing: .appInfo) {
             Button("About Mixdown") { AboutPanel.show(notesFolder: environment.notesFolder.status) }
+            CheckForUpdatesMenuItem()
+                .environment(environment)
         }
         // Replaces New Window, which a single-instance window doesn't offer anyway.
         CommandGroup(replacing: .newItem) {
@@ -77,6 +79,19 @@ private struct ChatMenuItem: View {
         if environment.preferences.isChatEnabled {
             SectionMenuItem("Chat", destination: .chat)
                 .keyboardShortcut("3")
+        }
+    }
+}
+
+/// Only in release builds, which have an updater.
+private struct CheckForUpdatesMenuItem: View {
+    @Environment(AppEnvironment.self) private var environment
+
+    var body: some View {
+        let updater = environment.updater
+        if updater.isAvailable {
+            Button("Check for Updates…") { updater.checkForUpdates() }
+                .disabled(!updater.canCheckForUpdates)
         }
     }
 }
