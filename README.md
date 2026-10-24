@@ -38,8 +38,8 @@ Everything happens on your Mac. Your audio never leaves it.
   by Mixdown, not guessed by the model.
 - **Spotlight search**: every line of every note is in Spotlight, so ⌘Space finds the exact
   transcript line or action item without opening Mixdown.
-- **Always at hand**: a global shortcut (⌃⌥⌘R), the menu bar, and a Dynamic Island around the
-  camera notch while recording.
+- **Always at hand**: a global shortcut (⌃⌥⌘R), `mixdown://` links for Raycast, Stream Deck and
+  Keyboard Maestro, the menu bar, and a Dynamic Island around the camera notch while recording.
 
 ## Getting started
 
