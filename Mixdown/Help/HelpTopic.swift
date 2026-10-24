@@ -423,8 +423,9 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             the transcript doesn't leave it.
 
             The summary also names the note after its topic, e.g. "Release timeline". Calls \
-            recorded from Mixdown's call notification, or automatically, are titled as calls, e.g. \
-            "Call about Release timeline". Without a summary, a note is titled with the date and \
+            recorded from Mixdown's call notification, or automatically, are titled as calls in \
+            their app, e.g. "Zoom call about Release timeline", or "Call about Release timeline" \
+            in a browser. Without a summary, a note is titled with the date and \
             time it was recorded.
 
             ## Models

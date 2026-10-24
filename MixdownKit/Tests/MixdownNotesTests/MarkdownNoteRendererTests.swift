@@ -21,6 +21,7 @@ enum NoteFixtures {
         summary: NoteSummary? = nil,
         trigger: RecordingTrigger = .manual,
         isCall: Bool? = nil,
+        callApp: String? = nil,
         template: SummaryTemplate? = nil,
         moments: [Moment] = [],
         talkTimeline: TalkTimeline? = nil
@@ -36,6 +37,7 @@ enum NoteFixtures {
             summary: summary,
             trigger: trigger,
             isCall: isCall,
+            callApp: callApp,
             template: template,
             moments: moments,
             talkTimeline: talkTimeline
@@ -61,6 +63,10 @@ struct MarkdownNoteRendererTests {
         let call = frontmatterLines(MarkdownNoteRenderer.render(NoteFixtures.note(isCall: true, template: .oneOnOne)))
         #expect(call.contains("call: true"))
         #expect(call.contains("template: oneOnOne"))
+
+        #expect(!call.contains { $0.hasPrefix("call_app:") })
+        let zoom = frontmatterLines(MarkdownNoteRenderer.render(NoteFixtures.note(isCall: true, callApp: "Zoom")))
+        #expect(zoom.contains(#"call_app: "Zoom""#))
 
         let memo = frontmatterLines(MarkdownNoteRenderer.render(NoteFixtures.note(template: .general)))
         #expect(!memo.contains { $0.hasPrefix("call:") || $0.hasPrefix("template:") })

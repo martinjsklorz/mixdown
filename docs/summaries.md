@@ -40,7 +40,8 @@ Intelligence.
 
 The summary also names the note after its topic, e.g. "Release timeline". A call recorded from
 Mixdown's call notification, or automatically, is titled as one in the language of the recording,
-e.g. "Call about Release timeline" or "Anruf zu Budgetplanung". Recordings started any other way
+naming its app, e.g. "Zoom call about Release timeline" or "FaceTime-Anruf zu Budgetplanung". Calls
+in a browser leave the browser out: "Call about Release timeline". Recordings started any other way
 aren't, even during a call.
 
 Without a summary, the note is titled with the date and time it was recorded.

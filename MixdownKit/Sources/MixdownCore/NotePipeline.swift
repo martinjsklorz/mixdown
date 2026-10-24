@@ -119,6 +119,7 @@ final class NotePipeline {
                 for: details.startedAt,
                 summaryTitle: summaryTitle ?? details.untitledName,
                 isCall: details.isCall,
+                callApp: details.callApp,
                 language: summary?.language ?? (translation ?? transcript).language
             ),
             createdAt: details.startedAt,
@@ -130,6 +131,7 @@ final class NotePipeline {
             summary: summary,
             trigger: details.trigger,
             isCall: details.isCall,
+            callApp: details.callApp,
             template: summarizer == nil ? nil : template,
             moments: details.moments,
             talkTimeline: details.talkTimeline

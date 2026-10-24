@@ -30,10 +30,13 @@ public struct CallApp: Hashable, Sendable {
     /// Bundle IDs of the app. Its helper processes count too: those whose bundle ID continues one
     /// of these, e.g. `com.google.Chrome.helper`, and those inside the app's bundle.
     public let bundleIDs: [String]
+    /// Whether it's a browser, whose calls are in a website such as Google Meet, not in the app.
+    public let isBrowser: Bool
 
-    public init(name: String, bundleIDs: [String]) {
+    public init(name: String, bundleIDs: [String], isBrowser: Bool = false) {
         self.name = name
         self.bundleIDs = bundleIDs
+        self.isBrowser = isBrowser
     }
 
     /// Whether `bundleID` is one of `bundleIDs` or a helper of one (it continues with a dot).
@@ -75,18 +78,19 @@ public struct CallApp: Hashable, Sendable {
         CallApp(name: "GoTo Meeting", bundleIDs: ["com.logmein.GoToMeeting"]),
         CallApp(name: "Jitsi Meet", bundleIDs: ["org.jitsi.jitsi-meet"]),
         // Safari records in WebKit's shared GPU process, which other WebKit apps use too.
-        CallApp(name: "Safari", bundleIDs: ["com.apple.Safari", "com.apple.WebKit.GPU"]),
-        CallApp(name: "Google Chrome", bundleIDs: ["com.google.Chrome"]),
-        CallApp(name: "Microsoft Edge", bundleIDs: ["com.microsoft.edgemac"]),
+        CallApp(name: "Safari", bundleIDs: ["com.apple.Safari", "com.apple.WebKit.GPU"], isBrowser: true),
+        CallApp(name: "Google Chrome", bundleIDs: ["com.google.Chrome"], isBrowser: true),
+        CallApp(name: "Microsoft Edge", bundleIDs: ["com.microsoft.edgemac"], isBrowser: true),
         // Firefox records in its main process, not in its sandboxed content processes.
         CallApp(
             name: "Firefox",
-            bundleIDs: ["org.mozilla.firefox", "org.mozilla.firefoxdeveloperedition", "org.mozilla.nightly"]
+            bundleIDs: ["org.mozilla.firefox", "org.mozilla.firefoxdeveloperedition", "org.mozilla.nightly"],
+            isBrowser: true
         ),
-        CallApp(name: "Arc", bundleIDs: ["company.thebrowser.Browser"]),
-        CallApp(name: "Brave", bundleIDs: ["com.brave.Browser"]),
-        CallApp(name: "Vivaldi", bundleIDs: ["com.vivaldi.Vivaldi"]),
-        CallApp(name: "Opera", bundleIDs: ["com.operasoftware.Opera"]),
+        CallApp(name: "Arc", bundleIDs: ["company.thebrowser.Browser"], isBrowser: true),
+        CallApp(name: "Brave", bundleIDs: ["com.brave.Browser"], isBrowser: true),
+        CallApp(name: "Vivaldi", bundleIDs: ["com.vivaldi.Vivaldi"], isBrowser: true),
+        CallApp(name: "Opera", bundleIDs: ["com.operasoftware.Opera"], isBrowser: true),
     ]
 }
 

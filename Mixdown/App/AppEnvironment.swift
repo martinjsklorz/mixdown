@@ -255,7 +255,7 @@ final class AppEnvironment {
             isRecording: { [weak self] in self?.coordinator.canStopRecording ?? false },
             startRecording: { [weak self] in self?.startRecordingCall() ?? false },
             stopRecording: { [weak self] in self?.stopRecordingCall() },
-            markRecordingAsCall: { [weak self] in self?.coordinator.markRecordingAsCall(automatically: $0) },
+            markRecordingAsCall: { [weak self] in self?.coordinator.markRecordingAsCall(in: $0, automatically: $1) },
             showRecorder: showRecorder
         )
         notificationResponder.callPrompt = callPrompt

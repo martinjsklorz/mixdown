@@ -336,6 +336,7 @@ struct RecordingCoordinatorTests {
         transcript: Transcript = Transcript(segments: [TranscriptSegment(start: 0, end: 1, text: "Hello.")]),
         summarizer: MockSummarizer?,
         isCall: Bool = false,
+        callApp: String? = nil,
         automatically: Bool = false,
         configure: (RecordingCoordinator) -> Void = { _ in },
         whileRecording: (RecordingCoordinator) -> Void = { _ in }
@@ -350,7 +351,7 @@ struct RecordingCoordinatorTests {
         configure(coordinator)
         await coordinator.monitorDevices()
         await coordinator.startRecording()
-        if isCall { coordinator.markRecordingAsCall(automatically: automatically) }
+        if isCall { coordinator.markRecordingAsCall(in: callApp, automatically: automatically) }
         whileRecording(coordinator)
         await coordinator.stopRecording()
         return (coordinator, try #require(await writer.notes.first))
@@ -483,6 +484,14 @@ struct RecordingCoordinatorTests {
         german.language = "de"
         let (_, germanCall) = try await recordNote(summarizer: MockSummarizer(summary: german), isCall: true)
         #expect(germanCall.title == "Anruf zu Release timeline")
+
+        let (_, zoomCall) = try await recordNote(
+            summarizer: MockSummarizer(summary: summary),
+            isCall: true,
+            callApp: "Zoom"
+        )
+        #expect(zoomCall.title == "Zoom call about Release timeline")
+        #expect(zoomCall.callApp == "Zoom")
     }
 
     @Test func notesSayHowTheRecordingWasStarted() async throws {

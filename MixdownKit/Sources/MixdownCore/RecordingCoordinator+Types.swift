@@ -23,6 +23,8 @@ extension RecordingCoordinator {
         var isStored = false
         /// Whether the recording was started for a call, from a notification or automatically.
         var isCall = false
+        /// The app the call was in, e.g. `Zoom`; `nil` if not a call or not known.
+        var callApp: String?
         var trigger = RecordingTrigger.manual
         private(set) var lanes: [Lane] = []
         /// Devices that went away or failed to start during this recording. They aren't picked

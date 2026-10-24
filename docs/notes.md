@@ -116,6 +116,7 @@ The team went through the release timeline for the weekly sync.
 | `engine` | The speech model that transcribed it |
 | `trigger` | `manual` for recordings you started (including from a call notification), `automatic` for calls recorded automatically |
 | `call` | `true` for recordings started from the call notification or automatically |
+| `call_app` | For those calls: the app the call was in, e.g. `Zoom`, or the browser for a call in a website |
 | `template` | The [summary template](summaries.md#templates) when it isn't General: `oneOnOne`, `standup` or `clientCall`. [Chat](chat.md#counting) counts notes by it |
 | `language` | The recording's language; left out when the model doesn't report one |
 | `speakers` | The speaker labels used in the transcript |
