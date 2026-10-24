@@ -16,9 +16,10 @@ struct CallDetectorTests {
         let detector: CallDetector
         private var run: Task<Void, Never>?
 
-        init() {
+        init(apps: [CallApp] = CallApp.known) {
             detector = CallDetector(
                 monitor: monitor,
+                apps: apps,
                 ownProcessID: CallDetectorTests.ownProcessID,
                 startDelay: .milliseconds(50),
                 endDelay: .milliseconds(50)
@@ -132,6 +133,80 @@ struct CallDetectorTests {
         try await waitUntil { harness.events.count == 3 }
         #expect(harness.events == [.started(Self.zoomApp), .ended(Self.zoomApp), .started(Self.zoomApp)])
         await harness.stop()
+    }
+
+    @Test func ignoresAppsThatDontCount() async throws {
+        let harness = Harness(apps: CallApp.known.filter { $0.name != "Zoom" })
+        harness.send([zoom])
+        harness.send([zoom, chromeHelper])
+        try await waitUntil { !harness.events.isEmpty }
+        #expect(harness.detector.activeCalls.map(\.name) == ["Google Chrome"])
+        await harness.stop()
+    }
+
+    @Test func followsChangesToTheAppsThatCount() async throws {
+        let harness = Harness()
+        harness.send([zoom])
+        try await waitUntil { !harness.events.isEmpty }
+
+        harness.detector.apps = CallApp.known.filter { $0.name != "Zoom" }
+        try await waitUntil { harness.events.count == 2 }
+        #expect(harness.events.last == .ended(Self.zoomApp))
+
+        harness.detector.apps = CallApp.known
+        try await waitUntil { harness.events.count == 3 }
+        #expect(harness.events.last == .started(Self.zoomApp))
+        await harness.stop()
+    }
+
+    @Test func recognizesAddedApps() async throws {
+        var selection = CallAppSelection()
+        let added = selection.add(name: "Around", bundleID: "co.teamport.around")
+        let harness = Harness(apps: selection.apps)
+        harness.send([AudioInputClient(processID: 500, bundleID: "co.teamport.around.helper")])
+        try await waitUntil { !harness.events.isEmpty }
+        #expect(harness.events == [.started(added)])
+        await harness.stop()
+    }
+
+    @Test func selectionTurnsKnownAppsOffAndOn() {
+        var selection = CallAppSelection()
+        #expect(selection.apps == CallApp.known)
+
+        selection.set(Self.zoomApp, included: false)
+        #expect(!selection.includes(Self.zoomApp))
+        #expect(!selection.apps.contains(Self.zoomApp))
+
+        selection.set(Self.zoomApp, included: true)
+        #expect(selection.apps == CallApp.known)
+    }
+
+    @Test func addingAKnownAppTurnsItOnInstead() {
+        var selection = CallAppSelection()
+        selection.set(Self.zoomApp, included: false)
+        let app = selection.add(name: "zoom.us", bundleID: "us.zoom.xos")
+        #expect(app == Self.zoomApp)
+        #expect(selection.added.isEmpty)
+        #expect(selection.includes(Self.zoomApp))
+
+        let webex = selection.add(name: "Webex", bundleID: "Cisco-Systems.SparkHelper")
+        #expect(webex.name == "Webex")
+        #expect(selection.added.isEmpty)
+    }
+
+    @Test func addedAppsAreAddedOnceAndRemoved() throws {
+        var selection = CallAppSelection()
+        let app = selection.add(name: "Around", bundleID: "co.teamport.around")
+        selection.add(name: "Around 2", bundleID: "co.teamport.around")
+        #expect(selection.added == [app])
+        #expect(selection.apps.last == app)
+
+        let decoded = try JSONDecoder().decode(CallAppSelection.self, from: JSONEncoder().encode(selection))
+        #expect(decoded == selection)
+
+        selection.set(app, included: false)
+        #expect(selection.added.isEmpty)
+        #expect(!selection.includes(app))
     }
 
     @Test func stoppingDropsActiveCalls() async throws {

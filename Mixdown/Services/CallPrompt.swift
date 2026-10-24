@@ -42,6 +42,11 @@ final class CallPrompt {
         didSet { updateWatching() }
     }
 
+    /// The apps that count as calls. Taking out one in a call ends its call.
+    var apps = CallApp.known {
+        didSet { detector?.apps = apps }
+    }
+
     private let isRecording: () -> Bool
     private let startRecording: () -> Bool
     private let stopRecording: () -> Void
@@ -137,7 +142,7 @@ final class CallPrompt {
 
     private func start() {
         Self.logger.info("Watching for calls")
-        let detector = CallDetector(monitor: CoreAudioInputActivityMonitor())
+        let detector = CallDetector(monitor: CoreAudioInputActivityMonitor(), apps: apps)
         self.detector = detector
         detection = Task { [weak self] in
             await detector.run { [weak self] event in self?.handle(event) }

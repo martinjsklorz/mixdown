@@ -40,6 +40,14 @@ WhatsApp, Telegram, Signal, Element, Viber, GoTo Meeting and Jitsi Meet, and the
 Chrome, Edge, Firefox, Arc, Brave, Vivaldi and Opera. A browser counts as soon as any site uses the
 microphone.
 
+### Choosing the apps
+
+To change which apps count as calls, click **Choose…** next to **Apps that count as calls** under
+**Settings → Recording → Calls**. Turn off the apps you don't want, such as a browser you use for
+other things that need the microphone, or click **Add App…** to add one Mixdown doesn't know.
+Apps that run inside an added app count as it. Changes apply right away: turning off an app in a
+call ends that call, as if it had hung up.
+
 Two switches under **Settings → Recording → Calls** decide what happens.
 
 ### Notify when calls start and end

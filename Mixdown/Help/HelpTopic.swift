@@ -255,6 +255,10 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             call starts and stops when it ends. With notifications on, Mixdown says so. A \
             recording you started yourself keeps going when a call ends.
 
+            To change which apps count as calls, click **Choose…** next to **Apps that count as \
+            calls**. Turn off an app or browser, or click **Add App…** to add one Mixdown doesn't \
+            know.
+
             With both off, calls aren't watched.
             """
         case .notes:

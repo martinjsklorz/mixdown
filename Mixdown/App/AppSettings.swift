@@ -59,6 +59,8 @@ struct AppSettings {
         static let notifiesAboutCalls = "notifiesAboutCalls"
         /// Whether to start and stop recording with calls. Absent means no.
         static let recordsCallsAutomatically = "recordsCallsAutomatically"
+        /// A `CallAppSelection` as JSON. Absent means every known call app and browser.
+        static let callApps = "callApps"
         /// Minutes without speech before Mixdown asks whether it's still recording; 0 for never.
         /// Absent means 15.
         static let stillRecordingMinutes = "stillRecordingMinutes"
@@ -300,6 +302,15 @@ struct AppSettings {
     var recordsCallsAutomatically: Bool {
         get { defaults.bool(forKey: Key.recordsCallsAutomatically) }
         nonmutating set { defaults.set(newValue, forKey: Key.recordsCallsAutomatically) }
+    }
+
+    /// Which apps count as calls. Every known one unless changed.
+    var callApps: CallAppSelection {
+        get {
+            defaults.data(forKey: Key.callApps).flatMap { try? JSONDecoder().decode(CallAppSelection.self, from: $0) }
+                ?? CallAppSelection()
+        }
+        nonmutating set { defaults.set(try? JSONEncoder().encode(newValue), forKey: Key.callApps) }
     }
 
     /// Light or dark mode for the app. Follows the system unless set.

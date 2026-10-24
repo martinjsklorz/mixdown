@@ -5,6 +5,7 @@ import SwiftUI
 /// menu bar.
 struct RecordingSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
+    @State private var isChoosingCallApps = false
     private var preferences: Preferences { environment.preferences }
 
     var body: some View {
@@ -113,11 +114,19 @@ struct RecordingSettingsView: View {
 
             Section {
                 CallsToggles()
+                LabeledContent("Apps that count as calls") {
+                    HStack {
+                        let count = preferences.callApps.apps.count
+                        Text(count == 1 ? "1 app" : "\(count) apps")
+                            .foregroundStyle(.secondary)
+                        Button("Choose…") { isChoosingCallApps = true }
+                    }
+                }
             } header: {
                 Text("Calls")
             } footer: {
                 Caption(
-                    "A call is a call app such as Zoom, Teams, FaceTime or Discord, or a browser, using a "
+                    "A call is one of these apps, such as Zoom, Teams, FaceTime, Discord or a browser, using a "
                         + "microphone. Without automatic recording, the notifications ask whether to record and "
                         + "whether to stop; with it, they say that recording started and stopped. Recording "
                         + "turns on system audio."
@@ -125,5 +134,6 @@ struct RecordingSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .sheet(isPresented: $isChoosingCallApps) { CallAppsSheet() }
     }
 }

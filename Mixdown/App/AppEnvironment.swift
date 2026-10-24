@@ -204,6 +204,7 @@ final class AppEnvironment {
     private func applyPreferences() {
         Self.configure(coordinator, with: preferences, summarizer: summarizer)
         if let callPrompt {
+            callPrompt.apps = preferences.callApps.apps
             callPrompt.notifies = preferences.notifiesAboutCalls
             if callPrompt.recordsAutomatically != preferences.recordsCallsAutomatically {
                 callPrompt.recordsAutomatically = preferences.recordsCallsAutomatically

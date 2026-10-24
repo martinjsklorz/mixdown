@@ -41,6 +41,8 @@ final class Preferences {
     var recordsCallsAutomatically: Bool {
         didSet { save { $0.recordsCallsAutomatically = recordsCallsAutomatically } }
     }
+    /// Which apps count as calls. Takes effect right away, even during a call. See `CallDetector`.
+    var callApps: CallAppSelection { didSet { save { $0.callApps = callApps } } }
 
     // MARK: Transcription
 
@@ -111,6 +113,7 @@ final class Preferences {
         catchUpMinutes = settings.catchUpMinutes
         notifiesAboutCalls = settings.notifiesAboutCalls
         recordsCallsAutomatically = settings.recordsCallsAutomatically
+        callApps = settings.callApps
         language = settings.language
         sourceLabels = settings.sourceLabels
         identifiesSpeakers = settings.identifiesSpeakers
