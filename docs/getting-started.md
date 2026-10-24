@@ -11,13 +11,25 @@ The first time Mixdown opens, the setup assistant walks you through:
 
 1. **Choose a Notes Folder**: where your notes go, for example a new `Mixdown` folder in
    Documents (use **New Folder** in the dialog). See [Notes](notes.md#the-notes-folder).
-2. **Pick a Speech Model** and download it. See [Speech models](speech-models.md).
-3. **What to Record**: your microphone, system audio or both, and allowing the microphone.
-4. **Calls and Notifications**: call detection and allowing notifications. See
+2. **What to Record**: your microphone, system audio or both, and allowing the microphone.
+3. **How to Transcribe**: **Live**, with the text appearing as you speak, or **When You Stop**,
+   slower but more accurate, with a choice of offline models; the language; and whether to tell
+   speakers apart. See [Speech models](speech-models.md).
+4. **Summaries**: whether to summarize, with Apple Intelligence or an open model. See
+   [Summaries](summaries.md).
+5. **Keeping Your Audio**: until the note is saved, keep the audio **On Disk**, so a crash
+   doesn't lose it, or **In Memory Only**.
+6. **Calls and Notifications**: call detection and allowing notifications. See
    [Recording calls](calls.md#call-detection).
-5. **Always at Hand**: the global shortcut and launching at login.
+7. **Always at Hand**: the global shortcut and launching at login.
+8. **Download**: the models your choices need (speech, speakers, an open summary model), side
+   by side. You can start using Mixdown while they download.
 
-**Help → Setup Assistant…** opens it again at any time.
+Nothing is downloaded before the last page, so you can try choices freely. Everything the
+assistant sets is in [Settings](settings.md) too.
+
+**Help → Setup Assistant…**, or **Setup Assistant…** in the Help window's toolbar, opens it again
+at any time.
 
 If you skip it, open **Record** and click **Choose Folder…** and **Download Model** there.
 Recording stays off until both are done. Record shows what's missing.

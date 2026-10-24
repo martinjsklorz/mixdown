@@ -43,8 +43,9 @@ Everything happens on your Mac. Your audio never leaves it.
 
 ## Getting started
 
-Open Mixdown and the setup assistant walks you through choosing a notes folder, downloading a
-speech model and picking inputs. Then press ⌘R (or ⌃⌥⌘R from any app) to start and stop
+Open Mixdown and the setup assistant walks you through choosing a notes folder and inputs, then
+the main choices (live or after-the-fact transcription, summaries, audio on disk or in memory only)
+and downloads the models they need. Then press ⌘R (or ⌃⌥⌘R from any app) to start and stop
 recording. The note opens a few seconds later.
 
 **Help → Mixdown Help** (⌘?) explains everything inside the app.

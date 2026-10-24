@@ -2,7 +2,8 @@ import Foundation
 import MixdownNotes
 
 /// A page of Mixdown Help. The text is Markdown, rendered like a note. Links to
-/// `mixdown-help:<topic>` open another topic.
+/// `mixdown-help:<topic>` open another topic, and `mixdown-help:setup-assistant` the setup
+/// assistant.
 enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
     case gettingStarted = "getting-started"
     case recording
@@ -17,6 +18,10 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
     case troubleshooting
 
     private static let urlScheme = "mixdown-help"
+    /// Whether `url` is the link in a topic that opens the setup assistant.
+    static func isSetupAssistantLink(_ url: URL) -> Bool {
+        url.absoluteString == "\(urlScheme):setup-assistant"
+    }
 
     var id: Self { self }
 
@@ -99,8 +104,11 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             ## Set up
 
             The first time Mixdown opens, the setup assistant walks you through choosing a notes \
-            folder, downloading a speech model, picking inputs and allowing the permissions. Open \
-            it again with **Help → Setup Assistant…**.
+            folder, picking inputs and allowing the permissions, then the main choices: live \
+            transcription or transcribing when you stop, summaries, and whether audio is kept on \
+            disk or only in memory until the note is saved. At the end it downloads the models \
+            you picked. [Open the setup assistant](mixdown-help:setup-assistant) any time, or \
+            choose **Help → Setup Assistant…**.
 
             If you skipped it, open **Record** with the ● button next to the search field. Recording stays off until \
             these two are done:

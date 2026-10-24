@@ -6,6 +6,7 @@ struct HelpView: View {
     static let windowID = "help"
 
     @Environment(MainNavigation.self) private var navigation
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         @Bindable var navigation = navigation
@@ -32,10 +33,23 @@ struct HelpView: View {
         }
         .searchable(text: $navigation.helpSearchText, placement: .sidebar, prompt: "Search Help")
         .navigationTitle("Mixdown Help")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button("Setup Assistant…", systemImage: "wand.and.sparkles") {
+                    navigation.showSetup(using: openWindow)
+                }
+                .labelStyle(.titleAndIcon)
+                .help("Walk through the main settings again and download the models they need")
+            }
+        }
         // Links between topics stay in this window.
         .environment(
             \.openURL,
-            OpenURLAction { url in
+            OpenURLAction { [openWindow] url in
+                if HelpTopic.isSetupAssistantLink(url) {
+                    MainActor.assumeIsolated { navigation.showSetup(using: openWindow) }
+                    return .handled
+                }
                 guard let topic = HelpTopic(url: url) else { return .systemAction }
                 // Links are opened on the main thread.
                 MainActor.assumeIsolated { navigation.helpTopic = topic }

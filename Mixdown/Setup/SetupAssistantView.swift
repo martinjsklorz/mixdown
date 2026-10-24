@@ -1,18 +1,22 @@
 import MixdownCore
 import SwiftUI
 
-/// Walks through setting Mixdown up, a page at a time: the notes folder and the speech model that
-/// recording needs, the inputs and their permissions, then calls, notifications and shortcuts.
+/// Walks through setting Mixdown up, a page at a time: the notes folder recording needs, the
+/// inputs and their permissions, how to transcribe and summarize and where audio is kept, then
+/// calls, notifications and shortcuts. The last page downloads the models those choices need, so
+/// trying a few choices doesn't download every model.
 ///
 /// Shown over the main window at first launch, until it's finished or put off with **Set Up
-/// Later**; Help › Setup Assistant… opens it again. Everything it sets is in Settings too, and
-/// Record still asks for whatever is missing.
+/// Later**; Help › Setup Assistant… and the Help window open it again. Everything it sets is in
+/// Settings too, and Record still asks for whatever is missing.
 struct SetupAssistantView: View {
     enum Step: Int, CaseIterable {
         case welcome
         case notesFolder
-        case model
         case inputs
+        case transcription
+        case summary
+        case audio
         case calls
         case shortcuts
         case done
@@ -33,7 +37,7 @@ struct SetupAssistantView: View {
             Divider()
             footer
         }
-        .frame(width: 580, height: 580)
+        .frame(width: 600, height: 620)
     }
 
     @ViewBuilder
@@ -41,8 +45,10 @@ struct SetupAssistantView: View {
         switch step {
         case .welcome: WelcomePage()
         case .notesFolder: NotesFolderPage()
-        case .model: ModelPage()
         case .inputs: InputsPage()
+        case .transcription: TranscriptionPage()
+        case .summary: SummaryPage()
+        case .audio: AudioPage()
         case .calls: CallsPage()
         case .shortcuts: ShortcutsPage()
         case .done: DonePage()
@@ -53,7 +59,8 @@ struct SetupAssistantView: View {
 
     private var footer: some View {
         HStack {
-            if step != .done {
+            // On the last page too while there's something to download, so it can be skipped.
+            if step != .done || environment.needsSetupDownloads {
                 Button("Set Up Later", action: finish)
                     .keyboardShortcut(.cancelAction)
                     .help("Close the assistant. Open it again from Help › Setup Assistant….")
@@ -87,7 +94,7 @@ struct SetupAssistantView: View {
     private var continueTitle: String {
         switch step {
         case .welcome: "Get Started"
-        case .model where startsDownload: "Download and Continue"
+        case .done where environment.needsSetupDownloads: "Download"
         case .done: "Start Using Mixdown"
         default: "Continue"
         }
@@ -98,18 +105,12 @@ struct SetupAssistantView: View {
         step != .notesFolder || environment.notesFolder.directory != nil
     }
 
-    /// Whether continuing from the model page starts downloading it, which then carries on in the
-    /// background.
-    private var startsDownload: Bool {
-        !environment.coordinator.isModelDownloaded && environment.coordinator.isIdle
-    }
-
+    /// On the last page, downloads the models first, staying to show their progress; they carry on
+    /// in the background once the assistant is closed.
     private func next() {
-        if step == .model, startsDownload {
-            let coordinator = environment.coordinator
-            Task { await coordinator.prepareEngine() }
-        }
-        if step == .done {
+        if step == .done, environment.needsSetupDownloads {
+            environment.startSetupDownloads()
+        } else if step == .done {
             finish()
         } else {
             go(to: step.rawValue + 1)
