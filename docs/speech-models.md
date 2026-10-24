@@ -6,8 +6,8 @@ Mixdown turns speech into text with a model that runs on your Mac. Choose one un
 - **Live** models transcribe while you record, so the note is ready when you stop. The audio isn't
   kept in memory, so an hours-long meeting takes no more memory than a short one.
 - **Offline** models transcribe the whole recording once you stop, keeping its audio in memory
-  until then. Qwen3 and MOSS are more accurate than the live model, and MOSS can tell speakers
-  apart.
+  until then. Qwen3, MOSS and Cohere are more accurate than the live model, and MOSS can tell
+  speakers apart.
 
 | Kind | Model | Size | Good for |
 | ---- | ----- | ---- | -------- |
@@ -15,6 +15,7 @@ Mixdown turns speech into text with a model that runs on your Mac. Choose one un
 | Offline · Low | Qwen3-ASR 0.6B | ~0.9 GB | Fast, everyday notes |
 | Offline · High | Qwen3-ASR 1.7B | ~2.3 GB | Better accuracy, on Macs with 24 GB+ memory |
 | Offline · Speakers | MOSS Transcribe Diarize 0.9B | ~1 GB | Meetings: labels who is speaking |
+| Offline · Accuracy | Cohere Transcribe 2B | ~2.3 GB | Accurate in 14 languages, on Macs with 24 GB+ memory |
 | Offline | Apple Speech | Managed by macOS | Light on memory; kept up to date by macOS |
 
 ## Downloading
@@ -43,12 +44,20 @@ once per language, keeps it up to date and shares it with other apps, so it has 
 macOS removes it when no app needs it any more. It doesn't detect the language: **Automatic** uses
 your Mac's language.
 
+## Cohere Transcribe
+
+Cohere Transcribe knows 14 languages: English, German, French, Spanish, Italian, Portuguese,
+Dutch, Polish, Greek, Arabic, Japanese, Chinese, Vietnamese and Korean. Like Apple Speech, it
+doesn't detect the language, so pick the one you speak under **Language**. **Automatic** uses your
+Mac's language, which is also how to get Greek, Arabic, Vietnamese or Korean, or English if
+Cohere doesn't know your Mac's language.
+
 ## Language
 
 Pick the language under **Settings → Transcription**: **Automatic**, or one of English, German,
 French, Spanish, Italian, Portuguese, Dutch, Polish, Japanese and Chinese. With **Automatic**, the
-model detects the language, except Apple Speech, which uses your Mac's language. MOSS always
-detects it, so the picker is off for it.
+model detects the language, except Apple Speech and Cohere Transcribe, which use your Mac's
+language. MOSS always detects it, so the picker is off for it.
 
 ## Vocabulary
 
@@ -76,5 +85,5 @@ in a long recording. When recording a call, MOSS numbers the speakers within eac
 (Speaker 1)" and "Me (Speaker 2)" for two people at your Mac, and "Others (Speaker 1)" and
 "Others (Speaker 2)" for two people on the call.
 
-The other models, Apple Speech included, don't tell speakers apart, so their lines are just
+The other models, Apple Speech and Cohere included, don't tell speakers apart, so their lines are just
 labeled "Me" and "Others".

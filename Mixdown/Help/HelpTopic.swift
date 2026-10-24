@@ -354,7 +354,7 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             audio isn't kept in memory, so an hours-long meeting takes no more memory than a short \
             one.
             - **Offline** models transcribe the whole recording once you stop, keeping its audio in \
-            memory until then. Qwen3 and MOSS are more accurate than the live model.
+            memory until then. Qwen3, MOSS and Cohere are more accurate than the live model.
 
             The models:
 
@@ -365,6 +365,9 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             more.
             - **MOSS Transcribe Diarize 0.9B** (about 1 GB): meetings, because it labels who is \
             speaking.
+            - **Cohere Transcribe 2B** (about 2.3 GB): accurate in 14 languages, on Macs with 24 GB of \
+            memory or more. It doesn't detect the language: **Automatic** uses your Mac's \
+            language, or English if Cohere doesn't know it.
             - **Apple Speech**: Apple's own model, the one Notes and Voice \
             Memos use. macOS downloads it once per language and shares it with other apps. It \
             doesn't detect the language: **Automatic** uses your Mac's language.

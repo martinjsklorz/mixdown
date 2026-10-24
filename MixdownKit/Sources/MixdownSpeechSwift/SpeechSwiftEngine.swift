@@ -36,7 +36,7 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
     private var measuredSpeed: Double?
 
     /// How long the models stay in memory after the last recording or transcription (or
-    /// `prepare`). Loading them again from disk takes seconds; keeping them costs 1–2.5 GB.
+    /// `prepare`). Loading them again from disk takes seconds; keeping them costs 1–3.5 GB.
     private static let idleUnloadDelay: Duration = .seconds(120)
 
     public init(model: SpeechSwiftModel) {
@@ -223,7 +223,7 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
         let hint = requestedLanguage.flatMap { recognizer.languageHint(forISOCode: $0) }
         if let requestedLanguage, hint == nil {
             transcriptionLogger.info(
-                "\(self.model.displayName, privacy: .public) takes no language hint for '\(requestedLanguage, privacy: .public)'; detecting automatically"
+                "\(self.model.displayName, privacy: .public) takes no language hint for '\(requestedLanguage, privacy: .public)'; using its default"
             )
         }
         // Only a language the model was told to use is known; the detected one isn't reported.

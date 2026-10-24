@@ -11,6 +11,9 @@ public enum SpeechSwiftModel: String, CaseIterable, Sendable, Identifiable {
     case qwen3ASRLarge = "qwen3-asr-1.7b"
     /// MOSS-Transcribe-Diarize 0.9B on MLX. Offline; timestamped transcript with speaker labels.
     case mossTranscribeDiarize = "moss-diarize"
+    /// Cohere Transcribe 2B on MLX. Offline; accurate, in 14 languages; no speaker labels. Doesn't
+    /// detect the language.
+    case cohereTranscribe = "cohere-transcribe-2b"
     /// Nemotron-3.5 ASR Streaming 0.6B on MLX. Live: transcribes while recording, so no audio is
     /// kept; no speaker labels beyond the input.
     case nemotronStreaming = "nemotron-streaming-0.6b"
@@ -24,6 +27,7 @@ public enum SpeechSwiftModel: String, CaseIterable, Sendable, Identifiable {
         case .qwen3ASRSmall: "Qwen3-ASR 0.6B"
         case .qwen3ASRLarge: "Qwen3-ASR 1.7B"
         case .mossTranscribeDiarize: "MOSS Transcribe Diarize 0.9B"
+        case .cohereTranscribe: "Cohere Transcribe 2B"
         case .nemotronStreaming: "Nemotron 3.5 ASR Streaming 0.6B"
         }
     }
@@ -34,6 +38,7 @@ public enum SpeechSwiftModel: String, CaseIterable, Sendable, Identifiable {
         case .qwen3ASRSmall: "Low"
         case .qwen3ASRLarge: "High"
         case .mossTranscribeDiarize: "Speakers"
+        case .cohereTranscribe: "Accuracy"
         case .nemotronStreaming: "Live"
         }
     }
@@ -44,7 +49,7 @@ public enum SpeechSwiftModel: String, CaseIterable, Sendable, Identifiable {
     /// Whether `TranscriptionOptions.language` is honored. Otherwise the language is auto-detected.
     public var supportsLanguageSelection: Bool {
         switch self {
-        case .qwen3ASRSmall, .qwen3ASRLarge, .nemotronStreaming: true
+        case .qwen3ASRSmall, .qwen3ASRLarge, .cohereTranscribe, .nemotronStreaming: true
         case .mossTranscribeDiarize: false
         }
     }
@@ -52,7 +57,7 @@ public enum SpeechSwiftModel: String, CaseIterable, Sendable, Identifiable {
     /// Whether transcript segments carry speaker labels.
     public var labelsSpeakers: Bool {
         switch self {
-        case .qwen3ASRSmall, .qwen3ASRLarge, .nemotronStreaming: false
+        case .qwen3ASRSmall, .qwen3ASRLarge, .cohereTranscribe, .nemotronStreaming: false
         case .mossTranscribeDiarize: true
         }
     }
@@ -68,6 +73,9 @@ extension SpeechSwiftModel {
         case .qwen3ASRLarge: "aufklarer/Qwen3-ASR-1.7B-MLX-8bit"
         // INT5 is speech-swift's recommended MOSS MLX variant (docs/benchmarks/moss-mlx.md).
         case .mossTranscribeDiarize: "aufklarer/MOSS-Transcribe-Diarize-0.9B-MLX-5bit"
+        // INT8 rather than speech-swift's INT5 default: FP16's WER (6.18% vs 6.29% on FLEURS
+        // English) for ~650 MB more RAM (docs/benchmarks/cohere-voxtral-asr.md).
+        case .cohereTranscribe: "aufklarer/Cohere-Transcribe-2B-MLX-8bit"
         case .nemotronStreaming: LiveRecognizer.repositoryID
         }
     }
@@ -80,6 +88,8 @@ extension SpeechSwiftModel {
         case .qwen3ASRSmall: 20
         case .qwen3ASRLarge: 10
         case .mossTranscribeDiarize: 6
+        // INT8 measured 65.7× on an M5 Pro, on short utterances (docs/benchmarks/cohere-voxtral-asr.md).
+        case .cohereTranscribe: 20
         // Unused: the live model keeps up with the recording, so there's nothing to estimate.
         case .nemotronStreaming: 20
         }
@@ -91,6 +101,7 @@ extension SpeechSwiftModel {
         switch self {
         case .qwen3ASRSmall, .qwen3ASRLarge: Qwen3Recognizer.self
         case .mossTranscribeDiarize: MossRecognizer.self
+        case .cohereTranscribe: CohereRecognizer.self
         case .nemotronStreaming: nil
         }
     }

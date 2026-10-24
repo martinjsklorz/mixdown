@@ -48,6 +48,7 @@ let package = Package(
             dependencies: [
                 "MixdownCore",
                 .product(name: "AudioCommon", package: "speech-swift"),
+                .product(name: "CohereTranscribeASR", package: "speech-swift"),
                 .product(name: "MLX", package: "mlx-swift"),
                 .product(name: "MossTranscribe", package: "speech-swift"),
                 .product(name: "NemotronStreamingASR", package: "speech-swift"),
