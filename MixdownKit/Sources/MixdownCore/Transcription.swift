@@ -46,9 +46,13 @@ public struct Transcript: Sendable, Equatable {
 public struct TranscriptionOptions: Sendable, Equatable {
     /// ISO 639-1 language code, or `nil` to auto-detect.
     public var language: String?
+    /// Names and jargon from the vocabulary, for models that can be told which words to expect.
+    /// Others ignore them; the vocabulary corrects their transcripts afterwards either way.
+    public var vocabularyTerms: [String]
 
-    public init(language: String? = nil) {
+    public init(language: String? = nil, vocabularyTerms: [String] = []) {
         self.language = language
+        self.vocabularyTerms = vocabularyTerms
     }
 }
 

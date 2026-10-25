@@ -5,9 +5,19 @@ import Sparkle
 /// Keeps Mixdown up to date with Sparkle, from the appcast `make release` attaches to the latest
 /// GitHub release. Only release builds have the key updates are signed with (`SUPublicEDKey`);
 /// builds from source don't, so they get no updater, and the menu item and settings are hidden.
+///
+/// Checks Sparkle schedules by itself are held back while `isBusy`, e.g. recording, so its
+/// update window doesn't pop up in the middle of a meeting. The next scheduled one finds the update.
 @MainActor @Observable
 final class Updater {
     @ObservationIgnored private let controller: SPUStandardUpdaterController?
+    @ObservationIgnored private let delegate = Delegate()
+
+    /// Whether Mixdown is busy with something an update window would get in the way of.
+    var isBusy: @MainActor () -> Bool {
+        get { delegate.isBusy }
+        set { delegate.isBusy = newValue }
+    }
     @ObservationIgnored private var observations: [NSKeyValueObservation] = []
 
     /// False while a check or an update is already under way.
@@ -28,7 +38,7 @@ final class Updater {
         }
         let controller = SPUStandardUpdaterController(
             startingUpdater: true,
-            updaterDelegate: nil,
+            updaterDelegate: delegate,
             userDriverDelegate: nil
         )
         self.controller = controller
@@ -63,5 +73,21 @@ final class Updater {
 
     private func syncAutomaticallyDownloads(_ value: Bool) {
         if automaticallyDownloadsUpdates != value { automaticallyDownloadsUpdates = value }
+    }
+}
+
+extension Updater {
+    /// Holds back scheduled update checks while `isBusy`.
+    /// `@unchecked Sendable`: `isBusy` is only touched on the main actor.
+    private final class Delegate: NSObject, SPUUpdaterDelegate, @unchecked Sendable {
+        @MainActor var isBusy: @MainActor () -> Bool = { false }
+
+        func updater(_ updater: SPUUpdater, mayPerform updateCheck: SPUUpdateCheck) throws {
+            guard updateCheck == .updatesInBackground else { return }
+            // Sparkle calls its delegate on the main thread.
+            let isBusy = MainActor.assumeIsolated { self.isBusy() }
+            guard isBusy else { return }
+            throw CocoaError(.userCancelled)
+        }
     }
 }

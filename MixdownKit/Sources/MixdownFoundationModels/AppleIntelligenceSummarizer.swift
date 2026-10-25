@@ -248,7 +248,7 @@ struct GeneratedSummary {
     var keyPoints: [String]
 
     @Guide(
-        description: "Tasks someone agreed to do, naming who if the text says. Empty if there are none",
+        description: "Tasks someone agreed to do, naming who and by when if the text says. Empty if there are none",
         .maximumCount(8)
     )
     var actionItems: [String]
@@ -274,11 +274,14 @@ struct GeneratedSummary {
 @Generable
 struct GeneratedSectionedSummary {
     // Generated in this order, so the TL;DR and the title can draw on what comes before them.
-    @Guide(description: "Decisions that were made, one short sentence each. Empty if there are none", .maximumCount(8))
+    @Guide(
+        description: "Decisions that were made, not just suggested, one short sentence each. Empty if there are none",
+        .maximumCount(8)
+    )
     var decisions: [String]
 
     @Guide(
-        description: "Tasks someone agreed to do, naming who if the text says. Empty if there are none",
+        description: "Tasks someone agreed to do, naming who and by when if the text says. Empty if there are none",
         .maximumCount(8)
     )
     var actionItems: [String]

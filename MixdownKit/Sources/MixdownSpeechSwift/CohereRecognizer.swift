@@ -49,7 +49,8 @@ final class CohereRecognizer: SpeechRecognizer, @unchecked Sendable {
         Self.languages.contains(code) ? code : nil
     }
 
-    func recognize(_ samples: [Float], languageHint: String?) throws -> [RecognizedSegment] {
+    /// Cohere Transcribe takes no vocabulary.
+    func recognize(_ samples: [Float], languageHint: String?, vocabulary: [String]) throws -> [RecognizedSegment] {
         // Not cancellable once started; the engine checks between pieces.
         try Task.checkCancellation()
         let text = model.transcribe(

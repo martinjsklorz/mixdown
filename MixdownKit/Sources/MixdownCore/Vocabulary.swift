@@ -28,6 +28,12 @@ public struct Vocabulary: Sendable, Equatable, Codable {
         self.entries = entries
     }
 
+    /// The entries' terms, each once, in order, for models that can be told which words to expect.
+    public var terms: [String] {
+        var seen = Set<String>()
+        return entries.map(\.trimmedTerm).filter { !$0.isEmpty && seen.insert(Replacer.key($0)).inserted }
+    }
+
     /// Whether there's nothing to replace: no entry has both a term and something it sounds like.
     public var isEmpty: Bool { Replacer(self).isEmpty }
 
@@ -56,6 +62,31 @@ public struct Vocabulary: Sendable, Equatable, Codable {
     public func apply(to text: String) -> String {
         Replacer(self).replace(in: text)
     }
+
+    /// Whether `soundsLike` is a single word so short or common that replacing it everywhere is
+    /// likely to change words that were right, like "the" or "and", so it's worth a warning.
+    public static func isCommonWord(_ soundsLike: String) -> Bool {
+        let words = soundsLike.split(whereSeparator: \.isWhitespace)
+        guard words.count == 1, let word = words.first else { return false }
+        let key = Replacer.key(String(word))
+        return key.count(where: \.isLetter) <= 2 || commonWords.contains(key)
+    }
+
+    /// Short words common in English and German, the most frequent ones in speech.
+    private static let commonWords: Set<String> = [
+        "the", "and", "for", "are", "but", "not", "you", "all", "any", "can", "had", "her", "was", "one",
+        "our", "out", "has", "him", "his", "how", "its", "may", "new", "now", "see", "two", "way", "who",
+        "did", "get", "let", "say", "she", "too", "use", "yes", "yeah", "okay", "this", "that", "with",
+        "have", "from", "they", "will", "what", "when", "your", "said", "each", "which", "their", "there",
+        "then", "them", "these", "some", "would", "make", "like", "time", "just", "know", "take", "into",
+        "year", "good", "could", "than", "other", "only", "also", "back", "after", "work", "well", "even",
+        "want", "because", "right", "think", "really", "very", "here", "where", "about", "were", "been",
+        "der", "die", "das", "und", "ist", "den", "dem", "des", "ein", "eine", "einen", "nicht", "sich",
+        "mit", "auf", "für", "von", "auch", "als", "wie", "aber", "noch", "nur", "dann", "wenn", "oder",
+        "schon", "jetzt", "hier", "dass", "sind", "wir", "ihr", "sie", "mal", "doch", "habe", "haben",
+        "hat", "war", "kann", "muss", "bei", "nach", "aus", "vor", "zum", "zur", "ich", "man", "uns",
+        "mir", "dir", "mich", "dich", "gut", "genau", "eben", "halt", "nein",
+    ]
 
     /// `transcript` with `apply(to:)` applied to the text of each segment.
     public func apply(to transcript: Transcript) -> Transcript {
@@ -90,15 +121,24 @@ public struct Vocabulary: Sendable, Equatable, Codable {
             }
             self.terms = terms
 
+            // Terms are matched too, and left as they are, so a term that contains what an entry
+            // sounds like isn't expanded again: "New York" for "york" stays "New York", and
+            // applying the vocabulary twice changes nothing more than applying it once.
+            var keys = Set(terms.keys)
+            for entry in vocabulary.entries {
+                let key = Self.key(escape(entry.trimmedTerm))
+                if !key.isEmpty { keys.insert(key) }
+            }
+
             // Longest first, as alternatives are tried in order.
-            let alternatives = terms.keys.sorted { ($0.count, $0) > ($1.count, $1) }.map { key in
+            let alternatives = keys.sorted { ($0.count, $0) > ($1.count, $1) }.map { key in
                 key.split(separator: " ").map { NSRegularExpression.escapedPattern(for: String($0)) }
                     .joined(separator: #"\h+"#)
             }
             // Not inside a word: no letter, digit or underscore right before or after.
             let pattern = #"(?<![\p{L}\p{N}_])(?:"# + alternatives.joined(separator: "|") + #")(?![\p{L}\p{N}_])"#
             self.regex =
-                alternatives.isEmpty ? nil : try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+                terms.isEmpty ? nil : try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
         }
 
         public var isEmpty: Bool { regex == nil }
@@ -110,8 +150,8 @@ public struct Vocabulary: Sendable, Equatable, Codable {
             var location = 0
             for match in regex.matches(in: text, range: NSRange(location: 0, length: string.length)) {
                 let found = string.substring(with: match.range)
-                // Matching ignores case the regex's way, which can differ from folding's, so a
-                // match without a term is left as it is.
+                // A term is left as it is. So is a match without a term because matching ignores
+                // case the regex's way, which can differ from folding's.
                 guard let term = terms[Self.key(found)] else { continue }
                 result += string.substring(with: NSRange(location: location, length: match.range.location - location))
                 result += term

@@ -47,14 +47,46 @@ final class Qwen3Recognizer: SpeechRecognizer, @unchecked Sendable {
         Self.languageNames[code]
     }
 
-    func recognize(_ samples: [Float], languageHint: String?) throws -> [RecognizedSegment] {
+    /// The vocabulary goes into the prompt as context, which makes the model write those words as
+    /// they're spelled there. A piece that then comes out empty, or as nothing but words from the
+    /// context, is transcribed again without it, in case the model made it up from the context.
+    func recognize(_ samples: [Float], languageHint: String?, vocabulary: [String]) throws -> [RecognizedSegment] {
         // Checks task cancellation before the encoder, before prefill and before every decoded token.
-        let text = try model.transcribeCheckingCancellation(
-            audio: samples,
-            sampleRate: speechSampleRate,
-            options: Qwen3DecodingOptions(language: languageHint)
-        )
-        return [RecognizedSegment(text: text)]
+        func transcribe(context: String?) throws -> String {
+            try model.transcribeCheckingCancellation(
+                audio: samples,
+                sampleRate: speechSampleRate,
+                options: Qwen3DecodingOptions(language: languageHint, context: context)
+            )
+        }
+        guard let context = Self.context(for: vocabulary) else {
+            return [RecognizedSegment(text: try transcribe(context: nil))]
+        }
+        let text = try transcribe(context: context)
+        guard Self.mayBeMadeUp(text, from: vocabulary) else { return [RecognizedSegment(text: text)] }
+        return [RecognizedSegment(text: try transcribe(context: nil))]
+    }
+
+    /// Most vocabulary terms put into the prompt, so it stays short.
+    static let maximumContextTerms = 100
+
+    /// The prompt's context for `vocabulary`: its terms separated by commas, the first
+    /// `maximumContextTerms` of them. `nil` if there are none.
+    static func context(for vocabulary: [String]) -> String? {
+        let terms = vocabulary.prefix(maximumContextTerms)
+        return terms.isEmpty ? nil : terms.joined(separator: ", ")
+    }
+
+    /// Whether `text`, recognized with `vocabulary` as context, is empty or only words that are in
+    /// the vocabulary, as when the model writes out the context instead of what it heard.
+    static func mayBeMadeUp(_ text: String, from vocabulary: [String]) -> Bool {
+        func words(_ text: String) -> [String] {
+            text.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init)
+        }
+        let spoken = words(text)
+        guard !spoken.isEmpty else { return true }
+        let known = Set(vocabulary.flatMap(words))
+        return spoken.count > 1 && spoken.allSatisfy(known.contains)
     }
 
     func unload() {

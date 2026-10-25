@@ -7,6 +7,11 @@ struct CallDetectorTests {
     private let zoom = AudioInputClient(processID: 100, bundleID: "us.zoom.xos")
     private let chromeHelper = AudioInputClient(processID: 200, bundleID: "com.google.Chrome.helper")
     private static let ownProcessID: Int32 = 1
+
+    /// A process that plays audio without recording.
+    private func playing(_ processID: Int32, bundleID: String = "us.zoom.xos") -> AudioInputClient {
+        AudioInputClient(processID: processID, bundleID: bundleID, isRunningInput: false, isRunningOutput: true)
+    }
     private static let zoomApp = CallApp.known[0]
 
     /// Runs a detector on a mock monitor and collects its events.
@@ -135,6 +140,57 @@ struct CallDetectorTests {
         await harness.stop()
     }
 
+    @Test func mutedCallGoesOnWhileItsAppPlaysTheCall() async throws {
+        let harness = Harness()
+        harness.send([zoom])
+        try await waitUntil { harness.events.count == 1 }
+
+        // Muted: the microphone is let go of, the others still play.
+        let muted = playing(100)
+        harness.send([muted])
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(harness.events == [.started(Self.zoomApp)])
+
+        harness.send([])
+        try await waitUntil { harness.events.count == 2 }
+        #expect(harness.events.last == .ended(Self.zoomApp))
+        await harness.stop()
+    }
+
+    @Test func playingAudioAloneStartsNoCall() async throws {
+        let harness = Harness()
+        harness.send([playing(100)])
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(harness.events.isEmpty)
+        await harness.stop()
+    }
+
+    @Test func onlyProcessesThatRecordedKeepACallGoing() async throws {
+        let harness = Harness()
+        harness.send([zoom])
+        try await waitUntil { harness.events.count == 1 }
+
+        // Another of the app's processes playing, e.g. a notification sound, isn't the call.
+        harness.send([playing(102)])
+        try await waitUntil { harness.events.count == 2 }
+        #expect(harness.events.last == .ended(Self.zoomApp))
+        await harness.stop()
+    }
+
+    @Test func browserCallEndsWhenTheMicrophoneIsLetGoOf() async throws {
+        let harness = Harness()
+        harness.send([chromeHelper])
+        try await waitUntil { harness.events.count == 1 }
+
+        // Playing a video after leaving the meeting.
+        harness.send([
+            playing(200, bundleID: "com.google.Chrome.helper")
+        ])
+        try await waitUntil { harness.events.count == 2 }
+        #expect(harness.events.last?.isEnded == true)
+        await harness.stop()
+    }
+
     @Test func ignoresAppsThatDontCount() async throws {
         let harness = Harness(apps: CallApp.known.filter { $0.name != "Zoom" })
         harness.send([zoom])
@@ -232,4 +288,10 @@ final class MockInputActivityMonitor: AudioInputActivityMonitoring {
     func inputClients() -> AsyncStream<[AudioInputClient]> { stream }
 
     func send(_ clients: [AudioInputClient]) { continuation.yield(clients) }
+}
+
+extension CallDetector.Event {
+    fileprivate var isEnded: Bool {
+        if case .ended = self { true } else { false }
+    }
 }

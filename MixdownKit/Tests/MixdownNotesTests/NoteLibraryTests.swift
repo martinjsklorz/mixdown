@@ -206,9 +206,49 @@ struct NoteLibraryTests {
             inFolder,
         ]
 
-        #expect(try NoteLibrary.search(notes, for: "cafe") == [notes[0].id, notes[1].id])
-        #expect(try NoteLibrary.search(notes, for: "zurich") == [inFolder.id])
+        #expect(try NoteLibrary.search(notes, for: "cafe") == [notes[0].id: "", notes[1].id: "We meet at the CAFE."])
+        #expect(try NoteLibrary.search(notes, for: "zurich") == [inFolder.id: ""])
         #expect(try NoteLibrary.search(notes, for: "nowhere").isEmpty)
+    }
+
+    @Test func searchNeedsEveryWordAnywhereInTheNote() throws {
+        let notes = [
+            NoteDocument(
+                url: URL(filePath: "/n/a.md"),
+                contents: "# Budget Review\n\nWe agreed on the numbers.\n\nThe launch moves to May.",
+                fileDate: .now
+            ),
+            NoteDocument(url: URL(filePath: "/n/b.md"), contents: "# Launch\n\nNothing about money.", fileDate: .now),
+        ]
+
+        // One word in the title, the other in the text.
+        #expect(try NoteLibrary.search(notes, for: "budget  launch") == [notes[0].id: "The launch moves to May."])
+        #expect(try NoteLibrary.search(notes, for: "launch").keys.sorted { $0.path < $1.path } == notes.map(\.id))
+        // In quotes, words have to be together.
+        #expect(try NoteLibrary.search(notes, for: "\"launch moves\"") == [notes[0].id: "The launch moves to May."])
+        #expect(try NoteLibrary.search(notes, for: "\"moves launch\"").isEmpty)
+    }
+
+    @Test func excerptIsTheLineWithTheMostWordsCutBeforeTheFirst() throws {
+        let long = String(repeating: "Lots of words before it ", count: 4) + "and then the release date."
+        let note = NoteDocument(
+            url: URL(filePath: "/n/a.md"),
+            contents: "# Notes\n\nThe release is close.\n\n\(long)",
+            fileDate: .now
+        )
+
+        let excerpt = try #require(try NoteLibrary.search([note], for: "release date")[note.id])
+
+        #expect(excerpt.hasPrefix("…"))
+        #expect(excerpt.hasSuffix("and then the release date."))
+        #expect(excerpt.count < long.count)
+    }
+
+    @Test func searchTermsAreWordsAndQuotedPhrases() {
+        #expect(NoteLibrary.searchTerms(in: "  budget   q3 ") == ["budget", "q3"])
+        #expect(NoteLibrary.searchTerms(in: "\"release  date\" budget \"open") == ["release date", "budget", "open"])
+        #expect(NoteLibrary.searchTerms(in: "Budget budget BÜDGET") == ["Budget"])
+        #expect(NoteLibrary.searchTerms(in: " \"\" ").isEmpty)
     }
 
     @Test func searchStopsWhenCancelled() async {

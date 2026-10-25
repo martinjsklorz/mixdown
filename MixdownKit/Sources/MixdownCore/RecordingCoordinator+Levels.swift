@@ -18,6 +18,7 @@ extension RecordingCoordinator {
         if speech > 0 {
             talkTime?.add(speech, from: kind)
             restartsQuietTime = true
+            lastSpeech = .now
             // Only when it changes: levels come about ten times a second.
             if isAskingIfStillRecording { isAskingIfStillRecording = false }
         }
@@ -114,5 +115,6 @@ extension RecordingCoordinator {
         inputLevels = [:]
         silentDevices = []
         talkTime = nil
+        lastSpeech = nil
     }
 }

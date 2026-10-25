@@ -40,6 +40,11 @@ WhatsApp, Telegram, Signal, Element, Viber, GoTo Meeting and Jitsi Meet, and the
 Chrome, Edge, Firefox, Arc, Brave, Vivaldi and Opera. A browser counts as soon as any site uses the
 microphone.
 
+A call ends a few seconds after the app lets go of the microphone. Some apps do that while you're
+muted, so a call app that still plays the call, from the process that used the microphone, keeps
+the call going. Browsers don't: one that plays a video after you leave a meeting would keep it
+going for good.
+
 ### Choosing the apps
 
 To change which apps count as calls, click **Choose…** next to **Apps that count as calls** under
@@ -62,10 +67,15 @@ recording. When the call ends while Mixdown is recording (and no other call is g
 notification asks **Stop Recording?** Click it, or its **Stop Recording** button, to stop and
 transcribe.
 
+Close a **Record This Call?** notification, and Mixdown won't ask about calls in that app for the
+next 30 minutes.
+
 ### Record calls automatically
 
 Off by default. Recording starts by itself when a call starts, with System Audio turned on, and
-stops when the call ends. With notifications on, **Recording Call** and **Call Recording Stopped**
+stops when the call ends, once no one has spoken for 20 seconds, or two minutes after the call
+ended at the latest. That way goodbyes aren't cut off, and a call that only seemed to end, such as
+when the app switches microphones, goes on in the same recording. With notifications on, **Recording Call** and **Call Recording Stopped**
 say so instead of asking, and if Mixdown can't record yet, it asks **Record This Call?** after
 all. With notifications off, the menu bar icon is the only sign.
 

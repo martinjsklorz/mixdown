@@ -322,6 +322,16 @@ public final class RecordingCoordinator {
     @ObservationIgnored var stillRecordingCheck: Task<Void, Never>?
     /// Set when someone speaks or the user answers, so `stillRecordingCheck` starts counting again.
     @ObservationIgnored var restartsQuietTime = false
+    /// When anyone was last heard speaking, on any input, in the recording going on.
+    @ObservationIgnored var lastSpeech: ContinuousClock.Instant?
+
+    /// How long it's been since anyone was heard speaking in the recording going on, on any input;
+    /// `nil` if no one has been yet, or there's no recording. Not observable: it changes all the
+    /// time.
+    public var timeSinceSpeech: Duration? {
+        guard isRecording, let lastSpeech else { return nil }
+        return .now - lastSpeech
+    }
     /// Fed while preparing the model; the pipeline estimates transcription itself.
     var progressEstimator = RemainingTimeEstimator()
 

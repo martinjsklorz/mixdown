@@ -13,9 +13,9 @@ struct MainView: View {
     @Environment(MainNavigation.self) private var navigation
     @Environment(\.openSettings) private var openSettings
     @State private var searchText = ""
-    /// The notes the latest finished search matched, which the sidebar shows while the next one
-    /// runs. `nil` while not searching.
-    @State private var searchMatches: Set<NoteDocument.ID>?
+    /// The notes the latest finished search matched, with the line of each that matches, which
+    /// the sidebar shows while the next one runs. `nil` while not searching.
+    @State private var searchMatches: [NoteDocument.ID: String]?
     /// Calls to `reload(selecting:line:)` still running, which pick the selection themselves.
     @State private var pendingReloads = 0
     @State private var columnVisibility = NavigationSplitViewVisibility.automatic
@@ -225,6 +225,7 @@ struct MainView: View {
             ),
             showsSelection: navigation.destination == .notes,
             collapsesPinned: $collapsesPinnedNotes,
+            excerpts: searchQuery.isEmpty ? [:] : searchMatches ?? [:],
             actions: noteActions
         ) {
             notesPlaceholder(isEmptyAfterSearch: notes.isEmpty)
@@ -417,7 +418,7 @@ struct MainView: View {
     /// the first one has.
     private var filteredNotes: [NoteDocument] {
         guard !searchQuery.isEmpty, let searchMatches else { return library.notes }
-        return library.notes.filter { searchMatches.contains($0.id) }
+        return library.notes.filter { searchMatches[$0.id] != nil }
     }
 
     private var searchQuery: String { searchText.trimmingCharacters(in: .whitespaces) }

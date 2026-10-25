@@ -18,6 +18,9 @@ struct NoteListView<Footer: View>: View {
     var showsSelection = true
     /// Whether the pinned notes are folded away under their section header.
     @Binding var collapsesPinned: Bool
+    /// While searching, the line of each note that matches the search, shown instead of the start
+    /// of its text. Empty for a note whose title or folder matches.
+    var excerpts: [NoteDocument.ID: String] = [:]
     let actions: NoteActions
     /// Shown instead of the notes when there are none, e.g. an empty or error state.
     @ViewBuilder var footer: Footer
@@ -230,8 +233,13 @@ struct NoteListView<Footer: View>: View {
             selection = note.id
             isFocused = true
         } label: {
-            NoteRow(note: note, dateFormat: dateFormat, isSelected: showsSelection && note.id == selection)
-                .contentShape(Rectangle())
+            NoteRow(
+                note: note,
+                dateFormat: dateFormat,
+                excerpt: excerpts[note.id],
+                isSelected: showsSelection && note.id == selection
+            )
+            .contentShape(Rectangle())
         }
         .buttonStyle(.unpressed)
         .accessibilityAddTraits(showsSelection && note.id == selection ? .isSelected : [])

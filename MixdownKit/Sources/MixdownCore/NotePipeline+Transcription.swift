@@ -20,7 +20,9 @@ extension NotePipeline {
         if engine.transcribesLive {
             return (try await transcribeLive(input.tracks, options: input.options), nil)
         }
-        return try await transcribeSeparately(input.tracks, options: input.options)
+        var options = input.options
+        options.vocabularyTerms = vocabulary.terms
+        return try await transcribeSeparately(input.tracks, options: options)
     }
 
     /// Each track's transcript from what the live sessions recognized, with the words' times.

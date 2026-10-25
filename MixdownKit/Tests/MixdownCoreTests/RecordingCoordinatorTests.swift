@@ -383,6 +383,23 @@ struct RecordingCoordinatorTests {
         #expect(summarizer.receivedTranscripts == [note.transcript])
     }
 
+    @Test func tellsTheEngineTheVocabularyTerms() async throws {
+        let engine = MockEngine(transcript: Transcript(segments: [TranscriptSegment(start: 0, end: 1, text: "Hi.")]))
+        let writer = InMemoryNoteWriter()
+        let coordinator = makeCoordinator(
+            capture: MockCapture(chunks: [Fixtures.chunk(seconds: 1)]),
+            engine: engine,
+            writer: writer,
+            summarizer: nil
+        )
+        coordinator.vocabulary = Vocabulary(entries: [.init(term: "Kubernetes", soundsLike: ["cooper netties"])])
+        await coordinator.monitorDevices()
+        await coordinator.startRecording()
+        await coordinator.stopRecording()
+
+        #expect(await engine.receivedOptions.map(\.vocabularyTerms) == [["Kubernetes"]])
+    }
+
     @Test func summaryTemplateDependsOnHowRecordingStarted() async throws {
         let setTemplates = { (coordinator: RecordingCoordinator) in
             coordinator.summaryTemplate = .standup
@@ -1107,6 +1124,24 @@ struct RecordingCoordinatorTests {
         try await waitUntil { !coordinator.isAskingIfStillRecording }
 
         await coordinator.stopRecording()
+    }
+
+    @Test func tellsHowLongSinceSpeech() async throws {
+        let capture = MockCapture(chunks: [Fixtures.chunk(seconds: 1, amplitude: 0)])
+        let coordinator = makeCoordinator(capture: capture)
+        await coordinator.monitorDevices()
+        #expect(coordinator.timeSinceSpeech == nil)
+
+        await coordinator.startRecording()
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(coordinator.timeSinceSpeech == nil)
+
+        capture.yield(Fixtures.chunk(seconds: 0.2))
+        try await waitUntil { coordinator.timeSinceSpeech != nil }
+        #expect(coordinator.timeSinceSpeech! < .seconds(5))
+
+        await coordinator.stopRecording()
+        #expect(coordinator.timeSinceSpeech == nil)
     }
 
     @Test func keepRecordingAsksAgainOnlyAfterAnotherDelay() async throws {

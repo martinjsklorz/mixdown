@@ -30,6 +30,44 @@ struct VocabularyTests {
         #expect(vocabulary.apply(to: "york ah from york") == "New Yorker from New York")
     }
 
+    @Test func termsContainingWhatAnEntrySoundsLikeAreLeftAlone() {
+        let vocabulary = Vocabulary(entries: [
+            .init(term: "New York", soundsLike: ["york"]),
+            .init(term: "Hugging Face", soundsLike: ["hugging"]),
+        ])
+        let text = "From New York, new york and york to Hugging Face and hugging."
+        let once = vocabulary.apply(to: text)
+        #expect(once == "From New York, new york and New York to Hugging Face and Hugging Face.")
+        #expect(vocabulary.apply(to: once) == once)
+    }
+
+    @Test func whatAnEntrySoundsLikeWinsOverAnotherEntrysTerm() {
+        let vocabulary = Vocabulary(entries: [
+            .init(term: "Mixdown", soundsLike: ["mix down"]),
+            .init(term: "MixDown Pro", soundsLike: ["mixdown"]),
+        ])
+        #expect(vocabulary.apply(to: "mixdown and mix down") == "MixDown Pro and Mixdown")
+    }
+
+    @Test func termsAreListedOnceEach() {
+        let vocabulary = Vocabulary(entries: [
+            .init(term: " Kubernetes ", soundsLike: ["cooper netties"]),
+            .init(term: "", soundsLike: ["word"]),
+            .init(term: "kubernetes", soundsLike: ["kuber nettis"]),
+            .init(term: "Acme", soundsLike: []),
+        ])
+        #expect(vocabulary.terms == ["Kubernetes", "Acme"])
+    }
+
+    @Test func flagsShortAndCommonSingleWords() {
+        #expect(Vocabulary.isCommonWord("the"))
+        #expect(Vocabulary.isCommonWord(" Und "))
+        #expect(Vocabulary.isCommonWord("ok"))
+        #expect(!Vocabulary.isCommonWord("netties"))
+        #expect(!Vocabulary.isCommonWord("and so"))
+        #expect(!Vocabulary.isCommonWord(""))
+    }
+
     @Test func blankEntriesReplaceNothing() {
         let vocabulary = Vocabulary(entries: [
             .init(term: " ", soundsLike: ["word"]),

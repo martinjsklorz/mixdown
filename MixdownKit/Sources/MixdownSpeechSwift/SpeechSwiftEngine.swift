@@ -261,7 +261,11 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
                 let recognized: [RecognizedSegment]
                 do {
                     defer { ticker?.cancel() }
-                    recognized = try recognizer.recognize(audio, languageHint: hint)
+                    recognized = try recognizer.recognize(
+                        audio,
+                        languageHint: hint,
+                        vocabulary: options.vocabularyTerms
+                    )
                 } catch let error as CancellationError {
                     throw error
                 } catch {

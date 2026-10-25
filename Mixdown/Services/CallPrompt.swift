@@ -14,7 +14,9 @@ import os
 ///   stops or a call starts again. Both have a button too, but macOS only shows that while the
 ///   pointer is over the banner.
 /// - Recording automatically: Starts and stops recording by itself, and, if notifying, posts a
-///   notification saying so. If it can't record, e.g. as the model isn't downloaded, it asks
+///   notification saying so. It stops once no one has spoken for `quietBeforeStop`, or after
+///   `longestWaitToStop` at the latest, so a call that only seemed to end, or goodbyes said after
+///   it, aren't cut off. If it can't record, e.g. as the model isn't downloaded, it asks
 ///   instead (if notifying), and clicking that opens Record, which says why. It only stops
 ///   recordings started for a call: one started by hand goes on, and it asks instead (if
 ///   notifying), as a call app may just have used the microphone briefly.
@@ -23,6 +25,8 @@ import os
 /// its note says which app and is titled as a call. Recordings started any other way aren't, even
 /// during a call. Only automatic ones are marked as started automatically: clicking a notification
 /// is the user's choice.
+///
+/// Closing a record prompt stops prompts about that app for `snoozeAfterDismissal`.
 ///
 /// Call `recordingDidStart()` and `recordingDidStop()` as recordings come and go.
 /// `NotificationResponder` hands it the buttons, on notifications from an earlier run, too.
@@ -48,6 +52,7 @@ final class CallPrompt {
     }
 
     private let isRecording: () -> Bool
+    private let timeSinceSpeech: () -> Duration?
     private let startRecording: () -> Bool
     private let stopRecording: () -> Void
     private let markRecordingAsCall: (_ app: String?, _ automatically: Bool) -> Void
@@ -70,6 +75,18 @@ final class CallPrompt {
     private var isRecordingCall = false
     /// The notification saying an automatic recording is going on.
     private var recordingNoticeID: String?
+    /// Stops an automatic recording once its call has ended and it's quiet.
+    private var pendingStop: Task<Void, Never>?
+    /// Until when apps whose record prompt was closed aren't asked about again, by app name.
+    private var snoozedUntil: [String: ContinuousClock.Instant] = [:]
+
+    /// How long no one may have spoken before an automatic recording whose call ended stops.
+    private static let quietBeforeStop: Duration = .seconds(20)
+    /// How long after its call ended an automatic recording stops even if people still talk, or
+    /// system audio plays something like speech.
+    private static let longestWaitToStop: Duration = .seconds(120)
+    /// How long closing a record prompt stops prompts about that app.
+    private static let snoozeAfterDismissal: Duration = .seconds(30 * 60)
 
     nonisolated static let startedCategoryIdentifier = "callStarted"
     nonisolated static let endedCategoryIdentifier = "callEnded"
@@ -83,7 +100,9 @@ final class CallPrompt {
     static let startedCategory = UNNotificationCategory(
         identifier: startedCategoryIdentifier,
         actions: [UNNotificationAction(identifier: recordAction, title: "Record")],
-        intentIdentifiers: []
+        intentIdentifiers: [],
+        // So closing it is reported, to snooze the app.
+        options: [.customDismissAction]
     )
 
     /// The Stop Recording button, registered by `NotificationResponder`.
@@ -95,6 +114,7 @@ final class CallPrompt {
 
     /// - Parameters:
     ///   - isRecording: Whether Mixdown is recording, or starting to.
+    ///   - timeSinceSpeech: How long it's been since anyone spoke in the recording, if anyone has.
     ///   - startRecording: Starts recording, returning `false` if it can't.
     ///   - stopRecording: Stops recording.
     ///   - markRecordingAsCall: Marks the recording in progress as a call in the app with the given
@@ -102,12 +122,14 @@ final class CallPrompt {
     ///   - showRecorder: Opens Record in the main window.
     init(
         isRecording: @escaping () -> Bool,
+        timeSinceSpeech: @escaping () -> Duration?,
         startRecording: @escaping () -> Bool,
         stopRecording: @escaping () -> Void,
         markRecordingAsCall: @escaping (_ app: String?, _ automatically: Bool) -> Void,
         showRecorder: @escaping () -> Void
     ) {
         self.isRecording = isRecording
+        self.timeSinceSpeech = timeSinceSpeech
         self.startRecording = startRecording
         self.stopRecording = stopRecording
         self.markRecordingAsCall = markRecordingAsCall
@@ -154,6 +176,7 @@ final class CallPrompt {
         detection = nil
         detector = nil
         startingFor = nil
+        cancelPendingStop()
         withdrawNotifications()
     }
 
@@ -177,6 +200,7 @@ final class CallPrompt {
 
     /// Takes away the stop prompt and the recording notice, as there's nothing left to stop.
     func recordingDidStop() {
+        cancelPendingStop()
         withdrawStopPrompt()
         startingFor = nil
         isStartingCall = false
@@ -218,6 +242,7 @@ final class CallPrompt {
     private func callStarted(_ app: CallApp) {
         // The recording goes on, e.g. the call dropped and was joined again.
         withdrawStopPrompt()
+        cancelPendingStop()
         guard !isRecording() else {
             Self.logger.info("\(app.name, privacy: .public) started a call; already recording")
             return
@@ -237,6 +262,10 @@ final class CallPrompt {
         }
         guard notifies else {
             Self.logger.info("\(app.name, privacy: .public) started a call; not notifying")
+            return
+        }
+        if let until = snoozedUntil[app.name], until > .now {
+            Self.logger.info("\(app.name, privacy: .public) started a call; its prompt was closed recently")
             return
         }
         Self.logger.info("\(app.name, privacy: .public) started a call; asking to record")
@@ -260,15 +289,17 @@ final class CallPrompt {
         }
         // A recording started by hand isn't the call's to stop, e.g. a call app used the
         // microphone briefly during an in-person recording.
-        if recordsAutomatically, isRecordingCall || isStartingCall {
+        if recordsAutomatically, isRecordingCall {
+            Self.logger.info("\(app.name, privacy: .public) ended its call; stopping the recording once it's quiet")
+            stopWhenQuiet(after: app)
+            return
+        }
+        if recordsAutomatically, isStartingCall {
             Self.logger.info("\(app.name, privacy: .public) ended its call; stopping the recording")
-            stopRecording()
             // A recording still starting, e.g. waiting on a permission prompt, is discarded as soon
             // as it has started, so it's neither announced nor said to have stopped.
+            stopRecording()
             startingFor = nil
-            if notifies, isRecordingCall {
-                post(title: "Call Recording Stopped", body: "The \(app.name) call has ended.")
-            }
             return
         }
         guard notifies else {
@@ -285,6 +316,39 @@ final class CallPrompt {
             category: Self.endedCategoryIdentifier,
             id: id
         )
+    }
+
+    /// Stops the automatic recording of `app`'s call, which has ended, once no one has spoken for
+    /// `quietBeforeStop`, or `longestWaitToStop` has passed. A call starting again cancels it.
+    private func stopWhenQuiet(after app: CallApp) {
+        cancelPendingStop()
+        let deadline = ContinuousClock.now + Self.longestWaitToStop
+        pendingStop = Task { [weak self] in
+            while let quiet = self?.timeSinceSpeech(), quiet < Self.quietBeforeStop, ContinuousClock.now < deadline {
+                try? await Task.sleep(for: min(Self.quietBeforeStop - quiet, deadline - ContinuousClock.now))
+                guard !Task.isCancelled else { return }
+            }
+            guard !Task.isCancelled, let self else { return }
+            self.pendingStop = nil
+            guard self.isRecordingCall, self.detector?.activeCalls.isEmpty ?? true else { return }
+            Self.logger.info("Stopping the recording of the ended \(app.name, privacy: .public) call")
+            self.stopRecording()
+            if self.notifies {
+                self.post(title: "Call Recording Stopped", body: "The \(app.name) call has ended.")
+            }
+        }
+    }
+
+    private func cancelPendingStop() {
+        pendingStop?.cancel()
+        pendingStop = nil
+    }
+
+    /// Doesn't prompt about `app` for `snoozeAfterDismissal`, as its record prompt was closed.
+    private func snooze(app: String) {
+        Self.logger.info("Record prompt for \(app, privacy: .public) closed; not asking about it for a while")
+        snoozedUntil[app] = .now + Self.snoozeAfterDismissal
+        recordPromptIDs[app] = nil
     }
 
     private func post(
@@ -310,6 +374,14 @@ extension CallPrompt {
     /// Handles a click on a notification of `startedCategory` or `endedCategory`, or its button.
     nonisolated func respond(to response: UNNotificationResponse) async {
         let category = response.notification.request.content.categoryIdentifier
+        if response.actionIdentifier == UNNotificationDismissActionIdentifier {
+            if category == Self.startedCategoryIdentifier,
+                let app = response.notification.request.content.userInfo[Self.appKey] as? String
+            {
+                await snooze(app: app)
+            }
+            return
+        }
         let clicks = [Self.recordAction, Self.stopAction, UNNotificationDefaultActionIdentifier]
         guard clicks.contains(response.actionIdentifier) else { return }
         if category == Self.startedCategoryIdentifier {
