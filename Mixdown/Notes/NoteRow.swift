@@ -2,12 +2,19 @@ import MixdownCore
 import MixdownNotes
 import SwiftUI
 
-/// A note in the sidebar list: its title, when it was recorded and the start of its text, and
-/// the folder it's in, highlighted while it's selected.
+/// A note in the sidebar list: its title, when it was recorded and the start of its text, or the
+/// line that matches a search, and the folder it's in, highlighted while it's selected.
 struct NoteRow: View {
     let note: NoteDocument
     let dateFormat: Date.FormatStyle
+    /// The line of the note that matches the search, if any.
+    var excerpt: String?
     let isSelected: Bool
+
+    private var text: String {
+        if let excerpt, !excerpt.isEmpty { return excerpt }
+        return note.snippet.isEmpty ? "No additional text" : note.snippet
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -22,7 +29,7 @@ struct NoteRow: View {
             }
             HStack(spacing: 6) {
                 Text(note.createdAt, format: dateFormat)
-                Text(note.snippet.isEmpty ? "No additional text" : note.snippet)
+                Text(text)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }

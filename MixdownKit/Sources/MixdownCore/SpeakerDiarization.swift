@@ -46,10 +46,17 @@ public enum SpeakerAssignment {
     /// changes a little off, so even timed words often land a word into the next speaker's turn.
     static let estimatedSnapWords = 3
     static let timedSnapWords = 2
+    /// How many words, or seconds, a speaker has to say to be labeled as one. Diarizers sometimes
+    /// take a cough, a laugh or a single word in a different tone for another speaker; what such a
+    /// speaker says goes to the speaker before it.
+    static let minimumSpeakerWords = 10
+    static let minimumSpeakerSeconds: TimeInterval = 5
 
     /// `segments`, labeled "Speaker 1", "Speaker 2", … in order of first appearance, and split where
     /// the speaker changes. Labels are left out if only one speaker talks, and segments as they are
-    /// without any turns.
+    /// without any turns. A speaker who says less than `minimumSpeakerWords` and
+    /// `minimumSpeakerSeconds` isn't one, unless no one says more; their words go to the speaker
+    /// before them, or after them at the start.
     ///
     /// - Parameters:
     ///   - words: Per segment, its words with their times, as a live engine recognizes them;
@@ -64,11 +71,14 @@ public enum SpeakerAssignment {
         let turns = turns.filter { $0.end > $0.start }.sorted { $0.start < $1.start }
         guard !turns.isEmpty else { return segments }
 
-        var pieces: [(segment: TranscriptSegment, speaker: Int?)] = []
+        var pieces: [Piece] = []
         for (index, segment) in segments.enumerated() {
             let timed = words.flatMap { $0.indices.contains(index) ? $0[index] : nil }
-            pieces += split(segment, words: timed, turns: turns)
+            pieces += split(segment, words: timed, turns: turns).map {
+                Piece(segment: $0.segment, speaker: $0.speaker, index: index)
+            }
         }
+        pieces = withoutMinorSpeakers(pieces)
 
         // Numbered by first appearance in the transcript.
         var numbers: [Int: Int] = [:]
@@ -80,6 +90,65 @@ public enum SpeakerAssignment {
             segment.speaker = numbers.count > 1 ? piece.speaker.flatMap { numbers[$0] }.map { "Speaker \($0)" } : nil
             return segment
         }
+    }
+
+    /// Part of the segment at `index` that one speaker says.
+    private struct Piece {
+        var segment: TranscriptSegment
+        var speaker: Int?
+        var index: Int
+    }
+
+    /// `pieces` with those of speakers who say too little to count given to the speaker before
+    /// them, or after them if there's none before, and pieces of one segment that then have the
+    /// same speaker joined again. As they are if no speaker says enough.
+    private static func withoutMinorSpeakers(_ pieces: [Piece]) -> [Piece] {
+        var words: [Int: Int] = [:]
+        var seconds: [Int: TimeInterval] = [:]
+        for piece in pieces {
+            guard let speaker = piece.speaker else { continue }
+            words[speaker, default: 0] += piece.segment.text.split(whereSeparator: \.isWhitespace).count
+            seconds[speaker, default: 0] += max(piece.segment.end - piece.segment.start, 0)
+        }
+        let major = Set(
+            words.keys.filter {
+                words[$0, default: 0] >= minimumSpeakerWords || seconds[$0, default: 0] >= minimumSpeakerSeconds
+            }
+        )
+        guard !major.isEmpty, major.count < words.count else { return pieces }
+
+        // In the order they're said, which is how "before" is meant.
+        let order = pieces.indices.sorted {
+            (pieces[$0].segment.start, $0) < (pieces[$1].segment.start, $1)
+        }
+        var speakers = pieces.map { $0.speaker.flatMap { major.contains($0) ? $0 : nil } }
+        var previous: Int?
+        var unassigned: [Int] = []
+        for index in order where pieces[index].speaker != nil {
+            if let speaker = speakers[index] {
+                // The first major speaker takes what minor ones said before anyone else.
+                for waiting in unassigned { speakers[waiting] = speaker }
+                unassigned = []
+                previous = speaker
+            } else if let previous {
+                speakers[index] = previous
+            } else {
+                unassigned.append(index)
+            }
+        }
+
+        var result: [Piece] = []
+        for (piece, speaker) in zip(pieces, speakers) {
+            var piece = piece
+            piece.speaker = piece.speaker == nil ? nil : speaker
+            if let last = result.last, last.index == piece.index, last.speaker == piece.speaker {
+                result[result.count - 1].segment.text += " " + piece.segment.text
+                result[result.count - 1].segment.end = piece.segment.end
+            } else {
+                result.append(piece)
+            }
+        }
+        return result
     }
 
     private struct Token {

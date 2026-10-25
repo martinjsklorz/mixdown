@@ -194,7 +194,8 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             the time and levels appear in a Dynamic Island around the camera notch instead of the \
             time in the menu bar. Without a notch, or with another display connected, the island \
             appears at the top center of the screen and the menu bar keeps the time too. Click the \
-            island to open Record. With the setting off, the time shows in the menu bar.
+            island to open Record. With the setting off, the time shows in the menu bar. The island \
+            and what drops down under it don't show when you share your screen.
             - If an input makes no sound for 10 seconds, Mixdown warns on Record and in the menu \
             bar. See [Troubleshooting](mixdown-help:troubleshooting).
             - If no one speaks for 15 minutes, Mixdown asks **Still Recording?** in a \
@@ -250,10 +251,16 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
 
             - **Notify when calls start and end** (on by default): a notification asks **Record \
             This Call?** Click it to record with System Audio turned on, plus your microphone if one \
-            is selected. When the call ends, a notification asks **Stop Recording?**
+            is selected. When the call ends, a notification asks **Stop Recording?** Close a \
+            **Record This Call?** notification, and Mixdown won't ask about that app for 30 minutes.
             - **Record calls automatically** (off by default): recording starts by itself when a \
-            call starts and stops when it ends. With notifications on, Mixdown says so. A \
+            call starts and stops when it ends, once no one has spoken for 20 seconds (two minutes \
+            at most), so goodbyes aren't cut off. With notifications on, Mixdown says so. A \
             recording you started yourself keeps going when a call ends.
+
+            Muting yourself doesn't end a call, even in an app that lets go of the microphone \
+            meanwhile: the call goes on while the app plays it. In a browser, the call ends when \
+            the site stops using the microphone.
 
             To change which apps count as calls, click **Choose…** next to **Apps that count as \
             calls**. Turn off an app or browser, or click **Add App…** to add one Mixdown doesn't \
@@ -265,7 +272,9 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             """
             Your recordings are listed in the sidebar under **Today**, **Previous 7 Days** and then \
             each month. Pinned notes stay at the top under **Pinned**; click that heading to fold \
-            them away or show them again. Search the sidebar (⌘F) to find older recordings.
+            them away or show them again. Search the sidebar (⌘F) to find older recordings: a \
+            note matches when every word you type is in its title, text or folder. Put words in \
+            double quotes to find them together. While you search, each note shows its best match.
 
             A small icon next to a note says how its recording started: a hand for one you started, \
             and the autostart icon for a call Mixdown recorded automatically.
@@ -394,7 +403,9 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             Names and jargon often come out wrong, like "cooper netties" for Kubernetes. Add them \
             under **Settings → Vocabulary**: how to write each one, and what the model writes \
             instead, with commas between several ways it's heard. Every transcript is corrected \
-            before it's summarized, ignoring case and only for whole words.
+            before it's summarized, ignoring case and only for whole words. Qwen3-ASR is also told \
+            the words to expect, so it often gets them right to begin with. Mixdown warns you when \
+            what the model writes is a very common word, like "the", as every one would be replaced.
 
             To add a word from a note, select it and click the book button above the note, or \
             choose **File → Add to Vocabulary…**. Leave **Correct it in existing notes** on to fix \
@@ -407,7 +418,8 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             system audio by their voices, with any model: **Others (Speaker 1)**, **Others \
             (Speaker 2)** and so on, the same speaker keeping their number for the whole recording. \
             It runs once the recording ends, on this Mac, after a one-time download of about \
-            100 MB. Your microphone keeps its name. With the live model, the system audio is kept \
+            100 MB. Your microphone keeps its name. Someone who only says a word or two, or a cough \
+            taken for another voice, isn't counted as a speaker: it goes to the speaker before. With the live model, the system audio is kept \
             in memory until you stop.
 
             With **Name speakers from the conversation** on, your summary model then looks for \

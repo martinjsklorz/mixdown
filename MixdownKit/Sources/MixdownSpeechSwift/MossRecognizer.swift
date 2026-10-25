@@ -67,7 +67,8 @@ final class MossRecognizer: SpeechRecognizer, @unchecked Sendable {
     /// MOSS takes no language hint; it transcribes whatever it hears.
     func languageHint(forISOCode code: String) -> String? { nil }
 
-    func recognize(_ samples: [Float], languageHint: String?) throws -> [RecognizedSegment] {
+    /// MOSS takes no vocabulary.
+    func recognize(_ samples: [Float], languageHint: String?, vocabulary: [String]) throws -> [RecognizedSegment] {
         // Not cancellable once started; the engine checks between windows.
         let result = try model.transcribeDetailed(
             audio: samples,

@@ -5,7 +5,10 @@
 Your recordings are listed in the sidebar under **Today**, **Previous 7 Days** and then each
 month, rendered much like Apple Notes when you open one. Pinned notes stay at the top under
 **Pinned**; click that heading to fold them away or show them again. Search the sidebar (⌘F) to
-find older recordings.
+find older recordings: a note matches when every word you type is somewhere in its title, text
+or folder, ignoring case and accents. Put words in double quotes, like `"release date"`, to find
+them together. While you search, each note shows the line that matches best instead of the start
+of its text.
 
 A small icon next to a note says how its recording started: a hand for one you started (including
 from a call notification), and the autostart icon for a call Mixdown recorded automatically.

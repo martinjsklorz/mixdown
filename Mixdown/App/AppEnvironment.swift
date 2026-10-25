@@ -129,6 +129,10 @@ final class AppEnvironment {
         observeNewNotes()
         listenForRecordingShortcut()
         startCallPrompt()
+        updater.isBusy = { [weak self] in
+            guard let coordinator = self?.coordinator else { return false }
+            return coordinator.isRecording || coordinator.isMakingNote
+        }
         startStillRecordingPrompt()
         island.start(environment: self, openRecorder: showRecorder)
         preferences.didChange = { [weak self] in self?.applyPreferences() }
@@ -257,6 +261,7 @@ final class AppEnvironment {
     private func startCallPrompt() {
         let callPrompt = CallPrompt(
             isRecording: { [weak self] in self?.coordinator.canStopRecording ?? false },
+            timeSinceSpeech: { [weak self] in self?.coordinator.timeSinceSpeech },
             startRecording: { [weak self] in self?.startRecordingCall() ?? false },
             stopRecording: { [weak self] in self?.stopRecordingCall() },
             markRecordingAsCall: { [weak self] in self?.coordinator.markRecordingAsCall(in: $0, automatically: $1) },

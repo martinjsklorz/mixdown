@@ -168,6 +168,15 @@ enum CoreAudioHAL {
         return status == noErr && value != 0
     }
 
+    /// A `UInt32` flag property, or `nil` if it can't be read.
+    static func readBoolProperty(_ selector: AudioObjectPropertySelector, of objectID: AudioObjectID) -> Bool? {
+        var address = propertyAddress(selector)
+        var value: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        guard AudioObjectGetPropertyData(objectID, &address, 0, nil, &size, &value) == noErr else { return nil }
+        return value != 0
+    }
+
     static func stringProperty(_ selector: AudioObjectPropertySelector, of objectID: AudioObjectID) -> String? {
         var address = propertyAddress(selector)
         var value: Unmanaged<CFString>?

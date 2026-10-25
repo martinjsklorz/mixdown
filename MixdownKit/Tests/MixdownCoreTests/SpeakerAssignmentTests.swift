@@ -113,6 +113,61 @@ struct SpeakerAssignmentTests {
         #expect(labeled.map(\.speaker) == ["Speaker 1", "Speaker 2", "Speaker 1"])
     }
 
+    @Test func speakersWhoSayTooLittleGoToTheSpeakerBefore() {
+        let segments = [
+            TranscriptSegment(start: 0, end: 6, text: "So the plan for this week is to ship the beta on Friday."),
+            TranscriptSegment(start: 6, end: 6.5, text: "Hm."),
+            TranscriptSegment(start: 7, end: 13, text: "Friday works for me, if the release notes are done by then."),
+        ]
+        let turns = [
+            SpeakerTurn(start: 0, end: 6, speaker: 4),
+            SpeakerTurn(start: 6, end: 6.5, speaker: 7),
+            SpeakerTurn(start: 7, end: 13, speaker: 2),
+        ]
+
+        let labeled = SpeakerAssignment.label(segments, turns: turns)
+
+        #expect(labeled.map(\.speaker) == ["Speaker 1", "Speaker 1", "Speaker 2"])
+    }
+
+    @Test func aMinorSpeakerWithinASegmentRejoinsIt() {
+        let segment = TranscriptSegment(
+            start: 0,
+            end: 12,
+            text: "We looked at the numbers and they look fine, so let's go ahead with the launch next week."
+        )
+        let turns = [
+            SpeakerTurn(start: 0, end: 5.5, speaker: 0),
+            SpeakerTurn(start: 5.5, end: 6.2, speaker: 1),
+            SpeakerTurn(start: 6.2, end: 12, speaker: 0),
+            SpeakerTurn(start: 13, end: 20, speaker: 2),
+        ]
+        let other = TranscriptSegment(start: 13, end: 20, text: "Sounds good, I'll tell the support team today.")
+
+        let labeled = SpeakerAssignment.label([segment, other], turns: turns)
+
+        #expect(labeled.count == 2)
+        #expect(labeled[0].text == segment.text)
+        #expect(labeled.map(\.speaker) == ["Speaker 1", "Speaker 2"])
+    }
+
+    @Test func aMinorSpeakerFirstGoesToTheSpeakerAfter() {
+        let segments = [
+            TranscriptSegment(start: 0, end: 1, text: "Okay."),
+            TranscriptSegment(start: 1, end: 8, text: "Thanks for joining, today we go through the quarterly numbers."),
+            TranscriptSegment(start: 8, end: 15, text: "Great, I have the spreadsheet open and ready to share."),
+        ]
+        let turns = [
+            SpeakerTurn(start: 0, end: 1, speaker: 5),
+            SpeakerTurn(start: 1, end: 8, speaker: 6),
+            SpeakerTurn(start: 8, end: 15, speaker: 7),
+        ]
+
+        let labeled = SpeakerAssignment.label(segments, turns: turns)
+
+        #expect(labeled.map(\.speaker) == ["Speaker 1", "Speaker 1", "Speaker 2"])
+    }
+
     @Test func oneSpeakerOrNoTurnsLeaveTheSegmentsUnlabeled() {
         let segments = [
             TranscriptSegment(start: 0, end: 1, text: "Hello.", speaker: "S01"),

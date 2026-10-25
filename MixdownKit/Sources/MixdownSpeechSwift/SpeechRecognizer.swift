@@ -41,7 +41,8 @@ protocol SpeechRecognizer: AnyObject, Sendable {
     func languageHint(forISOCode code: String) -> String?
 
     /// Transcribes 16 kHz mono samples. Synchronous and GPU-bound; may throw `CancellationError`.
-    func recognize(_ samples: [Float], languageHint: String?) throws -> [RecognizedSegment]
+    /// - Parameter vocabulary: Names and jargon to expect, for models that take them.
+    func recognize(_ samples: [Float], languageHint: String?, vocabulary: [String]) throws -> [RecognizedSegment]
 
     /// Frees the weights it can right away. The instance is unusable afterwards; the rest of its
     /// memory goes with it.

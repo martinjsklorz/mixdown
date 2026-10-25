@@ -1,6 +1,6 @@
 import Foundation
 
-/// A process that is recording from an audio input right now.
+/// A process that is recording from an audio input or playing audio right now.
 public struct AudioInputClient: Hashable, Sendable {
     public let processID: Int32
     /// `nil` for processes without a bundle, such as command-line tools.
@@ -9,18 +9,31 @@ public struct AudioInputClient: Hashable, Sendable {
     /// `Webex.app/Contents/Frameworks/…/Helper.app`, that's `Webex.app`; for an app's main process,
     /// the app itself. `nil` if it isn't in an app or that can't be read.
     public let appBundleID: String?
+    /// Whether it records from an input.
+    public let isRunningInput: Bool
+    /// Whether it plays audio. A call app that lets go of the microphone while muted still plays
+    /// the call.
+    public let isRunningOutput: Bool
 
-    public init(processID: Int32, bundleID: String?, appBundleID: String? = nil) {
+    public init(
+        processID: Int32,
+        bundleID: String?,
+        appBundleID: String? = nil,
+        isRunningInput: Bool = true,
+        isRunningOutput: Bool = false
+    ) {
         self.processID = processID
         self.bundleID = bundleID
         self.appBundleID = appBundleID
+        self.isRunningInput = isRunningInput
+        self.isRunningOutput = isRunningOutput
     }
 }
 
-/// Reports which processes are recording from an audio input.
+/// Reports which processes are recording from an audio input or playing audio.
 public protocol AudioInputActivityMonitoring: Sendable {
-    /// Emits the processes using an input now, then the new list whenever it changes. Finishes
-    /// when the consumer cancels.
+    /// Emits the processes using an input or playing audio now, then the new list whenever it
+    /// changes. Finishes when the consumer cancels.
     func inputClients() -> AsyncStream<[AudioInputClient]>
 }
 
@@ -148,6 +161,10 @@ public struct CallAppSelection: Codable, Equatable, Sendable {
 /// skips the brief microphone checks browsers and call apps make. It has to stop for `endDelay`
 /// before the call counts as over, so switching microphones mid-call doesn't start a new one.
 ///
+/// Some call apps let go of the microphone while the user is muted. So once a call has started,
+/// it goes on while a process of the app that recorded during it still plays audio. Browsers
+/// aren't given that: one that played a video after leaving a meeting would keep the call going.
+///
 /// Only `apps` count. An app taken out of them mid-call ends its call, as if it had stopped
 /// recording; one put in starts one if it's recording.
 @MainActor
@@ -173,10 +190,14 @@ public final class CallDetector {
     private let startDelay: Duration
     private let endDelay: Duration
 
-    /// The latest list of processes using an input.
+    /// The latest list of processes using an input or playing audio.
     private var clients: [AudioInputClient] = []
-    /// Apps using an input in the latest list.
+    /// Apps in a call, or starting one, in the latest list: using an input, or in a call already
+    /// and playing audio from a process that recorded during it.
     private var recordingApps: Set<CallApp> = []
+    /// The processes of each app that recorded since its call started, or since it started using
+    /// an input if it's not in one yet.
+    private var callProcessIDs: [CallApp: Set<Int32>] = [:]
     /// What `run` was given, while it runs.
     private var handle: (@MainActor (Event) -> Void)?
     /// Waits for `startDelay` or `endDelay` before reporting, by app.
@@ -211,19 +232,39 @@ public final class CallDetector {
         self.handle = nil
         clients = []
         recordingApps = []
+        callProcessIDs = [:]
         activeCalls = []
     }
 
-    /// The apps among `clients` that count as calls, other than Mixdown.
+    /// The apps among `clients` that count as calls, other than Mixdown: those using an input, and
+    /// those in a call playing audio from a process that recorded during it. Notes the processes
+    /// that record in `callProcessIDs`.
     private func callApps(in clients: [AudioInputClient]) -> Set<CallApp> {
-        var found = Set<CallApp>()
+        var recording = Set<CallApp>()
+        var playing: [CallApp: Set<Int32>] = [:]
         for client in clients where client.processID != ownProcessID {
             let bundleIDs = [client.bundleID, client.appBundleID].compactMap { $0 }
             guard let app = apps.first(where: { app in bundleIDs.contains { app.matches(bundleID: $0) } })
             else { continue }
-            found.insert(app)
+            if client.isRunningInput {
+                recording.insert(app)
+                callProcessIDs[app, default: []].insert(client.processID)
+            }
+            if client.isRunningOutput {
+                playing[app, default: []].insert(client.processID)
+            }
         }
-        return found
+        // A muted call, whose app plays the others but doesn't record.
+        let sustained = activeCalls.filter { app in
+            !app.isBrowser && !recording.contains(app)
+                && !(playing[app] ?? []).isDisjoint(with: callProcessIDs[app] ?? [])
+        }
+        // Processes of an app that's neither in a call nor starting one are forgotten, so a later
+        // process with the same ID isn't taken for one that recorded.
+        for app in callProcessIDs.keys where !recording.contains(app) && !activeCalls.contains(app) {
+            callProcessIDs[app] = nil
+        }
+        return recording.union(sustained)
     }
 
     private func update(recordingApps newApps: Set<CallApp>, handle: @escaping @MainActor (Event) -> Void) {
@@ -245,6 +286,7 @@ public final class CallDetector {
                     handle(.started(app))
                 } else {
                     self.activeCalls.remove(app)
+                    self.callProcessIDs[app] = nil
                     handle(.ended(app))
                 }
             }

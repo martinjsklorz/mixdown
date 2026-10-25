@@ -66,7 +66,14 @@ them under **Settings → Vocabulary**: what to write (**Write as**) and what th
 instead (**Heard as**), with commas between several ways it's heard. Every transcript is then
 corrected before it's translated and summarized, so the summary and title get the right word
 too. Matching ignores case and only replaces whole words: "mix down" doesn't change "remix
-down".
+down". Text that's already right stays as it is, even when it contains what a word is heard as:
+with "New York" heard as "york", "New York" doesn't become "New New York".
+
+Qwen3-ASR is also told the words to expect, so it often writes them right in the first place,
+including ways of hearing them you haven't listed. Other models only get the corrections.
+
+Mixdown warns you when **Heard as** is a very short or very common word, like "the" or "und":
+every one of them in your notes would be replaced, even where it was right.
 
 To add a word from a note, select what the model got wrong and click the book button above the
 note, or choose **File → Add to Vocabulary…**. Type how it should be written, and leave **Correct
@@ -87,3 +94,9 @@ in a long recording. When recording a call, MOSS numbers the speakers within eac
 
 The other models, Apple Speech and Cohere included, don't tell speakers apart, so their lines are just
 labeled "Me" and "Others".
+
+With **Settings → Transcription → Tell speakers apart** on, the people on the system audio are told
+apart by their voices once the recording ends, with any model: "Others (Speaker 1)", "Others
+(Speaker 2)" and so on. Someone who says fewer than 10 words in under 5 seconds in the whole
+recording isn't counted as a speaker, as that's mostly a cough, a laugh or a word in a different
+tone taken for another voice; what they said goes to the speaker before them.

@@ -69,20 +69,69 @@ public enum NoteLibrary {
         }
     }
 
-    /// The notes of `notes` whose title, text or folder contains `query`, ignoring case and accents,
-    /// for the sidebar's search. Looking through long transcripts takes a while, so it's meant to
-    /// run off the main thread, and throws `CancellationError` as soon as it's cancelled.
-    public static func search(_ notes: [NoteDocument], for query: String) throws -> Set<NoteDocument.ID> {
-        var matches = Set<NoteDocument.ID>()
+    /// The notes of `notes` that match `query`, for the sidebar's search, each with the line of its
+    /// text that matches best, or `""` if only its title or folder does. A note matches if every
+    /// one of `searchTerms(in: query)` is in its title, text or folder, ignoring case and accents.
+    /// Looking through long transcripts takes a while, so it's meant to run off the main thread,
+    /// and throws `CancellationError` as soon as it's cancelled.
+    public static func search(_ notes: [NoteDocument], for query: String) throws -> [NoteDocument.ID: String] {
+        let terms = searchTerms(in: query)
+        guard !terms.isEmpty else { return [:] }
+        var matches: [NoteDocument.ID: String] = [:]
         for note in notes {
             try Task.checkCancellation()
-            if note.title.localizedStandardContains(query) || note.folder?.localizedStandardContains(query) == true
-                || note.body.localizedStandardContains(query)
-            {
-                matches.insert(note.id)
+            let inBody = terms.filter { note.body.localizedStandardContains($0) }
+            let matchesAll = terms.allSatisfy { term in
+                inBody.contains(term) || note.title.localizedStandardContains(term)
+                    || note.folder?.localizedStandardContains(term) == true
             }
+            guard matchesAll else { continue }
+            matches[note.id] = inBody.isEmpty ? "" : excerpt(of: note, terms: inBody)
         }
         return matches
+    }
+
+    /// What `search(_:for:)` looks for in `query`: each word, and text in double quotes as it is.
+    public static func searchTerms(in query: String) -> [String] {
+        var terms: [String] = []
+        for (index, part) in query.split(separator: "\"", omittingEmptySubsequences: false).enumerated() {
+            // Every other part is in quotes, including an unclosed one at the end.
+            if index.isMultiple(of: 2) {
+                terms += part.split(whereSeparator: \.isWhitespace).map(String.init)
+            } else {
+                let phrase = part.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+                if !phrase.isEmpty { terms.append(phrase) }
+            }
+        }
+        // Each once, as typed first.
+        var seen = Set<String>()
+        return terms.filter {
+            seen.insert($0.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)).inserted
+        }
+    }
+
+    /// Most characters of an excerpt before the first term found in it.
+    static let excerptLeadLength = 30
+
+    /// The line of `note`'s text, as `NoteSearchIndex.lines(of:)` has it, with the most of `terms`,
+    /// the first of them if several tie. Starts a little before the first term it has, with an
+    /// ellipsis, if that's far into the line. `""` if no line has any.
+    static func excerpt(of note: NoteDocument, terms: [String]) -> String {
+        var best: (line: String, count: Int)?
+        for line in NoteSearchIndex.lines(of: note) {
+            let count = terms.count { line.text.localizedStandardContains($0) }
+            if count > best?.count ?? 0 { best = (line.text, count) }
+            if count == terms.count { break }
+        }
+        guard let line = best?.line else { return "" }
+        let first = terms.compactMap { line.localizedStandardRange(of: $0)?.lowerBound }.min()
+        guard let first, line.distance(from: line.startIndex, to: first) > excerptLeadLength else { return line }
+        var start = line.index(first, offsetBy: -excerptLeadLength)
+        // From the start of a word.
+        if let space = line[start..<first].firstIndex(where: \.isWhitespace) {
+            start = line.index(after: space)
+        }
+        return "…" + line[start...]
     }
 
     /// The notes `loadNotes(in:cache:)` read last time, by file, so it can skip the ones whose

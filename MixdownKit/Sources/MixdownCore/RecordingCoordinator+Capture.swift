@@ -56,6 +56,7 @@ extension RecordingCoordinator {
             startLiveCaptions(for: session)
         }
         talkTime = nil
+        lastSpeech = nil
         for started in startedCaptures {
             attach(started, to: addLane(kind: started.device.kind, to: session), in: session)
         }

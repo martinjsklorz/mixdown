@@ -32,12 +32,22 @@ struct AddToVocabularySheet: View {
                 } header: {
                     Text("Add to Vocabulary")
                 } footer: {
-                    Text(
-                        "Recordings from now on are corrected as they're transcribed. Correcting existing "
-                            + "notes changes their files in your notes folder."
-                    )
+                    VStack(alignment: .leading, spacing: 6) {
+                        if Vocabulary.isCommonWord(soundsLike), !trimmed(term).isEmpty {
+                            Label(
+                                "Every “\(trimmed(soundsLike))” in your notes will become “\(trimmed(term))”, "
+                                    + "even where it was right.",
+                                systemImage: "exclamationmark.triangle"
+                            )
+                            .foregroundStyle(.orange)
+                        }
+                        Text(
+                            "Recordings from now on are corrected as they're transcribed. Correcting existing "
+                                + "notes changes their files in your notes folder."
+                        )
+                        .foregroundStyle(.secondary)
+                    }
                     .font(.caption)
-                    .foregroundStyle(.secondary)
                 }
             }
             .formStyle(.grouped)

@@ -115,6 +115,9 @@ Without a notch, the island appears at the top center of the screen and the menu
 time too, as it does with another display connected. With the setting off, the time shows in the
 menu bar.
 
+The island, and the live text, moment field and Catch Me Up card under it, don't show when you
+share your screen or take a screenshot, so the others on a call don't see them.
+
 ## Import a recording
 
 Already have a recording, such as a voice memo or a video of a meeting? Click the import button

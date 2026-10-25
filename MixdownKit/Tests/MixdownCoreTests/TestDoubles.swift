@@ -172,6 +172,8 @@ actor MockEngine: TranscriptionEngine {
     private nonisolated let downloaded: LockedValue<Bool>
     private(set) var receivedSampleCounts: [Int] = []
     private(set) var receivedSamples: [[Float]] = []
+    /// The options of each `transcribe` call.
+    private(set) var receivedOptions: [TranscriptionOptions] = []
     private(set) var prepareCount = 0
     private(set) var cancelledPrepareCount = 0
     private(set) var deleteCount = 0
@@ -259,6 +261,7 @@ actor MockEngine: TranscriptionEngine {
     ) async throws -> Transcript {
         receivedSampleCounts.append(samples.count)
         receivedSamples.append(samples)
+        receivedOptions.append(options)
         if let error = transcribeErrorsBySampleCount[samples.count] ?? transcribeError { throw error }
         return transcriptsBySampleCount[samples.count] ?? transcript
     }
