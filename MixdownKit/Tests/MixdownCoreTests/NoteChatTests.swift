@@ -25,6 +25,11 @@ struct NoteChatTests {
         #expect(pieces == [.text("See [9] and [x] and "), .citation(2), .text(".")])
     }
 
+    @Test func removesCitations() {
+        #expect(ChatCitations.removingCitations(from: "Friday [2]. Anna [1, 3][Excerpt 4].") == "Friday. Anna.")
+        #expect(ChatCitations.removingCitations(from: "Anna [9] and Ben [x] [2]\nlater") == "Anna and Ben [x]\nlater")
+    }
+
     @Test func numbersInOrderOfFirstCitation() {
         #expect(ChatCitations.numbers(in: "A [3]. B [1][3]. C [2]", valid: [1, 2, 3]) == [3, 1, 2])
     }

@@ -121,10 +121,7 @@ public struct AppleIntelligenceAnswerer: NoteAnswerer {
         if !turns.isEmpty {
             let lines = turns.map { turn in
                 // Its citations were of other excerpts.
-                let answer = ChatCitations.pieces(of: turn.answer, valid: []).map { piece in
-                    if case .text(let text) = piece { text } else { "" }
-                }
-                .joined()
+                let answer = ChatCitations.removingCitations(from: turn.answer)
                 return "Question: \(turn.question)\nAnswer: \(answer.prefix(maxHistoryAnswerLength))"
             }
             parts.append("Earlier in this chat:\n" + lines.joined(separator: "\n\n"))

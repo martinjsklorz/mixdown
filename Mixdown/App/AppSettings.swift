@@ -146,9 +146,9 @@ struct AppSettings {
         nonmutating set { defaults.set(newValue, forKey: Key.notesFolderBookmark) }
     }
 
-    /// Set with `@AppStorage`.
     var showsNotifications: Bool {
-        defaults.object(forKey: Key.showsNotifications) as? Bool ?? true
+        get { defaults.object(forKey: Key.showsNotifications) as? Bool ?? true }
+        nonmutating set { defaults.set(newValue, forKey: Key.showsNotifications) }
     }
 
     var indexesNotesInSpotlight: Bool {
@@ -247,9 +247,9 @@ struct AppSettings {
     /// What Settings offers for `stillRecordingMinutes`, besides never.
     static let stillRecordingMinuteChoices = [5, 10, 15, 30, 60]
 
-    /// Set with `@AppStorage`.
     var playsSounds: Bool {
-        defaults.object(forKey: Key.playsSounds) as? Bool ?? true
+        get { defaults.object(forKey: Key.playsSounds) as? Bool ?? true }
+        nonmutating set { defaults.set(newValue, forKey: Key.playsSounds) }
     }
 
     /// The name of the sound for `cue`, or `nil` if the user chose none.

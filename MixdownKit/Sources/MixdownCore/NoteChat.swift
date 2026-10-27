@@ -190,6 +190,14 @@ public enum ChatCitations {
         return pieces
     }
 
+    /// `answer` without its citations, for handing it back to the model with excerpts numbered
+    /// afresh. Leaves no space before punctuation or doubled spaces where they were.
+    public static func removingCitations(from answer: String) -> String {
+        answer.replacing(pattern, with: "")
+            .replacing(#/ +([.,;:!?)\n])/#) { $0.1 }
+            .replacing(#/ {2,}/#, with: " ")
+    }
+
     /// The numbers `answer` cites from `valid`, each once, in the order first cited.
     public static func numbers(in answer: String, valid: Set<Int>) -> [Int] {
         var seen = Set<Int>()

@@ -95,6 +95,8 @@ enum SystemModelSummary {
         ) { text, kind in
             try await respond(to: text, kind: kind, template: template, language: language, hasMoments: hasMoments)
         }
+        // Even for the empty summary `ChunkedSummarizer` makes of a transcript without lines.
+        summary.template = template
         summary.language = language
         return summary
     }
@@ -164,7 +166,7 @@ enum SystemModelSummary {
             let response = try await session.respond(generating: GeneratedSummary.self, includeSchemaInPrompt: true) {
                 prompt
             }
-            return response.content.noteSummary
+            return response.content.noteSummary(template: template)
         }
         let response = try await session.respond(
             generating: GeneratedSectionedSummary.self,
@@ -259,8 +261,9 @@ struct GeneratedSummary {
     @Guide(description: "The topic in two to six words, as a title. Not a sentence; no \"Meeting about\" or similar")
     var title: String
 
-    var noteSummary: NoteSummary {
+    func noteSummary(template: SummaryTemplate) -> NoteSummary {
         NoteSummary(
+            template: template,
             title: title.trimmingCharacters(in: .whitespacesAndNewlines),
             overview: overview.trimmingCharacters(in: .whitespacesAndNewlines),
             keyPoints: keyPoints.map(SummaryPrompt.listItem),

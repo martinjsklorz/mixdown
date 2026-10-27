@@ -3,15 +3,15 @@ import SwiftUI
 
 /// Notifications and the sounds that mark recording starting, pausing, stopping and finishing.
 struct NotificationsSettingsView: View {
-    @AppStorage(AppSettings.Key.showsNotifications) private var showsNotifications = true
-    @AppStorage(AppSettings.Key.playsSounds) private var playsSounds = true
+    @Environment(AppEnvironment.self) private var environment
     @State private var notificationsDeniedBySystem = false
 
     var body: some View {
+        @Bindable var preferences = environment.preferences
         Form {
             Section {
-                Toggle("Show notifications", isOn: $showsNotifications)
-                if showsNotifications, notificationsDeniedBySystem {
+                Toggle("Show notifications", isOn: $preferences.showsNotifications)
+                if preferences.showsNotifications, notificationsDeniedBySystem {
                     HStack {
                         Caption("Turned off for Mixdown in System Settings.", isWarning: true)
                         Spacer()
@@ -28,10 +28,10 @@ struct NotificationsSettingsView: View {
             }
 
             Section {
-                Toggle("Play sounds", isOn: $playsSounds)
+                Toggle("Play sounds", isOn: $preferences.playsSounds)
                 ForEach(AudioCue.allCases) { cue in
                     AudioCuePicker(cue: cue)
-                        .disabled(!playsSounds)
+                        .disabled(!preferences.playsSounds)
                 }
             } header: {
                 Text("Sounds")

@@ -105,6 +105,8 @@ public final class MLXSummarizer: Summarizer {
         if summary.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !summary.isEmpty {
             summary.title = try await title(for: summary, language: language)
         }
+        // Even for the empty summary `ChunkedSummarizer` makes of a transcript without lines.
+        summary.template = template
         summary.language = language
         return summary
     }
