@@ -61,12 +61,13 @@ public final class RecordingCoordinator {
         case failed(message: String)
     }
 
-    /// Recordings shorter than this are discarded without transcribing, with `tooShortMessage`.
-    nonisolated static let minimumRecordingDuration: TimeInterval = 0.5
+    /// Recordings shorter than this are discarded without transcribing, with `tooShortMessage`:
+    /// none of their tracks would be.
+    nonisolated static let minimumRecordingDuration = NotePipeline.minimumTrackDuration
 
-    /// Audio is handed to live sessions in pieces of at least this many samples (320 ms, the step
-    /// Nemotron works in) rather than per capture buffer, which can be a hundred times a second.
-    nonisolated static let liveFeedSampleCount = 5_120
+    /// See `NotePipeline.liveFeedSampleCount`; recordings feed their live sessions like the
+    /// pipeline does.
+    nonisolated static let liveFeedSampleCount = NotePipeline.liveFeedSampleCount
 
     public internal(set) var phase: Phase = .idle {
         didSet { modelError = nil }

@@ -35,8 +35,7 @@ extension RecordingCoordinator {
                 isCall: session.isCall,
                 callApp: session.callApp,
                 // Described up to now, as the user may have still been typing when it stopped.
-                moments: moments.map { Moment(id: $0.id, time: min($0.time, duration), text: $0.text) }
-                    .sorted { $0.time < $1.time },
+                moments: NotePipeline.NoteDetails.moments(moments, upTo: duration),
                 talkTimeline: session.measuresTalkTime ? talkTimeline(of: tracks, duration: duration) : nil,
                 recordingID: session.isStored ? session.id : nil
             )
@@ -99,7 +98,7 @@ extension RecordingCoordinator {
                 takeSummaryTemplate(otherwise: input.details.isCall ? callSummaryTemplate : summaryTemplate)
             }
             var messages = interruption.map { [Self.interruptedMessage(for: $0)] } ?? []
-            messages += outcome.messages
+            messages += Self.messages(for: outcome)
             if !outcome.isComplete, let recording {
                 keep(recording)
                 messages.append(Self.keptRecordingMessage(for: recording))

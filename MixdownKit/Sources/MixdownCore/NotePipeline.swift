@@ -35,6 +35,13 @@ final class NotePipeline {
     /// doesn't redraw the progress bar thousands of times. 16 pieces are about 5 s of audio.
     nonisolated static let liveProgressInterval = 16
 
+    /// Tracks shorter than this aren't transcribed, as there's too little audio for speech.
+    nonisolated static let minimumTrackDuration: TimeInterval = 0.5
+
+    /// Audio is handed to live sessions in pieces of at least this many samples (320 ms, the step
+    /// Nemotron works in) rather than per capture buffer, which can be a hundred times a second.
+    nonisolated static let liveFeedSampleCount = 5_120
+
     /// Fed while transcribing; empty otherwise.
     var progressEstimator = RemainingTimeEstimator()
     /// Per-track progress of the transcription in flight.
@@ -64,8 +71,8 @@ final class NotePipeline {
 
     /// Makes a note of `input` and saves it, or keeps it in the saver if it can't be saved yet.
     /// Returns what to tell the user about, e.g. a track that couldn't be transcribed or a
-    /// translation that failed; the note is saved either way. Throws if no track could be
-    /// transcribed, without saving anything, and if the task is cancelled.
+    /// translation that failed. Throws if no track could be transcribed, without saving anything,
+    /// and if the task is cancelled.
     /// - Parameter template: The summary template, asked for just before summarizing, as the user
     ///   may pick another while the recording is transcribed.
     func makeNote(from input: Input, template: () -> SummaryTemplate) async throws -> Outcome {
@@ -87,12 +94,7 @@ final class NotePipeline {
         // Kept until it's saved: the folder can go away while recording or transcribing, e.g.
         // when its drive is disconnected or goes to sleep.
         let saveError = await saver.save(note)
-        let messages = [
-            trackFailure.map { RecordingCoordinator.untranscribedMessage(for: $0.devices, error: $0.error) },
-            translationError.map(RecordingCoordinator.untranslatedMessage(for:)),
-            saveError.map(RecordingCoordinator.unsavedMessage(for:)),
-        ]
-        return Outcome(messages: messages.compactMap { $0 }, isComplete: trackFailure == nil)
+        return Outcome(trackFailure: trackFailure, translationError: translationError, saveError: saveError)
     }
 
     /// Corrects `transcript` with the vocabulary, names its speakers, translates and summarizes it.
@@ -104,7 +106,8 @@ final class NotePipeline {
         details: NoteDetails
     ) async throws -> (Note, (any Error)?) {
         var transcript = vocabulary.apply(to: transcript)
-        transcript = await nameSpeakers(speakers, in: transcript)
+        let names: [String: String]
+        (transcript, names) = await nameSpeakers(speakers, in: transcript)
         try Task.checkCancellation()
         let (translation, translationError) = await translate(transcript)
         try Task.checkCancellation()
@@ -134,9 +137,20 @@ final class NotePipeline {
             callApp: details.callApp,
             template: summarizer == nil ? nil : template,
             moments: details.moments,
-            talkTimeline: details.talkTimeline
+            talkTimeline: details.talkTimeline.map { talkTimeline($0, named: names) }
         )
         return (note, translationError)
+    }
+
+    /// `timeline` with its sides labeled as the transcript has them: by `sourceLabels` as of now,
+    /// and by the name a whole side got from `names`, e.g. the one person on system audio.
+    private func talkTimeline(_ timeline: TalkTimeline, named names: [String: String]) -> TalkTimeline {
+        var timeline = timeline
+        let microphone = sourceLabels.label(for: .microphone)
+        let systemAudio = sourceLabels.label(for: .systemAudio)
+        timeline.microphoneLabel = names[microphone] ?? microphone
+        timeline.systemAudioLabel = names[systemAudio] ?? systemAudio
+        return timeline
     }
 
     /// The transcript in `translationLanguage`, or `nil` if translation is off, the transcript is
@@ -203,9 +217,7 @@ final class NotePipeline {
             didChangeStage(.identifyingSpeakers)
             do {
                 let started = now()
-                let turns = try await diarizer.diarize(track.samples).map {
-                    SpeakerTurn(start: $0.start + track.offset, end: $0.end + track.offset, speaker: $0.speaker)
-                }
+                let turns = try await diarizer.diarize(track.samples).map { $0.shifted(by: track.offset) }
                 transcripts[index].transcript.segments = SpeakerAssignment.label(
                     transcripts[index].transcript.segments,
                     words: transcripts[index].words,
@@ -259,25 +271,28 @@ final class NotePipeline {
         return (transcript, namable.filter(transcript.speakers.contains))
     }
 
-    /// `transcript` with `speakers` renamed after what's said, where `speakerNamer` can tell. The
-    /// note is saved either way, so a failure is only logged.
-    private func nameSpeakers(_ speakers: [String], in transcript: Transcript) async -> Transcript {
-        guard let speakerNamer, !speakers.isEmpty else { return transcript }
+    /// `transcript` with `speakers` renamed after what's said, where `speakerNamer` can tell, and
+    /// the names by label. The note is saved either way, so a failure is only logged.
+    private func nameSpeakers(
+        _ speakers: [String],
+        in transcript: Transcript
+    ) async -> (Transcript, names: [String: String]) {
+        guard let speakerNamer, !speakers.isEmpty else { return (transcript, [:]) }
         let name = speakerNamer.info.displayName
         if case .unavailable(let reason) = speakerNamer.availability {
             logger.info("Not naming speakers, \(name, privacy: .public) is unavailable: \(reason, privacy: .public)")
-            return transcript
+            return (transcript, [:])
         }
         didChangeStage(.identifyingSpeakers)
         do {
             let names = try await speakerNamer.nameSpeakers(speakers, in: transcript)
             logger.info("Named \(names.count) of \(speakers.count) speakers")
-            return SpeakerNaming.applying(names, to: transcript)
+            return (SpeakerNaming.applying(names, to: transcript), names)
         } catch {
             logger.error(
                 "Naming speakers with \(name, privacy: .public) failed: \(error.localizedDescription, privacy: .public)"
             )
-            return transcript
+            return (transcript, [:])
         }
     }
 
@@ -305,21 +320,39 @@ final class NotePipeline {
 
     // MARK: - Times
 
-    /// `transcript` with its times moved later by `offset` seconds.
-    nonisolated static func shifted(_ transcript: Transcript, by offset: TimeInterval) -> Transcript {
-        var transcript = transcript
-        for i in transcript.segments.indices {
-            transcript.segments[i].start += offset
-            transcript.segments[i].end += offset
-        }
-        return transcript
-    }
-
     /// `spans` moved later by `offset` seconds.
     nonisolated static func shifted(
         _ spans: [Range<TimeInterval>],
         by offset: TimeInterval
     ) -> [Range<TimeInterval>] {
         spans.map { (offset + $0.lowerBound)..<(offset + $0.upperBound) }
+    }
+}
+
+// Moving what a track's engine or diarizer timed from its first sample onto the note's timeline.
+
+extension Transcript {
+    /// The transcript with its times moved later by `offset` seconds.
+    func shifted(by offset: TimeInterval) -> Transcript {
+        var transcript = self
+        for i in transcript.segments.indices {
+            transcript.segments[i].start += offset
+            transcript.segments[i].end += offset
+        }
+        return transcript
+    }
+}
+
+extension LiveWord {
+    /// The word moved later by `offset` seconds.
+    func shifted(by offset: TimeInterval) -> LiveWord {
+        LiveWord(text: text, start: start + offset, end: end + offset)
+    }
+}
+
+extension SpeakerTurn {
+    /// The turn moved later by `offset` seconds.
+    func shifted(by offset: TimeInterval) -> SpeakerTurn {
+        SpeakerTurn(start: start + offset, end: end + offset, speaker: speaker)
     }
 }

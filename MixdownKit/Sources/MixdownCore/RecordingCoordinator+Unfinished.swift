@@ -59,9 +59,7 @@ extension RecordingCoordinator {
                 trigger: description.recordingTrigger,
                 isCall: description.isCall,
                 callApp: description.callApp,
-                moments: description.recordedMoments
-                    .map { Moment(id: $0.id, time: min($0.time, duration), text: $0.text) }
-                    .sorted { $0.time < $1.time },
+                moments: NotePipeline.NoteDetails.moments(description.recordedMoments, upTo: duration),
                 recordingID: recording.isOnDisk ? recording.id : nil
             )
         )

@@ -38,16 +38,28 @@ extension NotePipeline {
         /// The recording in the `RecordingStore` the note is made from, deleted once the note is
         /// saved; `nil` if there's none.
         var recordingID: UUID?
+
+        /// `moments` in the order of their times, each at most `duration`, as one marked as the
+        /// recording stopped can be past its last sample.
+        static func moments(_ moments: [Moment], upTo duration: TimeInterval) -> [Moment] {
+            moments.map { Moment(id: $0.id, time: min($0.time, duration), text: $0.text) }
+                .sorted { $0.time < $1.time }
+        }
     }
 
-    /// How making a note went, when it didn't fail as a whole.
+    /// How making a note went, when it didn't fail as a whole. The note is saved, or kept to save,
+    /// either way.
     struct Outcome {
-        /// What to tell the user about, e.g. a track that couldn't be transcribed or a translation
-        /// that failed.
-        var messages: [String]
+        /// The tracks that couldn't be transcribed; the note has the others.
+        var trackFailure: TrackFailure?
+        /// Why the note has no translation, if one was asked for and translating failed.
+        var translationError: (any Error)?
+        /// Why the note couldn't be saved yet, if it wasn't.
+        var saveError: (any Error)?
+
         /// Whether every track was transcribed. If not, the note's `recordingID` is left out, so
         /// saving it doesn't delete the recording.
-        var isComplete: Bool
+        var isComplete: Bool { trackFailure == nil }
     }
 
     /// Where a device's audio begins in a track, in seconds from its first sample.
@@ -75,6 +87,11 @@ extension NotePipeline {
 
         var end: TimeInterval { offset + duration }
 
+        /// Every device that recorded a part of the track, in order.
+        var devices: [AudioInputDevice] {
+            parts.isEmpty ? [device] : parts.map(\.device)
+        }
+
         /// The device recording at `time`, in seconds on the recording's timeline.
         func device(at time: TimeInterval) -> AudioInputDevice {
             parts.last { $0.start <= time - offset }?.device ?? device
@@ -87,6 +104,21 @@ extension NotePipeline {
         var transcript: Transcript
         /// Per segment, its words with their times, if the engine timed them.
         var words: [[LiveWord]]?
+
+        init(track: RecordedTrack, transcript: Transcript, words: [[LiveWord]]? = nil) {
+            self.track = track
+            self.transcript = transcript
+            self.words = words
+        }
+
+        /// What `liveText` recognized from input `source`, the live session of `track`, moved onto
+        /// the note's timeline.
+        init(liveText: LiveTranscript, source: Int, track: RecordedTrack, language: String?) {
+            self.track = track
+            transcript = Transcript(segments: liveText.segments(fromSource: source), language: language)
+                .shifted(by: track.offset)
+            words = liveText.words(fromSource: source).map { words in words.map { $0.shifted(by: track.offset) } }
+        }
     }
 
     /// Tracks that couldn't be transcribed, and why the first of them failed.
