@@ -8,6 +8,7 @@ You need a Mac with Apple Silicon running macOS 26 or later, Xcode, and
 ```sh
 make bootstrap   # one-time setup: XcodeGen and the Metal Toolchain
 make run         # build and launch
+make install     # build a Release copy into /Applications, for every account on this Mac
 make test        # run the MixdownKit tests
 make logs        # follow the app's log output
 make format      # format with swift-format (`make lint` checks)
@@ -17,6 +18,13 @@ make clean       # quit Mixdown, delete all build output and refresh the Dock ic
 `Mixdown.xcodeproj` is generated from `project.yml` by XcodeGen and isn't checked in; `make`
 regenerates it when needed. To sign the app with your Apple developer account, set
 `DEVELOPMENT_TEAM` in `project.yml`.
+
+`make install` builds the Release configuration into `build/release` and copies it to
+`/Applications` (it asks for your password), so every account on the Mac can open it. Each account
+goes through the setup assistant, downloads its own models and grants its own permissions. Release
+builds made this way don't update themselves: run `make install` again for a newer build. Without a
+`DEVELOPMENT_TEAM`, the app is signed to run on this Mac only, and macOS may ask for the
+microphone and system audio again after each install.
 
 ## Project layout
 
