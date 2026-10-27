@@ -206,6 +206,28 @@ public struct NoteSummary: Sendable, Equatable {
         return blocks.joined(separator: "\n\n")
     }
 
+    /// `parts`, summaries of consecutive parts of one recording, put together without a model:
+    /// the first overview, and each list's items in order, without repeats and at most
+    /// `SummaryFields.maximumItems`. The title is left empty.
+    static func merging(_ parts: [NoteSummary], template: SummaryTemplate) -> NoteSummary {
+        func merged(_ lists: [[String]]) -> [String] {
+            var seen = Set<String>()
+            let items = lists.joined().map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            let kept = items.filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
+            return Array(kept.prefix(SummaryFields.maximumItems))
+        }
+        let overview = parts.map(\.overview).first { !isBlank($0) } ?? ""
+        return NoteSummary(
+            template: template,
+            overview: overview.trimmingCharacters(in: .whitespacesAndNewlines),
+            keyPoints: merged(parts.map(\.keyPoints)),
+            decisions: merged(parts.map(\.decisions)),
+            actionItems: merged(parts.map(\.actionItems)),
+            openQuestions: merged(parts.map(\.openQuestions)),
+            language: parts.lazy.compactMap(\.language).first
+        )
+    }
+
     private static func isBlank(_ text: String) -> Bool {
         text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
@@ -295,7 +317,9 @@ public enum SummarizationError: LocalizedError, Sendable, Equatable {
 /// Knows nothing about the model. A backend supplies the size of a piece and runs each step.
 ///
 /// A piece whose step fails is left out, so the summary covers the rest of the recording. Only
-/// when every piece of a pass fails does the summary fail.
+/// when every piece of a pass fails does the summary fail. When combining the summaries of the
+/// parts fails, they're put together as they are (`NoteSummary.merging(_:template:)`), so a long
+/// recording doesn't lose its summary at the end.
 public struct ChunkedSummarizer: Sendable {
     public enum Step: Sendable, Equatable {
         /// The text is consecutive lines of the transcript, `Speaker: text` where known, with the
@@ -324,7 +348,8 @@ public struct ChunkedSummarizer: Sendable {
     /// - Parameter moments: Marked in the transcript where they were, for the model to cover.
     /// - Parameter step: Summarizes one piece of text of the given kind; called one at a time.
     ///   Throws `SummarizationError.tooLong` if the text doesn't fit the model, and the piece is
-    ///   summarized in smaller pieces instead.
+    ///   summarized in smaller pieces instead. Throws `SummarizationError.unavailable` if the model
+    ///   can't be used, which ends the summary rather than moving on to the next piece.
     public func summarize(
         _ transcript: Transcript,
         moments: [Moment] = [],
@@ -337,49 +362,73 @@ public struct ChunkedSummarizer: Sendable {
             separator: separator
         )
         var kind = Step.transcript
+        // The summaries this pass's pieces are made of, for when combining them fails.
+        var parts: [NoteSummary] = []
         for _ in 0...maxCombinePasses {
             if pieces.count == 1 {
                 do {
                     return try await step(pieces[0].joined(separator: separator), kind)
                 } catch SummarizationError.tooLong {
-                    guard let smaller = halves(of: pieces[0], separator: separator) else {
+                    if let smaller = halves(of: pieces[0], separator: separator) {
+                        pieces = smaller
+                    } else if kind == .combine {
+                        return Self.merged(parts, failure: SummarizationError.tooLong)
+                    } else {
                         throw SummarizationError.tooLong
                     }
-                    pieces = smaller
+                } catch {
+                    if error is CancellationError || Task.isCancelled || kind == .transcript { throw error }
+                    return Self.merged(parts, failure: error)
                 }
             }
             guard !pieces.isEmpty else { return NoteSummary() }
-            let texts = try await summaries(of: pieces, kind: kind, separator: separator, step: step)
-            let parts = texts.enumerated().compactMap { index, text in
+            do {
+                parts = try await summaries(of: pieces, kind: kind, separator: separator, step: step)
+            } catch {
+                if error is CancellationError || Task.isCancelled || kind == .transcript { throw error }
+                return Self.merged(parts, failure: error)
+            }
+            let texts = parts.map(\.plainText)
+            let labeled = texts.enumerated().compactMap { index, text in
                 text.isEmpty ? nil : "Part \(index + 1) of \(texts.count):\n\(text)"
             }
             separator = "\n\n"
-            pieces = Self.groups(of: parts, maxTokens: maxTokens, separator: separator)
+            pieces = Self.groups(of: labeled, maxTokens: maxTokens, separator: separator)
             kind = .combine
         }
         throw SummarizationError.failed("The recording is too long to summarize.")
     }
 
-    /// The summary of each piece as plain text, in order. A piece that's too long for `step` is
-    /// summarized in smaller pieces, each with an entry of its own. A piece that fails gets an
-    /// empty entry; if all of them fail, the first error is thrown.
+    /// `parts` put together without the model, after combining them failed with `failure`.
+    private static func merged(_ parts: [NoteSummary], failure: any Error) -> NoteSummary {
+        logger.error("Combining \(parts.count) parts failed, merging them as they are: \(failure, privacy: .public)")
+        let template = parts.first { !$0.isEmpty }?.template ?? .general
+        return NoteSummary.merging(parts, template: template)
+    }
+
+    /// The summary of each piece, in order. A piece that's too long for `step` is summarized in
+    /// smaller pieces, each with an entry of its own. A piece that fails gets an empty summary; if
+    /// all of them fail, the first error is thrown. `SummarizationError.unavailable` is thrown
+    /// straight away: every other piece would fail the same way, each after trying to load the
+    /// model again.
     private func summaries(
         of pieces: [[String]],
         kind: Step,
         separator: String,
         step: (_ text: String, _ kind: Step) async throws -> NoteSummary
-    ) async throws -> [String] {
+    ) async throws -> [NoteSummary] {
         var queue = ArraySlice(pieces)
-        var texts: [String] = []
+        var summaries: [NoteSummary] = []
         var firstError: (any Error)?
         var anySucceeded = false
         while let piece = queue.popFirst() {
             try Task.checkCancellation()
             do {
-                texts.append(try await step(piece.joined(separator: separator), kind).plainText)
+                summaries.append(try await step(piece.joined(separator: separator), kind))
                 anySucceeded = true
             } catch {
                 if error is CancellationError || Task.isCancelled { throw error }
+                if case SummarizationError.unavailable = error { throw error }
                 if case SummarizationError.tooLong = error, let smaller = halves(of: piece, separator: separator) {
                     Self.logger.info("A piece was too long, summarizing it in \(smaller.count) pieces")
                     queue = ArraySlice(smaller) + queue
@@ -387,11 +436,11 @@ public struct ChunkedSummarizer: Sendable {
                 }
                 Self.logger.error("Leaving a piece out of the summary: \(error, privacy: .public)")
                 firstError = firstError ?? error
-                texts.append("")
+                summaries.append(NoteSummary())
             }
         }
         if !anySucceeded, let firstError { throw firstError }
-        return texts
+        return summaries
     }
 
     /// `piece` in pieces of about half its size, or nil if those would be smaller than `minTokens`.

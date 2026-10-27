@@ -85,28 +85,30 @@ public final class MLXSummarizer: Summarizer {
         moments: [Moment],
         template: SummaryTemplate
     ) async throws -> NoteSummary {
-        if case .unavailable(let reason) = availability { throw SummarizationError.unavailable(reason) }
+        let prompted = try self.prompted()
         let language = TranscriptLanguage.code(of: transcript)
-        let chunked = ChunkedSummarizer(maxTokens: Self.pieceTokens)
-        var summary = try await chunked.summarize(transcript, moments: moments) { text, kind in
-            let instructions = SummaryPrompt.instructions(
-                for: kind,
-                template: template,
-                language: language,
-                hasMoments: !moments.isEmpty
-            )
-            return try await parsedAnswer(
-                instructions: instructions + "\n" + JSONSummary.format(for: template, language: language),
-                prompt: SummaryPrompt.prompt(for: text, kind: kind),
+        return try await prompted.summarize(
+            transcript,
+            moments: moments,
+            template: template,
+            language: language
+        ) { request in
+            try await parsedAnswer(
+                instructions: request.instructions + "\n" + JSONSummary.format(for: template, language: language),
+                prompt: request.prompt,
                 maximumTokens: Self.maximumAnswerTokens,
                 expecting: "a summary"
             ) { JSONSummary.summary(from: $0, template: template) }
+        } title: { summary in
+            try await self.title(for: summary)
         }
-        if summary.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !summary.isEmpty {
-            summary.title = try await title(for: summary, language: language)
-        }
-        summary.language = language
-        return summary
+    }
+
+    /// Splits transcripts in pieces of at most `pieceTokens`. Throws
+    /// `SummarizationError.unavailable` if the model isn't downloaded.
+    private func prompted() throws -> PromptedSummarizer {
+        if case .unavailable(let reason) = availability { throw SummarizationError.unavailable(reason) }
+        return PromptedSummarizer(maxTokens: Self.pieceTokens)
     }
 
     /// The model's answer, read with `parse`. Sampling varies the answer, so one that `parse`
@@ -132,34 +134,21 @@ public final class MLXSummarizer: Summarizer {
         throw SummarizationError.failed("\(model.displayName) didn't answer with \(what).")
     }
 
-    /// A title for `summary`, for small models that stop before the last key. Empty if the
-    /// model doesn't give one; the note is then titled with its date.
-    private func title(for summary: NoteSummary, language: String?) async throws -> String {
-        do {
-            let answer = try await runtime.respond(
-                instructions: SummaryPrompt.titleInstructions(language: language),
-                prompt: summary.plainText,
-                maximumTokens: 40
-            )
-            return SummaryPrompt.title(from: answer)
-        } catch let error as CancellationError {
-            throw error
-        } catch {
-            summaryLogger.error("\(self.model.displayName, privacy: .public) gave no title: \(error, privacy: .public)")
-            return ""
-        }
+    /// A title for `summary`, for small models that stop before the last key.
+    private func title(for summary: NoteSummary) async throws -> String {
+        let answer = try await runtime.respond(
+            instructions: SummaryPrompt.titleInstructions(language: summary.language),
+            prompt: summary.plainText,
+            maximumTokens: 40
+        )
+        return SummaryPrompt.title(from: answer)
     }
 
     public func nameSpeakers(_ speakers: [String], in transcript: Transcript) async throws -> [String: String] {
-        if case .unavailable(let reason) = availability { throw SummarizationError.unavailable(reason) }
-        return try await SpeakerNaming.names(
-            for: speakers,
-            in: transcript,
-            maxTokens: Self.pieceTokens
-        ) { text, speakers in
+        try await prompted().nameSpeakers(speakers, in: transcript) { request in
             try await parsedAnswer(
-                instructions: SpeakerNaming.instructions + "\n" + SpeakerNaming.jsonFormat,
-                prompt: SpeakerNaming.prompt(for: text, speakers: speakers),
+                instructions: request.instructions + "\n" + SpeakerNaming.jsonFormat,
+                prompt: request.prompt,
                 maximumTokens: Self.maximumNamesTokens,
                 expecting: "speaker names",
                 parse: SpeakerNaming.guesses(fromJSON:)
@@ -168,20 +157,16 @@ public final class MLXSummarizer: Summarizer {
     }
 
     public func catchUp(on transcript: Transcript, language: String?) async throws -> [String] {
-        if case .unavailable(let reason) = availability { throw SummarizationError.unavailable(reason) }
+        let prompted = try self.prompted()
         let language = language ?? TranscriptLanguage.code(of: transcript)
-        let chunked = ChunkedSummarizer(maxTokens: Self.pieceTokens)
-        let summary = try await chunked.summarize(transcript) { text, kind in
-            let instructions = SummaryPrompt.catchUpInstructions(for: kind, language: language)
-            let points = try await parsedAnswer(
-                instructions: instructions + "\n" + JSONSummary.catchUpFormat(language: language),
-                prompt: SummaryPrompt.prompt(for: text, kind: kind),
+        return try await prompted.catchUp(on: transcript, language: language) { request in
+            try await parsedAnswer(
+                instructions: request.instructions + "\n" + JSONSummary.catchUpFormat(language: language),
+                prompt: request.prompt,
                 maximumTokens: Self.maximumAnswerTokens / 2,
                 expecting: "a catch-up",
                 parse: JSONSummary.catchUpPoints(from:)
             )
-            return NoteSummary(keyPoints: points)
         }
-        return summary.keyPoints
     }
 }

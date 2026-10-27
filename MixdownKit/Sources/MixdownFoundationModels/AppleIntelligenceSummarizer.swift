@@ -77,87 +77,59 @@ enum SystemModelSummary {
         moments: [Moment],
         template: SummaryTemplate
     ) async throws -> NoteSummary {
-        let language = TranscriptLanguage.code(of: transcript)
-        let hasMoments = !moments.isEmpty
-        // The template's instructions are the user's to write, so they're reckoned with on top,
-        // as is what the instructions say about marked moments.
-        let extraInstructions = [
-            SummaryPrompt.focus(of: template),
-            hasMoments ? SummaryPrompt.momentsRule(for: .transcript) : nil,
-        ]
-        let instructionTokens = extraInstructions.compactMap { $0 }.reduce(0) {
-            $0 + ChunkedSummarizer.estimatedTokens(in: $1)
-        }
-        var summary = try await summarizeInPieces(
+        try await prompted().summarize(
             transcript,
             moments: moments,
-            instructionTokens: instructionTokens
-        ) { text, kind in
-            try await respond(to: text, kind: kind, template: template, language: language, hasMoments: hasMoments)
+            template: template,
+            language: TranscriptLanguage.code(of: transcript)
+        ) { request in
+            try await overflowAsTooLong(request) { try await respond(to: request, template: template) }
+        } title: { summary in
+            // The schema always has a title, but parts merged without the model don't.
+            let session = makeSession(instructions: SummaryPrompt.titleInstructions(language: summary.language))
+            return SummaryPrompt.title(from: try await session.respond(to: summary.plainText).content)
         }
-        summary.language = language
-        return summary
     }
 
     /// What was said in the last few minutes of a recording under way, in a few points, for
     /// someone who drifted off. Runs on the Mac like the summaries, so it costs nothing and
     /// nothing is sent anywhere.
     static func catchUp(on transcript: MixdownCore.Transcript, language: String?) async throws -> [String] {
-        let language = language ?? TranscriptLanguage.code(of: transcript)
-        // Minutes of fast talking can still overflow the context; they're caught up on in parts,
-        // then those combined, like a long recording's summary.
-        let summary = try await summarizeInPieces(transcript) { text, kind in
-            NoteSummary(keyPoints: try await catchUpPoints(for: text, kind: kind, language: language))
+        try await prompted().catchUp(on: transcript, language: language ?? TranscriptLanguage.code(of: transcript)) {
+            request in
+            try await overflowAsTooLong(request) { try await catchUpPoints(for: request) }
         }
-        return summary.keyPoints
     }
 
-    /// `transcript` summarized by `ChunkedSummarizer`, in pieces that fit the model's context, with
-    /// `moments` marked in it. Throws `SummarizationError.unavailable` if the model can't be used.
-    ///
-    /// `estimatedTokens` guesses high, but the model's tokenizer can still disagree. A piece that
-    /// overflows the context is split again. `instructionTokens` are kept free on top of
-    /// `reservedTokens`, for instructions that vary, such as the ones the user wrote.
-    private static func summarizeInPieces(
-        _ transcript: MixdownCore.Transcript,
-        moments: [Moment] = [],
-        instructionTokens: Int = 0,
-        step: (_ text: String, _ kind: ChunkedSummarizer.Step) async throws -> NoteSummary
-    ) async throws -> NoteSummary {
+    /// Splits transcripts in pieces that fit the model's context. Throws
+    /// `SummarizationError.unavailable` if the model can't be used.
+    private static func prompted() throws -> PromptedSummarizer {
         if case .unavailable(let reason) = availability { throw SummarizationError.unavailable(reason) }
-        let summarizer = ChunkedSummarizer(
-            maxTokens: max(
-                SystemLanguageModel.default.contextSize - reservedTokens - instructionTokens,
-                minimumPieceTokens
-            ),
+        return PromptedSummarizer(
+            maxTokens: max(SystemLanguageModel.default.contextSize - reservedTokens, minimumPieceTokens),
             minTokens: minimumPieceTokens
         )
-        return try await summarizer.summarize(transcript, moments: moments) { text, kind in
-            do {
-                return try await step(text, kind)
-            } catch let error where isContextOverflow(error) {
-                logger.info("A piece of \(text.count) characters overflowed the context")
-                throw SummarizationError.tooLong
-            }
+    }
+
+    /// What `call` returns for `request`, with a context overflow thrown as
+    /// `SummarizationError.tooLong`: `estimatedTokens` guesses high, but the model's tokenizer can
+    /// still disagree, and the piece is split again.
+    private static func overflowAsTooLong<Value>(
+        _ request: SummaryRequest,
+        _ call: () async throws -> Value
+    ) async throws -> Value {
+        do {
+            return try await call()
+        } catch let error where isContextOverflow(error) {
+            logger.info("A piece of \(request.prompt.count) characters overflowed the context")
+            throw SummarizationError.tooLong
         }
     }
 
     /// One model call, in a fresh session so earlier pieces don't take up the context.
-    private static func respond(
-        to text: String,
-        kind: ChunkedSummarizer.Step,
-        template: SummaryTemplate,
-        language: String?,
-        hasMoments: Bool
-    ) async throws -> NoteSummary {
-        let rules = SummaryPrompt.instructions(
-            for: kind,
-            template: template,
-            language: language,
-            hasMoments: hasMoments
-        )
-        let session = makeSession(instructions: rules)
-        let prompt = SummaryPrompt.prompt(for: text, kind: kind)
+    private static func respond(to request: SummaryRequest, template: SummaryTemplate) async throws -> NoteSummary {
+        let session = makeSession(instructions: request.instructions)
+        let prompt = request.prompt
         // The explicit `includeSchemaInPrompt` picks the macOS 26 overload over macOS 27's
         // metadata one, whose other parameters have defaults too.
         guard template.hasFixedSections else {
@@ -172,7 +144,7 @@ enum SystemModelSummary {
         ) {
             prompt
         }
-        return response.content.noteSummary(template: template)
+        return response.content.noteSummary
     }
 
     /// Names for `speakers` after what's said in `transcript`; see `SpeakerNaming`. A piece that
@@ -181,15 +153,10 @@ enum SystemModelSummary {
         _ speakers: [String],
         in transcript: MixdownCore.Transcript
     ) async throws -> [String: String] {
-        if case .unavailable(let reason) = availability { throw SummarizationError.unavailable(reason) }
-        return try await SpeakerNaming.names(
-            for: speakers,
-            in: transcript,
-            maxTokens: max(SystemLanguageModel.default.contextSize - reservedTokens, minimumPieceTokens)
-        ) { text, speakers in
-            let session = makeSession(instructions: SpeakerNaming.instructions)
-            let prompt = SpeakerNaming.prompt(for: text, speakers: speakers)
-            // See `respond(to:kind:template:language:hasMoments:)`.
+        try await prompted().nameSpeakers(speakers, in: transcript) { request in
+            let session = makeSession(instructions: request.instructions)
+            let prompt = request.prompt
+            // See `respond(to:template:)`.
             let response = try await session.respond(
                 generating: GeneratedSpeakerNames.self,
                 includeSchemaInPrompt: true
@@ -201,14 +168,10 @@ enum SystemModelSummary {
     }
 
     /// One catch-up call, in a fresh session.
-    private static func catchUpPoints(
-        for text: String,
-        kind: ChunkedSummarizer.Step,
-        language: String?
-    ) async throws -> [String] {
-        let session = makeSession(instructions: SummaryPrompt.catchUpInstructions(for: kind, language: language))
-        let prompt = SummaryPrompt.prompt(for: text, kind: kind)
-        // See `respond(to:kind:template:language:hasMoments:)`.
+    private static func catchUpPoints(for request: SummaryRequest) async throws -> [String] {
+        let session = makeSession(instructions: request.instructions)
+        let prompt = request.prompt
+        // See `respond(to:template:)`.
         let response = try await session.respond(generating: GeneratedCatchUp.self, includeSchemaInPrompt: true) {
             prompt
         }
@@ -238,25 +201,21 @@ enum SystemModelSummary {
     }
 }
 
+// The descriptions and limits are `SummaryFields`', which `JSONSummary` tells other models too.
+
 @Generable
 struct GeneratedSummary {
     // Generated in this order, so the overview and the title can draw on what comes before them.
-    @Guide(
-        description: "The most important points, decisions and conclusions, one short sentence each",
-        .maximumCount(8)
-    )
+    @Guide(description: SummaryFields.keyPoints, .maximumCount(SummaryFields.maximumItems))
     var keyPoints: [String]
 
-    @Guide(
-        description: "Tasks someone agreed to do, naming who and by when if the text says. Empty if there are none",
-        .maximumCount(8)
-    )
+    @Guide(description: SummaryFields.actionItems, .maximumCount(SummaryFields.maximumItems))
     var actionItems: [String]
 
-    @Guide(description: "Two to four sentences on what the recording is about")
+    @Guide(description: SummaryFields.overview)
     var overview: String
 
-    @Guide(description: "The topic in two to six words, as a title. Not a sentence; no \"Meeting about\" or similar")
+    @Guide(description: SummaryFields.title)
     var title: String
 
     var noteSummary: NoteSummary {
@@ -274,33 +233,24 @@ struct GeneratedSummary {
 @Generable
 struct GeneratedSectionedSummary {
     // Generated in this order, so the TL;DR and the title can draw on what comes before them.
-    @Guide(
-        description: "Decisions that were made, not just suggested, one short sentence each. Empty if there are none",
-        .maximumCount(8)
-    )
+    @Guide(description: SummaryFields.decisions, .maximumCount(SummaryFields.maximumItems))
     var decisions: [String]
 
-    @Guide(
-        description: "Tasks someone agreed to do, naming who and by when if the text says. Empty if there are none",
-        .maximumCount(8)
-    )
+    @Guide(description: SummaryFields.actionItems, .maximumCount(SummaryFields.maximumItems))
     var actionItems: [String]
 
-    @Guide(
-        description: "Questions that were raised but not answered, one each. Empty if there are none",
-        .maximumCount(8)
-    )
+    @Guide(description: SummaryFields.openQuestions, .maximumCount(SummaryFields.maximumItems))
     var openQuestions: [String]
 
-    @Guide(description: "TL;DR: one to three sentences on what the recording is about and its outcome")
+    @Guide(description: SummaryFields.tldr)
     var tldr: String
 
-    @Guide(description: "The topic in two to six words, as a title. Not a sentence; no \"Meeting about\" or similar")
+    @Guide(description: SummaryFields.title)
     var title: String
 
-    func noteSummary(template: SummaryTemplate) -> NoteSummary {
+    /// Without its template, which `PromptedSummarizer` sets.
+    var noteSummary: NoteSummary {
         NoteSummary(
-            template: template,
             title: title.trimmingCharacters(in: .whitespacesAndNewlines),
             overview: tldr.trimmingCharacters(in: .whitespacesAndNewlines),
             decisions: decisions.map(SummaryPrompt.listItem),
@@ -312,10 +262,7 @@ struct GeneratedSectionedSummary {
 
 @Generable
 struct GeneratedCatchUp {
-    @Guide(
-        description: "What was missed, oldest first, one short sentence each, naming who said what where it matters",
-        .maximumCount(4)
-    )
+    @Guide(description: SummaryFields.catchUpPoints, .maximumCount(SummaryFields.maximumCatchUpPoints))
     var points: [String]
 }
 
