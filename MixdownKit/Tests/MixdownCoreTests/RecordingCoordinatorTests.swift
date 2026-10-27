@@ -755,9 +755,9 @@ struct RecordingCoordinatorTests {
     // MARK: - Catching up
 
     /// A live recording of one input that said "Hello everyone." at 10 s and "The budget is
-    /// approved." at 90 s, and the clock it reads the time from, at its start.
-    private func makeCatchUpCoordinator() -> (RecordingCoordinator, LockedValue<Date>) {
-        let date = LockedValue(Fixtures.startDate)
+    /// approved." at 90 s, and the host clock it reads the time from, at its start.
+    private func makeCatchUpCoordinator() -> (RecordingCoordinator, LockedValue<TimeInterval>) {
+        let clock = LockedValue<TimeInterval>(0)
         let live = MockLiveSession(updatesBySampleCount: [
             16_000: LiveTranscriptUpdate(words: [
                 LiveWord(text: "Hello", start: 10, end: 10.5),
@@ -771,19 +771,19 @@ struct RecordingCoordinatorTests {
         let coordinator = makeCoordinator(
             capture: MockCapture(chunks: [Fixtures.chunk(seconds: 1)]),
             engine: MockEngine(liveSession: live),
-            now: { date.current }
+            hostClock: { clock.current }
         )
-        return (coordinator, date)
+        return (coordinator, clock)
     }
 
     @Test func catchUpSumsUpTheLastMinutesOfLiveText() async throws {
         let summarizer = MockSummarizer(summary: NoteSummary(keyPoints: [" The budget was approved. ", " "]))
-        let (coordinator, date) = makeCatchUpCoordinator()
+        let (coordinator, clock) = makeCatchUpCoordinator()
         await coordinator.monitorDevices()
         await coordinator.startRecording()
         try await waitUntil { coordinator.liveTranscript.lines.count == 2 }
 
-        date.update { $0 = Fixtures.startDate.addingTimeInterval(100) }
+        clock.update { $0 = 100 }
         let catchUp = try await coordinator.catchUp(onLast: 60, with: summarizer)
 
         #expect(catchUp == CatchUp(duration: 60, points: ["The budget was approved."]))
@@ -802,7 +802,7 @@ struct RecordingCoordinatorTests {
 
     @Test func catchUpSaysWhyItCant() async throws {
         let summarizer = MockSummarizer(summary: NoteSummary(keyPoints: ["Something."]))
-        let (coordinator, date) = makeCatchUpCoordinator()
+        let (coordinator, clock) = makeCatchUpCoordinator()
         await coordinator.monitorDevices()
         await #expect(throws: CatchUpError.notRecording) {
             try await coordinator.catchUp(onLast: 60, with: summarizer)
@@ -811,7 +811,7 @@ struct RecordingCoordinatorTests {
         await coordinator.startRecording()
         try await waitUntil { coordinator.liveTranscript.lines.count == 2 }
         // Silence since 91 s.
-        date.update { $0 = Fixtures.startDate.addingTimeInterval(200) }
+        clock.update { $0 = 200 }
         await #expect(throws: CatchUpError.nothingSaid) {
             try await coordinator.catchUp(onLast: 60, with: summarizer)
         }
@@ -876,7 +876,7 @@ struct RecordingCoordinatorTests {
     // MARK: - Moments
 
     @Test func addedMomentsGoIntoTheNoteAndToTheSummarizer() async throws {
-        let date = LockedValue(Fixtures.startDate)
+        let clock = LockedValue<TimeInterval>(0)
         let writer = InMemoryNoteWriter()
         let summarizer = MockSummarizer()
         let transcript = Transcript(segments: [TranscriptSegment(start: 0, end: 3, text: "Approved.")])
@@ -885,18 +885,18 @@ struct RecordingCoordinatorTests {
             engine: MockEngine(transcript: transcript),
             writer: writer,
             summarizer: summarizer,
-            now: { date.current }
+            hostClock: { clock.current }
         )
         await coordinator.monitorDevices()
         #expect(coordinator.momentTime == nil)
         #expect(coordinator.addMoment(at: 0) == nil)
         await coordinator.startRecording()
 
-        date.update { $0 = Fixtures.startDate.addingTimeInterval(3) }
+        clock.update { $0 = 3 }
         let time = try #require(coordinator.momentTime)
         #expect(time == 3)
         // Marked at 3 s, added once the note on it is written.
-        date.update { $0 = Fixtures.startDate.addingTimeInterval(8) }
+        clock.update { $0 = 8 }
         let first = try #require(coordinator.addMoment(at: time, text: "  Budget approved \n"))
         // Past the end of the audio.
         let second = try #require(coordinator.addMoment(at: 12))
@@ -915,37 +915,59 @@ struct RecordingCoordinatorTests {
     }
 
     @Test func momentWhilePausedIsMarkedWhereItPaused() async throws {
-        let date = LockedValue(Fixtures.startDate)
+        let clock = LockedValue<TimeInterval>(0)
         let coordinator = makeCoordinator(
-            capture: MockCapture(chunks: [Fixtures.chunk(seconds: 1)]),
-            now: { date.current }
+            queuedCaptures: [Fixtures.builtInMic.id: [MockCapture(), MockCapture()]],
+            hostClock: { clock.current }
         )
         await coordinator.monitorDevices()
         await coordinator.startRecording()
 
-        date.update { $0 = Fixtures.startDate.addingTimeInterval(5) }
+        clock.update { $0 = 5 }
         await coordinator.pauseRecording()
-        date.update { $0 = Fixtures.startDate.addingTimeInterval(65) }
+        clock.update { $0 = 65 }
         #expect(coordinator.momentTime == 5)
         await coordinator.resumeRecording()
-        date.update { $0 = Fixtures.startDate.addingTimeInterval(67) }
+        clock.update { $0 = 67 }
         #expect(coordinator.momentTime == 7)
+    }
+
+    @Test func momentTimeFollowsTheHostClockLikeTheAudio() async throws {
+        // The Mac's clock is set an hour ahead three seconds in.
+        let date = LockedValue(Fixtures.startDate)
+        let clock = LockedValue<TimeInterval>(100)
+        let coordinator = makeCoordinator(
+            capture: MockCapture(),
+            now: { date.current },
+            hostClock: { clock.current }
+        )
+        await coordinator.monitorDevices()
+        await coordinator.startRecording()
+
+        date.update { $0 = Fixtures.startDate.addingTimeInterval(3_603) }
+        clock.update { $0 = 103 }
+        #expect(coordinator.momentTime == 3)
+        await coordinator.stopRecording()
     }
 
     @Test func pausedTimeIsLeftOutOfTheRecordedTime() async {
         let date = LockedValue(Fixtures.startDate)
+        let clock = LockedValue<TimeInterval>(0)
         let coordinator = makeCoordinator(
-            capture: MockCapture(chunks: [Fixtures.chunk(seconds: 1)]),
-            now: { date.current }
+            queuedCaptures: [Fixtures.builtInMic.id: [MockCapture(), MockCapture()]],
+            now: { date.current },
+            hostClock: { clock.current }
         )
         await coordinator.monitorDevices()
         await coordinator.startRecording()
 
         date.update { $0 = Fixtures.startDate.addingTimeInterval(5) }
+        clock.update { $0 = 5 }
         await coordinator.pauseRecording()
         #expect(coordinator.phase == .paused(recorded: 5))
 
         date.update { $0 = Fixtures.startDate.addingTimeInterval(65) }
+        clock.update { $0 = 65 }
         await coordinator.resumeRecording()
         #expect(coordinator.phase == .recording(startedAt: Fixtures.startDate.addingTimeInterval(60)))
         #expect(coordinator.recordingStartedAt == Fixtures.startDate)

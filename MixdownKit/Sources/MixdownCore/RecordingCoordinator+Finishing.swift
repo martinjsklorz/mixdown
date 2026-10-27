@@ -5,11 +5,6 @@ extension RecordingCoordinator {
     /// Transcribes and saves a finished recording, one track per lane of `session`.
     func finish(_ session: Session, lanes: [LaneAudio], interruption: (any Error)?) async {
         reconcileSelection()
-        defer {
-            showsLiveTranscript = false
-            liveTranscript = LiveTranscript(speakers: [])
-            liveCaptions = nil
-        }
 
         let tracks = Self.recordedTracks(of: session, lanes: lanes)
         let duration = tracks.map(\.end).max() ?? 0
@@ -27,7 +22,7 @@ extension RecordingCoordinator {
             options: session.options,
             liveText: engine.transcribesLive ? liveTranscript : nil,
             diarizer: session.diarizer,
-            details: NotePipeline.NoteDetails(
+            details: noteDetails(
                 startedAt: session.startedAt,
                 duration: duration,
                 sources: session.devices,
@@ -35,14 +30,45 @@ extension RecordingCoordinator {
                 isCall: session.isCall,
                 callApp: session.callApp,
                 // Described up to now, as the user may have still been typing when it stopped.
-                moments: moments.map { Moment(id: $0.id, time: min($0.time, duration), text: $0.text) }
-                    .sorted { $0.time < $1.time },
-                talkTimeline: session.measuresTalkTime ? talkTimeline(of: tracks, duration: duration) : nil,
+                moments: moments,
+                tracks: tracks,
+                measuresTalkTime: session.measuresTalkTime,
                 recordingID: session.isStored ? session.id : nil
             )
         )
         let recording = unfinishedRecording(of: session, lanes: lanes, duration: duration)
+        // From here on, `makeNote` tells whether quitting keeps it.
+        endingSession = nil
         await makeNote(from: input, keeping: recording, interruption: interruption)
+    }
+
+    /// What a recording's note says besides its transcript, whether it just ended or is made into a
+    /// note later: `moments` within the audio and in order, and when the user and the others
+    /// talked, if it `measuresTalkTime`.
+    func noteDetails(
+        startedAt: Date,
+        duration: TimeInterval,
+        sources: [AudioInputDevice],
+        trigger: RecordingTrigger,
+        isCall: Bool,
+        callApp: String?,
+        moments: [Moment],
+        tracks: [NotePipeline.RecordedTrack],
+        measuresTalkTime: Bool,
+        recordingID: UUID?
+    ) -> NotePipeline.NoteDetails {
+        NotePipeline.NoteDetails(
+            startedAt: startedAt,
+            duration: duration,
+            sources: sources,
+            trigger: trigger,
+            isCall: isCall,
+            callApp: callApp,
+            moments: moments.map { Moment(id: $0.id, time: min($0.time, duration), text: $0.text) }
+                .sorted { $0.time < $1.time },
+            talkTimeline: measuresTalkTime ? talkTimeline(of: tracks, duration: duration) : nil,
+            recordingID: recordingID
+        )
     }
 
     /// The tracks of `session`'s lanes, from what each recorded.

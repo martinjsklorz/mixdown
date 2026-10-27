@@ -117,6 +117,59 @@ struct RecordingStoreTests {
         #expect(!FileManager.default.fileExists(atPath: store.audioURL(of: id, lane: 0, capture: 0).path))
     }
 
+    @Test func keepsFoldersWhoseDescriptionCantBeRead() throws {
+        let store = Self.makeStore()
+        defer { Self.remove(store) }
+        let corrupt = UUID()
+        let newer = UUID()
+        let lanes = [RecordingStore.Description.Lane(kind: "microphone", captures: [.init(Fixtures.builtInMic)])]
+        for id in [corrupt, newer] {
+            try store.save(description(lanes: lanes), of: id)
+            write([Fixtures.chunk(seconds: 1)], to: store.audioURL(of: id, lane: 0, capture: 0))
+        }
+        let descriptionURL = { (id: UUID) in
+            store.audioURL(of: id, lane: 0, capture: 0).deletingLastPathComponent()
+                .appendingPathComponent("recording.json")
+        }
+        try Data("{ not json".utf8).write(to: descriptionURL(corrupt))
+        // Written by a version of Mixdown that stores something this one doesn't know.
+        try Data(#"{"startedAt": "2025-10-09T08:53:20Z", "kind": "new"}"#.utf8).write(to: descriptionURL(newer))
+
+        #expect(store.recordings().isEmpty)
+        for id in [corrupt, newer] {
+            #expect(FileManager.default.fileExists(atPath: store.audioURL(of: id, lane: 0, capture: 0).path))
+        }
+    }
+
+    @Test func deletesEmptyFoldersWithoutADescription() throws {
+        let store = Self.makeStore()
+        defer { Self.remove(store) }
+        let id = UUID()
+        let folder = store.audioURL(of: id, lane: 0, capture: 0).deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+
+        #expect(store.recordings().isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: folder.path))
+    }
+
+    @Test func findsTheSpeechAgainOnlyIfTheRecordingMeasuredTalkTime() throws {
+        let store = Self.makeStore()
+        defer { Self.remove(store) }
+        for measuresTalkTime in [false, true] {
+            let id = UUID()
+            var stored = description(lanes: [.init(kind: "microphone", captures: [.init(Fixtures.builtInMic)])])
+            stored.measuresTalkTime = measuresTalkTime
+            try store.save(stored, of: id)
+            write(
+                [AudioChunk(samples: TalkFixtures.audio([true, false, true]), hostTime: 100)],
+                to: store.audioURL(of: id, lane: 0, capture: 0)
+            )
+
+            let speech = try store.load(id).lanes[0].audio.speech
+            #expect(speech.isEmpty == !measuresTalkTime)
+        }
+    }
+
     @Test func deletesARecording() throws {
         let store = Self.makeStore()
         defer { Self.remove(store) }

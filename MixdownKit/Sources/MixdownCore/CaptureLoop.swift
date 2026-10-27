@@ -21,6 +21,8 @@ struct CaptureLoop: Sendable {
         /// When there was speech, in seconds from the track's first sample.
         var speech: [Range<TimeInterval>] = []
         var error: (any Error)?
+        /// Whether writing the audio to `audioFile` failed, so the file has only part of it.
+        var diskWriteFailed = false
     }
 
     let kind: AudioSourceKind
@@ -132,6 +134,11 @@ struct CaptureLoop: Sendable {
                 "Recorded \(deviceName, privacy: .public) without echo removal: \(reason, privacy: .public)"
             )
         }
-        return Output(track: track, speech: speechDetector.spans, error: captureError)
+        return Output(
+            track: track,
+            speech: speechDetector.spans,
+            error: captureError,
+            diskWriteFailed: writer?.failed ?? false
+        )
     }
 }

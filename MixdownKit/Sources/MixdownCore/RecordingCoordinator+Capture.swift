@@ -38,6 +38,7 @@ extension RecordingCoordinator {
 
         let session = Session(
             startedAt: now(),
+            startHostTime: hostClock(),
             options: options,
             echoReference: echoCancellation == nil ? nil : EchoReference(),
             measuresTalkTime: measuresTalkTime,
@@ -200,6 +201,52 @@ extension RecordingCoordinator {
         }
     }
 
+    // MARK: - Pausing
+
+    /// Pauses the recording: its inputs stop until `resumeRecording()`. Ignored unless recording
+    /// and not paused.
+    public func pauseRecording() async {
+        guard let session, case .recording = phase else { return }
+        session.isPaused = true
+        // Already set if no input started again since the last pause, which then still counts.
+        session.pausedAt = session.pausedAt ?? hostClock()
+        phase = .paused(recorded: session.recordedTime(at: hostClock()))
+        // Pausing is an answer too; the wait starts over once it resumes.
+        if isAskingIfStillRecording { isAskingIfStillRecording = false }
+        let running = session.takeCurrentCaptures()
+        for capture in running {
+            clearLevel(of: capture.device)
+        }
+        await session.stopWhilePaused(running.map(\.capture)).value
+        logger.info("Recording paused")
+    }
+
+    /// Records again from the selected inputs, which may have changed while paused. The recording
+    /// ends, keeping what it has, if none of them starts. Ignored unless paused.
+    public func resumeRecording() async {
+        guard let session, case .paused(let recorded) = phase else { return }
+        session.isPaused = false
+        phase = .recording(startedAt: now().addingTimeInterval(-recorded))
+        logger.info("Recording resumed")
+        // An input may not start again on a device it hasn't stopped on yet.
+        let pausing = session.pausing
+        await pausing?.value
+        // A pause since may have stopped more.
+        if session.pausing == pausing { session.pausing = nil }
+        guard self.session === session, !session.isPaused else { return }
+        await syncCaptures(of: session)
+    }
+
+    public func togglePause() async {
+        if isPaused {
+            await resumeRecording()
+        } else {
+            await pauseRecording()
+        }
+    }
+
+    // MARK: - Stopping
+
     /// Stops capture, transcribes, writes the note and updates `lastNoteURL`. While the captures
     /// are starting, e.g. waiting on a permission prompt, it stops them as soon as they've started.
     public func stopRecording() async {
@@ -212,24 +259,95 @@ extension RecordingCoordinator {
         await end(session, interruption: nil)
     }
 
+    /// Stops the recording in progress without making its note, keeping its audio in the
+    /// `recordingStore` to make one later, as one of `unfinishedRecordings`. For quitting without
+    /// waiting for the note, e.g. while logging out; unless it's on disk, the recording is lost. While
+    /// the captures start, they're stopped as soon as they have, like by `stopRecording()`.
+    public func stopRecordingWithoutNote() async {
+        guard !isStartingCapture else {
+            isStopPending = true
+            return
+        }
+        guard let session else { return }
+        // Its live text isn't needed, so the live sessions don't catch up on what they were behind.
+        let (lanes, _) = await tearDown(session, finishingLiveText: false)
+
+        storeDescription(of: session)
+        let tracks = Self.recordedTracks(of: session, lanes: lanes)
+        let duration = tracks.map(\.end).max() ?? 0
+        if session.isStored, duration >= Self.minimumRecordingDuration {
+            keep(
+                UnfinishedRecording(
+                    id: session.id,
+                    startedAt: session.startedAt,
+                    duration: duration,
+                    sources: session.devices,
+                    isOnDisk: true
+                )
+            )
+        } else if session.isStored {
+            recordingStore?.delete(session.id)
+        }
+        logger.info("Recording stopped without a note")
+
+        endingSession = nil
+        clearRecordingUI()
+        phase = .idle
+        reconcileSelection()
+        releaseEngine()
+    }
+
     /// Stops every capture of `session`, then transcribes and saves what they recorded. If capture
     /// ended with `interruption`, a note of the partial recording is still saved and the error is
     /// surfaced afterwards.
     private func end(_ session: Session, interruption: (any Error)?) async {
         guard self.session === session else { return }
+        let (lanes, liveError) = await tearDown(session, finishingLiveText: true)
+        await finish(session, lanes: lanes, interruption: interruption ?? liveError)
+        endingSession = nil
+        clearRecordingUI()
+        releaseEngine()
+    }
+
+    /// Ends `session` as the recording in progress, as `endingSession`, and stops all of it: its
+    /// captures, then its live sessions, which first transcribe the rest of their input if
+    /// `finishingLiveText`. Returns what each lane recorded, and the first error that stopped a
+    /// live session.
+    private func tearDown(
+        _ session: Session,
+        finishingLiveText: Bool
+    ) async -> (lanes: [LaneAudio], liveError: (any Error)?) {
         // Clearing the session first makes repeated stops and the end-of-stream handlers no-ops.
         self.session = nil
+        endingSession = session
+        // No longer recording, so it can't be paused, marked as a call or stopped again.
+        phase = .transcribing(progress: 0)
         recordingStartedAt = nil
         liveCaptioning?.cancel()
         liveCaptioning = nil
         resetLevels()
         stopStillRecordingCheck()
         let lanes = await endCaptures(of: session)
-        let liveError = await finishLiveTranscription(of: session)
-        await finish(session, lanes: lanes, interruption: interruption ?? liveError)
+        guard finishingLiveText else {
+            let live = session.lanes.flatMap { $0.captures.compactMap(\.live) }
+            live.forEach { $0.cancel() }
+            // Waited for even so, to let go of the engine only once its sessions are done.
+            for task in live {
+                _ = await task.value
+            }
+            return (lanes, nil)
+        }
+        return (lanes, await finishLiveTranscription(of: session))
+    }
+
+    /// Clears what's shown of the recording that ended: its live text and captions, moments and
+    /// summary template.
+    private func clearRecordingUI() {
+        showsLiveTranscript = false
+        liveTranscript = LiveTranscript(speakers: [])
+        liveCaptions = nil
         recordingSummaryTemplate = nil
         moments = []
-        releaseEngine()
     }
 
     /// Stops every capture of `session` and joins what each lane recorded into one track per lane.
@@ -242,6 +360,7 @@ extension RecordingCoordinator {
             for capture in lane.captures {
                 let result = await capture.consumer.value
                 audio.append(result.track, from: capture.device, speech: result.speech)
+                if result.diskWriteFailed { session.lostAudioOnDisk = true }
             }
             lanes.append(audio)
         }
@@ -347,9 +466,9 @@ extension RecordingCoordinator {
                 reconcileSelection()
                 continue
             }
-            // Paused while it started.
+            // Paused while it started. Resuming waits for it to stop, like for the paused inputs.
             guard self.session === session, !session.isPaused else {
-                await started.capture.stop()
+                await session.stopWhilePaused([started.capture]).value
                 return
             }
             // A microphone replacing another continues its track.
