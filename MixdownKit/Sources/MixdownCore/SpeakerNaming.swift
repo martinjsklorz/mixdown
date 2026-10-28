@@ -65,6 +65,8 @@ public enum SpeakerNaming {
     /// error is thrown.
     ///
     /// - Parameter step: Returns names by label for the piece's lines; called one at a time.
+    ///   Throwing `SummarizationError.unavailable` ends the naming rather than moving on to the
+    ///   next piece.
     public static func names(
         for speakers: [String],
         in transcript: Transcript,
@@ -102,6 +104,8 @@ public enum SpeakerNaming {
                 anySucceeded = true
             } catch {
                 if error is CancellationError || Task.isCancelled { throw error }
+                // Every other piece would fail the same way.
+                if case SummarizationError.unavailable = error { throw error }
                 logger.error("Leaving a piece out of naming speakers: \(error, privacy: .public)")
                 firstError = firstError ?? error
                 continue
