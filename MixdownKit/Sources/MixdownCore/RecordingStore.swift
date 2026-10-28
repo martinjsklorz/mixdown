@@ -81,6 +81,12 @@ public struct RecordingStore: Sendable {
         var callApp: String?
         var lanes: [Lane]
         var moments: [Mark]
+        /// `RecordingCoordinator.measuresTalkTime` as the recording started. Missing from
+        /// recordings stored before Mixdown kept it.
+        var measuresTalkTime: Bool?
+        /// Whether the people on the system audio are told apart, as the recording started.
+        /// Missing from recordings stored before Mixdown kept it.
+        var identifiesSpeakers: Bool?
     }
 
     /// A recording read back from disk: its description and each lane's audio, with the device the
@@ -121,14 +127,23 @@ public struct RecordingStore: Sendable {
 
     /// Every recording in the store, oldest first, judged by their descriptions and the lengths of
     /// their audio files, without reading the audio. Folders without a description, from a
-    /// recording that never got under way, are deleted.
+    /// recording that never got under way, are deleted. Those whose description can't be read, e.g.
+    /// one written by another version of Mixdown, are left out but kept, with their audio.
     func recordings() -> [UnfinishedRecording] {
         let folders =
             (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
         return folders.compactMap { folder -> UnfinishedRecording? in
             guard let id = UUID(uuidString: folder.lastPathComponent) else { return nil }
-            guard let description = try? description(of: id) else {
+            let description: Description
+            do {
+                description = try self.description(of: id)
+            } catch CocoaError.fileReadNoSuchFile {
                 delete(id)
+                return nil
+            } catch {
+                Self.logger.error(
+                    "Reading a recording's description failed: \(error.localizedDescription, privacy: .public)"
+                )
                 return nil
             }
             let tracks = description.lanes.indices.map { lane in
@@ -154,7 +169,8 @@ public struct RecordingStore: Sendable {
 
     /// Reads the recording `id`, its audio included, with each lane's captures joined into one
     /// track like `RecordingCoordinator` joins them when a recording ends. Captures without audio
-    /// are left out, and lanes without captures.
+    /// are left out, and lanes without captures. If the recording measured talk time, the speech in
+    /// each capture is found again.
     func load(_ id: UUID) throws -> StoredRecording {
         let description = try description(of: id)
         var lanes: [(device: AudioInputDevice, audio: RecordingCoordinator.LaneAudio)] = []
@@ -164,7 +180,14 @@ public struct RecordingStore: Sendable {
             for (capture, device) in lane.captures.enumerated() {
                 let url = audioURL(of: id, lane: index, capture: capture)
                 guard FileManager.default.fileExists(atPath: url.path) else { continue }
-                audio.append(try CaptureAudioFile.read(url), from: device.audioInputDevice, speech: [])
+                let track = try CaptureAudioFile.read(url)
+                var speech: [Range<TimeInterval>] = []
+                if description.measuresTalkTime == true {
+                    var detector = SpeechActivityDetector()
+                    _ = detector.add(track.samples)
+                    speech = detector.spans
+                }
+                audio.append(track, from: device.audioInputDevice, speech: speech)
             }
             lanes.append((first.audioInputDevice, audio))
         }
@@ -253,11 +276,13 @@ enum CaptureAudioFile {
 }
 
 /// Appends a capture's audio to its file as it's recorded. Writing stops at the first error,
-/// leaving what was written; the recording goes on, only without its audio on disk.
+/// leaving what was written, and sets `failed`; the recording goes on, only without the rest of its
+/// audio on disk.
 final class CaptureAudioWriter {
     private let url: URL
     private var handle: FileHandle?
-    private var failed = false
+    /// Whether a write failed, so the file has only part of the audio.
+    private(set) var failed = false
     private static let logger = Logger(subsystem: "app.mixdown", category: "recordings")
 
     init(url: URL) {

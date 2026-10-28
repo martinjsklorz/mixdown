@@ -302,6 +302,9 @@ public final class RecordingCoordinator {
         preferredDeviceIDs.isEmpty || preferredDeviceIDs.contains(AudioInputDevice.defaultMicrophoneID)
     }
     @ObservationIgnored var session: Session?
+    /// The recording that stopped and is being torn down, from when `session` is cleared until its
+    /// note is begun, or it's kept without one. See `keepsRecordingWhenQuitting`.
+    @ObservationIgnored var endingSession: Session?
     /// The import under way, kept so `cancelImport()` can stop it.
     @ObservationIgnored var importing: Task<Void, Never>?
     /// The in-flight `engine.prepare` call, kept so `cancelPreparation()` can stop it.
@@ -349,7 +352,8 @@ public final class RecordingCoordinator {
     ///   - recordingStore: Keeps the audio of recordings on disk until their notes are saved. Its
     ///     recordings, other than those of `pendingNotes`, become `unfinishedRecordings`.
     ///   - now: Clock used for recording start times. Injectable for tests.
-    ///   - hostClock: Seconds on the clock of `AudioChunk.hostTime`, to measure pauses with.
+    ///   - hostClock: Seconds on the clock of `AudioChunk.hostTime`, to measure pauses and the time
+    ///     recorded with.
     ///     `systemUptime` counts `mach_absolute_time` on macOS. Injectable for tests.
     public init(
         deviceProvider: any AudioDeviceProvider,
@@ -417,48 +421,6 @@ public final class RecordingCoordinator {
             await stopRecording()
         } else {
             await startRecording()
-        }
-    }
-
-    /// Pauses the recording: its inputs stop until `resumeRecording()`. Ignored unless recording
-    /// and not paused.
-    public func pauseRecording() async {
-        guard let session, case .recording(let startedAt) = phase else { return }
-        session.isPaused = true
-        // Already set if no input started again since the last pause, which then still counts.
-        session.pausedAt = session.pausedAt ?? hostClock()
-        phase = .paused(recorded: max(now().timeIntervalSince(startedAt), 0))
-        // Pausing is an answer too; the wait starts over once it resumes.
-        if isAskingIfStillRecording { isAskingIfStillRecording = false }
-        let running = session.takeCurrentCaptures()
-        for capture in running {
-            clearLevel(of: capture.device)
-        }
-        let pausing = Task { await RecordingCoordinator.stop(running.map(\.capture)) }
-        session.pausing = pausing
-        await pausing.value
-        logger.info("Recording paused")
-    }
-
-    /// Records again from the selected inputs, which may have changed while paused. The recording
-    /// ends, keeping what it has, if none of them starts. Ignored unless paused.
-    public func resumeRecording() async {
-        guard let session, case .paused(let recorded) = phase else { return }
-        session.isPaused = false
-        phase = .recording(startedAt: now().addingTimeInterval(-recorded))
-        logger.info("Recording resumed")
-        // An input may not start again on a device it hasn't stopped on yet.
-        await session.pausing?.value
-        session.pausing = nil
-        guard self.session === session, !session.isPaused else { return }
-        await syncCaptures(of: session)
-    }
-
-    public func togglePause() async {
-        if isPaused {
-            await resumeRecording()
-        } else {
-            await pauseRecording()
         }
     }
 

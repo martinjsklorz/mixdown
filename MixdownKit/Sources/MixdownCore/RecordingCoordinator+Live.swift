@@ -15,6 +15,7 @@ extension RecordingCoordinator {
 
     /// Feeds one capture's audio to a live session and adds what it recognizes to
     /// `liveTranscript`, until the capture ends. Returns the error that stopped it early, if any.
+    /// Once cancelled, it stops without transcribing the rest, as its text isn't wanted.
     func transcribeLive(
         _ feed: AsyncStream<CaptureLoop.LiveFeed>,
         source index: Int,
@@ -27,14 +28,17 @@ extension RecordingCoordinator {
             liveTranscript.breakSegment(ofSource: index)
             var startHostTime: TimeInterval?
             for await item in feed {
+                guard !Task.isCancelled else { return nil }
                 startHostTime = item.startHostTime
                 let update = try await live.push(item.samples)
                 liveTranscript.apply(update, fromSource: index, startHostTime: startHostTime)
             }
+            guard !Task.isCancelled else { return nil }
             let update = try await live.finish()
             liveTranscript.apply(update, fromSource: index, startHostTime: startHostTime)
             return nil
         } catch {
+            guard !Task.isCancelled else { return nil }
             logger.error("Live transcription failed: \(error.localizedDescription, privacy: .public)")
             return error
         }
@@ -45,7 +49,6 @@ extension RecordingCoordinator {
     func finishLiveTranscription(of session: Session) async -> (any Error)? {
         let live = session.lanes.flatMap { $0.captures.compactMap(\.live) }
         guard !live.isEmpty else { return nil }
-        phase = .transcribing(progress: 0)
         var firstError: (any Error)?
         for task in live {
             if let error = await task.value { firstError = firstError ?? error }

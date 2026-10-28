@@ -20,6 +20,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var pendingSpotlightItem: (url: URL, line: Int?)?
     /// `mixdown://` links opened before `environment` was set, e.g. the one that launched Mixdown.
     private var pendingURLCommands: [URLCommand] = []
+    /// Set while Mixdown waits to quit once the note is saved, as the user chose. See `quitWhenDone()`.
+    private var isWaitingToQuit = false
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Before the first window appears, so it doesn't flash in the system's appearance.
@@ -38,44 +40,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// folder or recordings that couldn't be transcribed, which only live in memory. Logging out,
     /// restarting or shutting down doesn't ask about recording, so it isn't held up: a recording
     /// kept on disk stops, to make its note the next time Mixdown opens, like one being made into a
-    /// note already is. One only in memory stops, and Mixdown quits once its note is saved.
+    /// note already is. One only in memory stops, and Mixdown quits once its note is saved. See
+    /// `RecordingCoordinator.quitPlan(isSessionEnding:)`.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let coordinator = environment?.coordinator else { return .terminateNow }
-        if Self.isSessionEnding {
-            if coordinator.canStopRecording, coordinator.keepsRecordingWhenQuitting {
-                stopWithoutNoteThenQuit(coordinator)
-                return .terminateLater
-            } else if coordinator.canStopRecording {
-                Task { await coordinator.stopRecording() }
-                replyWhenDone(coordinator)
-                return .terminateLater
-            } else if coordinator.isMakingNote, !coordinator.keepsRecordingWhenQuitting,
-                coordinator.importingFileName == nil
-            {
-                replyWhenDone(coordinator)
-                return .terminateLater
-            }
-        } else if coordinator.canStopRecording {
-            return askToQuitWhileRecording(coordinator)
-        } else if coordinator.isMakingNote {
-            return askToQuitWhileMakingNote(coordinator)
+        let isSessionEnding = Self.isSessionEnding
+        // Already quitting once the note is saved; asking again would only quit twice.
+        if isWaitingToQuit, !isSessionEnding { return .terminateCancel }
+        switch coordinator.quitPlan(isSessionEnding: isSessionEnding) {
+        case .stopWithoutNoteThenQuit:
+            stopWithoutNoteThenQuit(coordinator)
+            return .terminateLater
+        case .stopThenQuitWhenDone:
+            Task { await coordinator.stopRecording() }
+            replyWhenDone(coordinator)
+            return .terminateLater
+        case .quitWhenDone:
+            replyWhenDone(coordinator)
+            return .terminateLater
+        case .askWhileRecording(let keepsRecording):
+            return askToQuitWhileRecording(coordinator, keepsRecording: keepsRecording)
+        case .askWhileMakingNote(let importing, let keepsRecording):
+            return askToQuitWhileMakingNote(importing: importing, keepsRecording: keepsRecording)
+        case .askAboutLosingWork(let pendingNotes, let recordingsInMemory):
+            return askToQuitLosingWork(pendingNotes: pendingNotes, recordingsInMemory: recordingsInMemory)
+        case .quitNow:
+            return .terminateNow
         }
-        return askToQuitLosingWork(coordinator)
     }
 
-    private func askToQuitWhileRecording(_ coordinator: RecordingCoordinator) -> NSApplication.TerminateReply {
+    private func askToQuitWhileRecording(
+        _ coordinator: RecordingCoordinator,
+        keepsRecording: Bool
+    ) -> NSApplication.TerminateReply {
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "Mixdown is recording"
         alert.informativeText =
             "Stop the recording, and Mixdown quits once its note is saved. "
-            + (coordinator.keepsRecordingWhenQuitting
+            + (keepsRecording
                 ? "If you quit now, Mixdown keeps the recording, to make its note the next time you open it."
                 : "If you quit now, the recording is lost.")
         alert.addButton(withTitle: "Stop and Quit When Saved")
         addDontQuitButton(to: alert)
         let quit = alert.addButton(withTitle: "Quit Now")
-        quit.hasDestructiveAction = !coordinator.keepsRecordingWhenQuitting
+        quit.hasDestructiveAction = !keepsRecording
         NSApp.activate()
         switch alert.runModal() {
         case .alertFirstButtonReturn:
@@ -90,19 +99,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func askToQuitWhileMakingNote(_ coordinator: RecordingCoordinator) -> NSApplication.TerminateReply {
+    private func askToQuitWhileMakingNote(importing: String?, keepsRecording: Bool) -> NSApplication.TerminateReply {
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText =
-            if let name = coordinator.importingFileName {
+            if let name = importing {
                 "Mixdown is still importing “\(name)”"
             } else {
                 "Mixdown is still making a note of the recording"
             }
         let quittingNow =
-            if let name = coordinator.importingFileName {
+            if let name = importing {
                 "If you quit now, import “\(name)” again later."
-            } else if coordinator.keepsRecordingWhenQuitting {
+            } else if keepsRecording {
                 "If you quit now, Mixdown keeps the recording, to make its note the next time you open it."
             } else {
                 "If you quit now, the recording is lost."
@@ -111,7 +120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.addButton(withTitle: "Quit When Saved")
         addDontQuitButton(to: alert)
         let quit = alert.addButton(withTitle: "Quit Now")
-        quit.hasDestructiveAction = coordinator.importingFileName == nil && !coordinator.keepsRecordingWhenQuitting
+        quit.hasDestructiveAction = importing == nil && !keepsRecording
         NSApp.activate()
         switch alert.runModal() {
         case .alertFirstButtonReturn:
@@ -126,13 +135,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Asks about notes waiting for the notes folder, then about recordings that couldn't be
     /// transcribed and are only in memory, as quitting loses them.
-    private func askToQuitLosingWork(_ coordinator: RecordingCoordinator) -> NSApplication.TerminateReply {
-        guard askToQuitWithPendingNotes(coordinator) == .terminateNow else { return .terminateCancel }
-        return askToQuitWithRecordingsInMemory(coordinator)
+    private func askToQuitLosingWork(pendingNotes: Int, recordingsInMemory: Int) -> NSApplication.TerminateReply {
+        guard askToQuitWithPendingNotes(count: pendingNotes) == .terminateNow else { return .terminateCancel }
+        return askToQuitWithRecordingsInMemory(count: recordingsInMemory)
     }
 
-    private func askToQuitWithPendingNotes(_ coordinator: RecordingCoordinator) -> NSApplication.TerminateReply {
-        let count = coordinator.pendingNotes.count
+    private func askToQuitWithPendingNotes(count: Int) -> NSApplication.TerminateReply {
         guard count > 0 else { return .terminateNow }
         let alert = NSAlert()
         alert.alertStyle = .warning
@@ -149,10 +157,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return alert.runModal() == .alertFirstButtonReturn ? .terminateCancel : .terminateNow
     }
 
-    private func askToQuitWithRecordingsInMemory(
-        _ coordinator: RecordingCoordinator
-    ) -> NSApplication.TerminateReply {
-        let count = coordinator.unfinishedRecordings.filter { !$0.isOnDisk }.count
+    private func askToQuitWithRecordingsInMemory(count: Int) -> NSApplication.TerminateReply {
         guard count > 0 else { return .terminateNow }
         let alert = NSAlert()
         alert.alertStyle = .warning
@@ -175,17 +180,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Quits once Mixdown has stopped recording and making notes. Quitting asks again about notes
-    /// and recordings only in memory.
+    /// and recordings only in memory. Only waits once, however often the user asks.
     private func quitWhenDone() {
-        guard let coordinator = environment?.coordinator else { return }
-        whenDone(coordinator) { NSApp.terminate(nil) }
+        guard !isWaitingToQuit, let coordinator = environment?.coordinator else { return }
+        isWaitingToQuit = true
+        whenDone(coordinator) { [weak self] in
+            self?.isWaitingToQuit = false
+            NSApp.terminate(nil)
+        }
     }
 
     /// Lets Mixdown quit once it has stopped recording and making notes, after asking about notes
     /// and recordings only in memory. Answers a `.terminateLater`.
     private func replyWhenDone(_ coordinator: RecordingCoordinator) {
         whenDone(coordinator) { [weak self] in
-            let reply = self?.askToQuitLosingWork(coordinator) ?? .terminateNow
+            // Done, so the plan is only about what quitting loses, if anything.
+            let plan = coordinator.quitPlan(isSessionEnding: false)
+            guard let self, case .askAboutLosingWork(let pendingNotes, let recordingsInMemory) = plan else {
+                NSApp.reply(toApplicationShouldTerminate: true)
+                return
+            }
+            let reply = askToQuitLosingWork(pendingNotes: pendingNotes, recordingsInMemory: recordingsInMemory)
             NSApp.reply(toApplicationShouldTerminate: reply == .terminateNow)
         }
     }

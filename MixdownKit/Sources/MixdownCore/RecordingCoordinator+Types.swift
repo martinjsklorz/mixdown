@@ -7,6 +7,8 @@ extension RecordingCoordinator {
     final class Session {
         let id = UUID()
         let startedAt: Date
+        /// When the recording started, on the host clock, which the audio is timed by.
+        let startHostTime: TimeInterval
         /// `options` as the recording started, used to transcribe all of it.
         let options: TranscriptionOptions
         /// The system audio, for the microphones to take its echo out; `nil` without echo
@@ -21,6 +23,14 @@ extension RecordingCoordinator {
         /// Whether the recording's description is in the `recordingStore`, so its audio is written
         /// there too.
         var isStored = false
+        /// Whether the description last failed to be written, so the one in the `recordingStore`
+        /// may leave out captures whose audio is there.
+        var isStoredDescriptionOutdated = false
+        /// Whether writing a capture's audio to the `recordingStore` failed, so it has only part of
+        /// that audio.
+        var lostAudioOnDisk = false
+        /// Whether all of the recording is in the `recordingStore`, not just part of it.
+        var isStoredInFull: Bool { isStored && !isStoredDescriptionOutdated && !lostAudioOnDisk }
         /// Whether the recording was started for a call, from a notification or automatically.
         var isCall = false
         /// The app the call was in, e.g. `Zoom`; `nil` if not a call or not known.
@@ -43,7 +53,8 @@ extension RecordingCoordinator {
         var pausedAt: TimeInterval?
         /// Whether the recording is paused. No input starts while it is.
         var isPaused = false
-        /// Stops the inputs for a pause; resuming waits for it.
+        /// Stops the inputs for a pause, after those of earlier pauses; resuming waits for it. See
+        /// `stopWhilePaused(_:)`.
         var pausing: Task<Void, Never>?
         /// The time spent paused so far, on the host clock. Taken off the host time of everything
         /// captured afterwards, which leaves the pauses out of the tracks.
@@ -51,12 +62,14 @@ extension RecordingCoordinator {
 
         init(
             startedAt: Date,
+            startHostTime: TimeInterval,
             options: TranscriptionOptions,
             echoReference: EchoReference?,
             measuresTalkTime: Bool,
             diarizer: (any SpeakerDiarizer)?
         ) {
             self.startedAt = startedAt
+            self.startHostTime = startHostTime
             self.options = options
             self.echoReference = echoReference
             self.measuresTalkTime = measuresTalkTime
@@ -92,6 +105,26 @@ extension RecordingCoordinator {
                 lane.current = nil
             }
             return current
+        }
+
+        /// Stops `captures` for a pause, as `pausing`, which finishes once they and those of
+        /// earlier pauses have stopped. An input may not start again on a device it hasn't
+        /// stopped on yet.
+        @discardableResult
+        func stopWhilePaused(_ captures: [any AudioCapturing]) -> Task<Void, Never> {
+            let previous = pausing
+            let stopping = Task {
+                await RecordingCoordinator.stop(captures)
+                await previous?.value
+            }
+            pausing = stopping
+            return stopping
+        }
+
+        /// Seconds recorded by `hostTime`, on the host clock, not counting pauses.
+        func recordedTime(at hostTime: TimeInterval) -> TimeInterval {
+            let paused = pausedDuration + (pausedAt.map { max(hostTime - $0, 0) } ?? 0)
+            return max(hostTime - startHostTime - paused, 0)
         }
     }
 

@@ -4,9 +4,9 @@ import os
 /// Recordings kept on disk in the `recordingStore`, and quitting without losing them.
 extension RecordingCoordinator {
     /// Whether quitting now keeps the recording in progress, or the one being made into a note, to
-    /// make its note the next time: it's on disk.
+    /// make its note the next time: all of it is on disk.
     public var keepsRecordingWhenQuitting: Bool {
-        if let session { return session.isStored }
+        if let session = session ?? endingSession { return session.isStoredInFull }
         return isMakingNoteOfStoredRecording
     }
 
@@ -51,18 +51,20 @@ extension RecordingCoordinator {
         let input = NotePipeline.Input(
             tracks: tracks,
             options: TranscriptionOptions(language: description.language),
-            diarizer: speakerDiarizer,
-            details: NotePipeline.NoteDetails(
+            // Told apart if they were to be as it was recorded, or if that isn't known.
+            diarizer: description.identifiesSpeakers == false ? nil : speakerDiarizer,
+            details: noteDetails(
                 startedAt: description.startedAt,
                 duration: duration,
                 sources: description.sources,
                 trigger: description.recordingTrigger,
                 isCall: description.isCall,
                 callApp: description.callApp,
-                moments: description.recordedMoments
-                    .map { Moment(id: $0.id, time: min($0.time, duration), text: $0.text) }
-                    .sorted { $0.time < $1.time },
-                recordingID: recording.isOnDisk ? recording.id : nil
+                moments: description.recordedMoments,
+                tracks: tracks,
+                measuresTalkTime: description.measuresTalkTime ?? false,
+                // Even if it's kept in memory, part of it may be on disk, which goes too.
+                recordingID: recording.id
             )
         )
         await makeNote(from: input, keeping: recording)
@@ -94,57 +96,9 @@ extension RecordingCoordinator {
         guard unfinishedRecordings.contains(where: { $0.id == recording.id }) else { return }
         unfinishedRecordings.removeAll { $0.id == recording.id }
         recordingsInMemory[recording.id] = nil
-        if recording.isOnDisk { recordingStore?.delete(recording.id) }
+        // Also what one kept in memory left on disk, if it was only partly written there.
+        recordingStore?.delete(recording.id)
         logger.info("Discarded an unfinished recording")
-    }
-
-    /// Stops the recording in progress without making its note, keeping its audio in the
-    /// `recordingStore` to make one later, as one of `unfinishedRecordings`. For quitting without
-    /// waiting for the note, e.g. while logging out; unless it's on disk, the recording is lost. While
-    /// the captures start, they're stopped as soon as they have, like by `stopRecording()`.
-    public func stopRecordingWithoutNote() async {
-        guard !isStartingCapture else {
-            isStopPending = true
-            return
-        }
-        guard let session else { return }
-        self.session = nil
-        recordingStartedAt = nil
-        liveCaptioning?.cancel()
-        liveCaptioning = nil
-        resetLevels()
-        stopStillRecordingCheck()
-        let lanes = await endCaptures(of: session)
-        for live in session.lanes.flatMap({ $0.captures.compactMap(\.live) }) {
-            _ = await live.value
-        }
-
-        storeDescription(of: session)
-        let tracks = Self.recordedTracks(of: session, lanes: lanes)
-        let duration = tracks.map(\.end).max() ?? 0
-        if session.isStored, duration >= Self.minimumRecordingDuration {
-            keep(
-                UnfinishedRecording(
-                    id: session.id,
-                    startedAt: session.startedAt,
-                    duration: duration,
-                    sources: session.devices,
-                    isOnDisk: true
-                )
-            )
-        } else if session.isStored {
-            recordingStore?.delete(session.id)
-        }
-        logger.info("Recording stopped without a note")
-
-        showsLiveTranscript = false
-        liveTranscript = LiveTranscript(speakers: [])
-        liveCaptions = nil
-        recordingSummaryTemplate = nil
-        moments = []
-        phase = .idle
-        reconcileSelection()
-        releaseEngine()
     }
 
     // MARK: - Store
@@ -156,17 +110,24 @@ extension RecordingCoordinator {
         guard session.keepsAudioOnDisk, let recordingStore else { return }
         do {
             try recordingStore.save(description(of: session), of: session.id)
+            // Captures that started before the first description was written have no audio on disk.
+            if !session.isStored, session.lanes.contains(where: { !$0.captures.isEmpty }) {
+                session.lostAudioOnDisk = true
+            }
             session.isStored = true
+            session.isStoredDescriptionOutdated = false
         } catch {
             logger.error("Keeping the recording on disk failed: \(error.localizedDescription, privacy: .public)")
+            if session.isStored { session.isStoredDescriptionOutdated = true }
         }
     }
 
-    /// `session` as an unfinished recording, to keep if its note isn't made. One that isn't on disk
-    /// has its audio put in `recordingsInMemory`, unless it wasn't kept, as by a live model; then
-    /// there's none.
+    /// `session` as an unfinished recording, to keep if its note isn't made. One that isn't all on
+    /// disk, e.g. as the disk filled up, has its audio put in `recordingsInMemory` instead, unless
+    /// it wasn't kept, as by a live model; then there's only what's on disk, if anything.
     func unfinishedRecording(of session: Session, lanes: [LaneAudio], duration: TimeInterval) -> UnfinishedRecording? {
-        if !session.isStored {
+        let isOnDisk = session.isStoredInFull || (session.isStored && engine.transcribesLive)
+        if !isOnDisk {
             guard !engine.transcribesLive else { return nil }
             recordingsInMemory[session.id] = RecordingStore.StoredRecording(
                 description: description(of: session),
@@ -178,7 +139,7 @@ extension RecordingCoordinator {
             startedAt: session.startedAt,
             duration: duration,
             sources: session.devices,
-            isOnDisk: session.isStored
+            isOnDisk: isOnDisk
         )
     }
 
@@ -196,7 +157,9 @@ extension RecordingCoordinator {
                     captures: lane.captures.map { RecordingStore.Description.Device($0.device) }
                 )
             },
-            moments: moments.map { RecordingStore.Description.Mark(id: $0.id, time: $0.time, text: $0.text) }
+            moments: moments.map { RecordingStore.Description.Mark(id: $0.id, time: $0.time, text: $0.text) },
+            measuresTalkTime: session.measuresTalkTime,
+            identifiesSpeakers: session.diarizer != nil
         )
     }
 
