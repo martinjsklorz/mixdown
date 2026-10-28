@@ -65,6 +65,7 @@ public final class CoreAudioDeviceProvider: AudioDeviceProvider {
 /// `@unchecked Sendable`: all state is only touched on `queue`.
 private final class DeviceListWatcher: @unchecked Sendable {
     private let queue = DispatchQueue(label: "app.mixdown.audio.device-list")
+    private let refreshes = CoalescedRefresh()
     private let onChange: @Sendable ([AudioInputDevice]) -> Void
     private var systemListeners: [HALPropertyListener] = []
     private var deviceListeners: [AudioDeviceID: HALPropertyListener] = [:]
@@ -75,10 +76,10 @@ private final class DeviceListWatcher: @unchecked Sendable {
         self.onChange = onChange
     }
 
-    /// Waits for the first device list, so changes from then on are reported.
+    /// Reports the current device list, then every change. Listens before it reads the list, so
+    /// a change in between isn't missed. Off the caller's thread, as the HAL calls can be slow.
     func start() {
-        queue.sync { [self] in
-            lastDevices = CoreAudioDeviceProvider.currentDevices()
+        queue.async { [self] in
             systemListeners = [
                 HALPropertyListener(
                     selectors: [kAudioHardwarePropertyDevices, kAudioHardwarePropertyDefaultInputDevice]
@@ -91,6 +92,8 @@ private final class DeviceListWatcher: @unchecked Sendable {
             ]
             systemListeners.forEach { $0.install() }
             watchDevices()
+            lastDevices = CoreAudioDeviceProvider.currentDevices()
+            onChange(lastDevices)
         }
     }
 
@@ -105,9 +108,14 @@ private final class DeviceListWatcher: @unchecked Sendable {
 
     /// Listener blocks run on their own queues; the work happens on `queue`.
     /// - Parameter afterServiceRestart: The audio service restarted, so the devices' listeners
-    ///   are gone and their IDs may now belong to other devices.
+    ///   are gone and their IDs may now belong to other devices. Never folded into another
+    ///   refresh, which wouldn't drop them.
     private func scheduleRefresh(afterServiceRestart: Bool = false) {
-        queue.async { [weak self] in self?.refresh(afterServiceRestart: afterServiceRestart) }
+        guard !afterServiceRestart else {
+            queue.async { [weak self] in self?.refresh(afterServiceRestart: true) }
+            return
+        }
+        refreshes.schedule(on: queue) { [weak self] in self?.refresh(afterServiceRestart: false) }
     }
 
     private func refresh(afterServiceRestart: Bool) {

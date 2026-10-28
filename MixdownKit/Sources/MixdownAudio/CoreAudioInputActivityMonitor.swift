@@ -30,8 +30,9 @@ private final class ProcessInputWatcher: @unchecked Sendable {
     private static let pollInterval: DispatchTimeInterval = .seconds(2)
 
     private let queue = DispatchQueue(label: "app.mixdown.audio.process-input")
+    private let refreshes = CoalescedRefresh()
     private let onChange: @Sendable ([AudioInputClient]) -> Void
-    private var systemListener: HALPropertyListener?
+    private var systemListeners: [HALPropertyListener] = []
     /// One listener per process object, for `kAudioProcessPropertyIsRunningInput` and `…Output`.
     private var processListeners: [AudioObjectID: HALPropertyListener] = [:]
     /// One listener per input device, for `kAudioDevicePropertyDeviceIsRunningSomewhere`.
@@ -51,10 +52,16 @@ private final class ProcessInputWatcher: @unchecked Sendable {
 
     func start() {
         queue.async { [self] in
-            systemListener = HALPropertyListener(
-                selectors: [kAudioHardwarePropertyProcessObjectList, kAudioHardwarePropertyDevices]
-            ) { [weak self] in self?.scheduleRefresh("process or device list changed") }
-            systemListener?.install()
+            systemListeners = [
+                HALPropertyListener(
+                    selectors: [kAudioHardwarePropertyProcessObjectList, kAudioHardwarePropertyDevices]
+                ) { [weak self] in self?.scheduleRefresh("process or device list changed") },
+                HALPropertyListener(selectors: [kAudioHardwarePropertyServiceRestarted]) { [weak self] in
+                    guard let self else { return }
+                    queue.async { [weak self] in self?.refreshAfterServiceRestart() }
+                },
+            ]
+            systemListeners.forEach { $0.install() }
 
             let poll = DispatchSource.makeTimerSource(queue: queue)
             poll.schedule(deadline: .now() + Self.pollInterval, repeating: Self.pollInterval)
@@ -71,8 +78,8 @@ private final class ProcessInputWatcher: @unchecked Sendable {
             isStopped = true
             poll?.cancel()
             poll = nil
-            systemListener?.remove()
-            systemListener = nil
+            systemListeners.forEach { $0.remove() }
+            systemListeners = []
             for listener in processListeners.values { listener.remove() }
             for listener in deviceListeners.values { listener.remove() }
             processListeners = [:]
@@ -80,8 +87,21 @@ private final class ProcessInputWatcher: @unchecked Sendable {
         }
     }
 
+    /// Listener blocks run on their own queues; the work happens on `queue`, once for all the
+    /// notifications that arrive before it starts.
     private func scheduleRefresh(_ reason: String) {
-        queue.async { [weak self] in self?.refresh(reason) }
+        refreshes.schedule(on: queue) { [weak self] in self?.refresh(reason) }
+    }
+
+    /// The processes' and devices' listeners went away with the audio service, and their IDs
+    /// may now belong to other objects, so they're all set up again.
+    private func refreshAfterServiceRestart() {
+        guard !isStopped else { return }
+        for listener in processListeners.values { listener.remove(logsFailures: false) }
+        for listener in deviceListeners.values { listener.remove(logsFailures: false) }
+        processListeners = [:]
+        deviceListeners = [:]
+        refresh("audio service restarted")
     }
 
     /// Re-reads every process, keeps the listeners in step with the processes and input devices,

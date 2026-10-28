@@ -69,7 +69,8 @@ public struct AudioChunk: Sendable, Equatable {
 public protocol AudioDeviceProvider: Sendable {
     /// Current devices, including `AudioInputDevice.systemAudio` when system capture is supported.
     func availableDevices() async -> [AudioInputDevice]
-    /// Emits the full device list whenever it changes. Finishes when the consumer cancels.
+    /// Emits the current device list, then the full list whenever it changes. Finishes when the
+    /// consumer cancels.
     func deviceUpdates() -> AsyncStream<[AudioInputDevice]>
 }
 
