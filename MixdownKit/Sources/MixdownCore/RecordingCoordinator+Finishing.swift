@@ -64,8 +64,7 @@ extension RecordingCoordinator {
             trigger: trigger,
             isCall: isCall,
             callApp: callApp,
-            moments: moments.map { Moment(id: $0.id, time: min($0.time, duration), text: $0.text) }
-                .sorted { $0.time < $1.time },
+            moments: NotePipeline.NoteDetails.moments(moments, upTo: duration),
             talkTimeline: measuresTalkTime ? talkTimeline(of: tracks, duration: duration) : nil,
             recordingID: recordingID
         )
@@ -125,7 +124,7 @@ extension RecordingCoordinator {
                 takeSummaryTemplate(otherwise: input.details.isCall ? callSummaryTemplate : summaryTemplate)
             }
             var messages = interruption.map { [Self.interruptedMessage(for: $0)] } ?? []
-            messages += outcome.messages
+            messages += Self.messages(for: outcome)
             if !outcome.isComplete, let recording {
                 keep(recording)
                 messages.append(Self.keptRecordingMessage(for: recording))

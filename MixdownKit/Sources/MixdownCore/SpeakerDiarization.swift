@@ -48,7 +48,8 @@ public enum SpeakerAssignment {
     static let timedSnapWords = 2
     /// How many words, or seconds, a speaker has to say to be labeled as one. Diarizers sometimes
     /// take a cough, a laugh or a single word in a different tone for another speaker; what such a
-    /// speaker says goes to the speaker before it.
+    /// speaker says goes to the speaker before it. Text without spaces between words is weighed by
+    /// characters, see `TextTokens`.
     static let minimumSpeakerWords = 10
     static let minimumSpeakerSeconds: TimeInterval = 5
 
@@ -75,7 +76,7 @@ public enum SpeakerAssignment {
         for (index, segment) in segments.enumerated() {
             let timed = words.flatMap { $0.indices.contains(index) ? $0[index] : nil }
             pieces += split(segment, words: timed, turns: turns).map {
-                Piece(segment: $0.segment, speaker: $0.speaker, index: index)
+                Piece(segment: $0.segment, speaker: $0.speaker, index: index, spaceBefore: $0.spaceBefore)
             }
         }
         pieces = withoutMinorSpeakers(pieces)
@@ -97,22 +98,24 @@ public enum SpeakerAssignment {
         var segment: TranscriptSegment
         var speaker: Int?
         var index: Int
+        /// Whether the segment's text has a space before the piece, if it's not the first.
+        var spaceBefore = true
     }
 
     /// `pieces` with those of speakers who say too little to count given to the speaker before
     /// them, or after them if there's none before, and pieces of one segment that then have the
     /// same speaker joined again. As they are if no speaker says enough.
     private static func withoutMinorSpeakers(_ pieces: [Piece]) -> [Piece] {
-        var words: [Int: Int] = [:]
+        var words: [Int: Double] = [:]
         var seconds: [Int: TimeInterval] = [:]
         for piece in pieces {
             guard let speaker = piece.speaker else { continue }
-            words[speaker, default: 0] += piece.segment.text.split(whereSeparator: \.isWhitespace).count
+            words[speaker, default: 0] += TextTokens.tokens(in: piece.segment.text).reduce(0) { $0 + $1.weight }
             seconds[speaker, default: 0] += max(piece.segment.end - piece.segment.start, 0)
         }
         let major = Set(
             words.keys.filter {
-                words[$0, default: 0] >= minimumSpeakerWords || seconds[$0, default: 0] >= minimumSpeakerSeconds
+                words[$0, default: 0] >= Double(minimumSpeakerWords) || seconds[$0, default: 0] >= minimumSpeakerSeconds
             }
         )
         guard !major.isEmpty, major.count < words.count else { return pieces }
@@ -142,7 +145,7 @@ public enum SpeakerAssignment {
             var piece = piece
             piece.speaker = piece.speaker == nil ? nil : speaker
             if let last = result.last, last.index == piece.index, last.speaker == piece.speaker {
-                result[result.count - 1].segment.text += " " + piece.segment.text
+                result[result.count - 1].segment.text += (piece.spaceBefore ? " " : "") + piece.segment.text
                 result[result.count - 1].segment.end = piece.segment.end
             } else {
                 result.append(piece)
@@ -155,22 +158,25 @@ public enum SpeakerAssignment {
         var text: String
         var start: TimeInterval
         var end: TimeInterval
+        /// Whether the segment's text has a space before the word, if it's not the first.
+        var spaceBefore = true
     }
 
-    /// `segment` as consecutive pieces of one speaker each.
+    /// `segment` as consecutive pieces of one speaker each, and whether its text has a space
+    /// before each.
     private static func split(
         _ segment: TranscriptSegment,
         words: [LiveWord]?,
         turns: [SpeakerTurn]
-    ) -> [(segment: TranscriptSegment, speaker: Int?)] {
-        let texts = segment.text.split(whereSeparator: \.isWhitespace).map(String.init)
+    ) -> [(segment: TranscriptSegment, speaker: Int?, spaceBefore: Bool)] {
         let tokens: [Token]
         let isTimed: Bool
-        if let words, words.map(\.text) == texts {
+        if let words, words.map(\.text) == segment.text.split(whereSeparator: \.isWhitespace).map(String.init) {
             tokens = words.map { Token(text: $0.text, start: $0.start, end: $0.end) }
             isTimed = true
         } else {
-            tokens = evenlyPaced(texts, from: segment.start, to: segment.end)
+            // A script written without spaces is split between its characters.
+            tokens = evenlyPaced(TextTokens.tokens(in: segment.text), from: segment.start, to: segment.end)
             isTimed = false
         }
         // Only turns near the segment can matter.
@@ -178,7 +184,7 @@ public enum SpeakerAssignment {
             $0.end >= segment.start - nearbyTurnDistance && $0.start <= segment.end + nearbyTurnDistance
         }
         guard tokens.count > 1 else {
-            return [(segment, speaker(from: segment.start, to: segment.end, among: nearby, all: turns))]
+            return [(segment, speaker(from: segment.start, to: segment.end, among: nearby, all: turns), true)]
         }
 
         var speakers = tokens.map { speaker(from: $0.start, to: $0.end, among: nearby, all: turns) }
@@ -194,24 +200,32 @@ public enum SpeakerAssignment {
             let end = index + 1 < runs.count ? runs[index + 1].start : tokens.count
             let part = tokens[run.start..<end]
             var piece = segment
-            piece.text = part.map(\.text).joined(separator: " ")
+            piece.text = part.dropFirst().reduce(part.first?.text ?? "") {
+                $0 + ($1.spaceBefore ? " " : "") + $1.text
+            }
             // The first and last pieces keep the segment's own bounds.
             piece.start = index == 0 ? segment.start : tokens[run.start].start
             piece.end = index == runs.count - 1 ? segment.end : tokens[end - 1].end
-            return (piece, run.speaker)
+            return (piece, run.speaker, tokens[run.start].spaceBefore)
         }
     }
 
     /// Times for `words` spread across `start...end` by their length in characters.
-    private static func evenlyPaced(_ words: [String], from start: TimeInterval, to end: TimeInterval) -> [Token] {
-        let total = words.reduce(0) { $0 + $1.count + 1 }
+    private static func evenlyPaced(
+        _ words: [TextTokens.Token],
+        from start: TimeInterval,
+        to end: TimeInterval
+    ) -> [Token] {
+        let total = words.reduce(0) { $0 + $1.text.count + 1 }
         guard total > 0 else { return [] }
         let secondsPerCharacter = max(end - start, 0) / Double(total)
         var tokens: [Token] = []
         var position = start
         for word in words {
-            let length = Double(word.count + 1) * secondsPerCharacter
-            tokens.append(Token(text: word, start: position, end: position + length))
+            let length = Double(word.text.count + 1) * secondsPerCharacter
+            tokens.append(
+                Token(text: String(word.text), start: position, end: position + length, spaceBefore: word.spaceBefore)
+            )
             position += length
         }
         return tokens

@@ -14,14 +14,14 @@ final class NoteSaver {
     var noteWriter: (any NoteWriting)? {
         didSet {
             generation &+= 1
-            guard !pendingNotes.isEmpty else { return }
+            guard !pending.isEmpty else { return }
             Task { await saveAll() }
         }
     }
     /// Notes that couldn't be saved yet, oldest first.
-    private(set) var pendingNotes: [Note]
+    var pendingNotes: [Note] { pending.map(\.note) }
     /// True while `pendingNotes` are being written.
-    private(set) var isSaving = false
+    var isSaving: Bool { saving != nil }
     /// Location of the most recently written note.
     private(set) var lastNoteURL: URL?
     /// How long to wait before trying to save `pendingNotes` again, while there's a `noteWriter`
@@ -35,50 +35,65 @@ final class NoteSaver {
     /// Changes with every `noteWriter`, so a save that failed can tell it has a new one to try.
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var retry: Task<Void, Never>?
+    /// `pendingNotes`, each with an ID for `save(_:)` to tell once its note is written.
+    private var pending: [(id: UUID, note: Note)]
+    /// The save under way, which `saveAll()` waits for rather than start another.
+    private var saving: Task<(any Error)?, Never>?
     private let logger = Logger(subsystem: "app.mixdown", category: "notes")
 
     /// - Parameter pendingNotes: Notes still to be saved, e.g. from the saver this one replaces.
     ///   Saved right away.
     init(noteWriter: (any NoteWriting)?, pendingNotes: [Note] = []) {
         self.noteWriter = noteWriter
-        self.pendingNotes = pendingNotes
+        self.pending = pendingNotes.map { (UUID(), $0) }
         if !pendingNotes.isEmpty {
             Task { await saveAll() }
         }
     }
 
     /// Saves `note` after any that are pending, or keeps it if it can't be saved yet. Returns why
-    /// it couldn't, if it wasn't.
+    /// it couldn't, if it wasn't: the error of the note it's kept behind, or its own.
     func save(_ note: Note) async -> (any Error)? {
-        pendingNotes.append(note)
-        let error = await saveAll()
-        return pendingNotes.isEmpty ? nil : error ?? NoteWritingError.noFolder
+        let id = UUID()
+        pending.append((id, note))
+        // A save already under way saves the note too, unless it stops at one before it.
+        while pending.contains(where: { $0.id == id }) {
+            if let error = await saveAll() {
+                return pending.contains { $0.id == id } ? error : nil
+            }
+        }
+        return nil
     }
 
     /// Writes `pendingNotes`, oldest first, updating `lastNoteURL` for each. Stops at the first that
     /// fails, returning its error, and tries again after `retryInterval` if there's a `noteWriter`;
-    /// without one, it waits for the next. Returns `nil` right away if a save is already under
-    /// way; that one saves notes added meanwhile too.
+    /// without one, it waits for the next. If a save is already under way, waits for that one
+    /// instead, which saves notes added meanwhile too, and returns its error.
     @discardableResult
     func saveAll() async -> (any Error)? {
-        guard !isSaving else { return nil }
-        isSaving = true
-        defer { isSaving = false }
+        if let saving { return await saving.value }
+        let task = Task { await writePendingNotes() }
+        saving = task
+        return await task.value
+    }
+
+    private func writePendingNotes() async -> (any Error)? {
+        defer { saving = nil }
         cancelRetry()
 
-        while let note = pendingNotes.first {
+        while let (id, note) = pending.first {
             let generation = generation
             do {
                 guard let noteWriter else { throw NoteWritingError.noFolder }
                 let url = try await noteWriter.write(note)
-                pendingNotes.removeFirst()
+                pending.removeAll { $0.id == id }
                 lastNoteURL = url
                 didSave(note)
                 logger.info("Wrote note to \(url.path(percentEncoded: false), privacy: .private)")
             } catch {
                 // The folder changed while writing; try the new one.
                 if generation != self.generation { continue }
-                let count = pendingNotes.count
+                let count = pending.count
                 logger.error(
                     "Saving \(count) note(s) failed, keeping them: \(error.localizedDescription, privacy: .public)"
                 )
@@ -95,7 +110,7 @@ final class NoteSaver {
     func takePendingNotes() -> [Note] {
         guard !isSaving else { return [] }
         cancelRetry()
-        defer { pendingNotes = [] }
+        defer { pending = [] }
         return pendingNotes
     }
 

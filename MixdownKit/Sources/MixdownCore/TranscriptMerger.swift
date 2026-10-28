@@ -167,15 +167,15 @@ public enum TranscriptMerger {
     /// "it's" counts as one word.
     ///
     /// Chinese, Japanese, Thai and other scripts written without spaces can't be split into words
-    /// without a dictionary, so each of their characters is a word of its own, weighted by how
-    /// many of them a word typically takes.
+    /// without a dictionary, so each of their characters is a word of its own, weighted as by
+    /// `TextTokens`.
     static func words(in text: String) -> [Word] {
         let text = text.lowercased().filter { $0 != "'" && $0 != "\u{2019}" }
         var words: [Word] = []
         var wordStart: String.Index?
         for index in text.indices {
             let character = text[index]
-            let characterWeight = unspacedWeight(of: character)
+            let characterWeight = TextTokens.unspacedWeight(of: character)
             if characterWeight == nil, character.isLetter || character.isNumber {
                 if wordStart == nil { wordStart = index }
                 continue
@@ -192,22 +192,5 @@ public enum TranscriptMerger {
             words.append(Word(text: text[start...], weight: 1))
         }
         return words
-    }
-
-    /// The weight of one character of a script written without spaces, or `nil` for any other
-    /// character.
-    private static func unspacedWeight(of character: Character) -> Double? {
-        guard let scalar = character.unicodeScalars.first else { return nil }
-        switch scalar.value {
-        // Chinese characters, also used in Japanese: a word is usually two.
-        case 0x3005...0x3007, 0x3400...0x4DBF, 0x4E00...0x9FFF, 0xF900...0xFAFF, 0x20000...0x323AF:
-            return 1 / 2
-        // Japanese kana, then Thai, Lao, Myanmar and Khmer: a word is usually three or more.
-        case 0x3040...0x30FF, 0x31F0...0x31FF, 0xFF66...0xFF9F,
-            0x0E00...0x0EFF, 0x1000...0x109F, 0x1780...0x17FF:
-            return 1 / 3
-        default:
-            return nil
-        }
     }
 }

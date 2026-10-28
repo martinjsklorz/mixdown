@@ -176,8 +176,11 @@ public struct LiveTranscript: Sendable, Equatable {
     /// - Parameter startHostTime: Host time of the first sample of the audio the update's times
     ///   count from, which lines the inputs up with each other; `nil` if unknown.
     public mutating func apply(_ update: LiveTranscriptUpdate, fromSource index: Int, startHostTime: TimeInterval?) {
-        guard sources.indices.contains(index), !update.isEmpty else { return }
+        guard sources.indices.contains(index) else { return }
+        // Even without words: the input's first sample is where its audio starts, which a first
+        // device or capture that recognized nothing still sets.
         let offset = offset(ofSource: index, startHostTime: startHostTime)
+        guard !update.isEmpty else { return }
         revision += 1
 
         var words = update.words[...]

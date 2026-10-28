@@ -18,7 +18,7 @@ extension NotePipeline {
             progressEstimator = RemainingTimeEstimator()
         }
         if engine.transcribesLive {
-            return (try await transcribeLive(input.tracks, options: input.options), nil)
+            return try await transcribeLive(input.tracks, options: input.options)
         }
         var options = input.options
         options.vocabularyTerms = vocabulary.terms
@@ -31,18 +31,17 @@ extension NotePipeline {
         of tracks: [RecordedTrack],
         language: String?
     ) -> [TrackTranscript] {
-        tracks.map { track in
-            TrackTranscript(
-                track: track,
-                transcript: Self.shifted(
-                    Transcript(segments: liveText.segments(fromSource: track.lane), language: language),
-                    by: track.offset
-                ),
-                words: liveText.words(fromSource: track.lane).map { segment in
-                    segment.map { LiveWord(text: $0.text, start: $0.start + track.offset, end: $0.end + track.offset) }
-                }
+        tracks.map { TrackTranscript(liveText: liveText, source: $0.lane, track: $0, language: language) }
+    }
+
+    /// The tracks long enough to transcribe, logging all of them.
+    private func audible(_ tracks: [RecordedTrack]) -> [RecordedTrack] {
+        for track in tracks {
+            logger.info(
+                "Track \(track.device.name, privacy: .public): \(track.duration, format: .fixed(precision: 1)) s starting at \(track.offset, format: .fixed(precision: 2)) s"
             )
         }
+        return tracks.filter { $0.duration >= Self.minimumTrackDuration }
     }
 
     /// Transcribes each track on its own, so speech stays attributed to its source. Tracks are
@@ -53,12 +52,7 @@ extension NotePipeline {
         options: TranscriptionOptions
     ) async throws -> ([TrackTranscript], TrackFailure?) {
         let engine = engine
-        let audible = tracks.filter { $0.duration >= RecordingCoordinator.minimumRecordingDuration }
-        for track in tracks {
-            logger.info(
-                "Track \(track.device.name, privacy: .public): \(track.duration, format: .fixed(precision: 1)) s starting at \(track.offset, format: .fixed(precision: 2)) s"
-            )
-        }
+        let audible = audible(tracks)
 
         let id = startProgress(of: audible)
         let results = await withTaskGroup(
@@ -77,7 +71,7 @@ extension NotePipeline {
                         // Engines needn't report progress (e.g. for a source without speech), but the
                         // bar mustn't wait on a source that's done.
                         progress(1)
-                        return (index, .success(NotePipeline.shifted(transcript, by: track.offset)))
+                        return (index, .success(transcript.shifted(by: track.offset)))
                     } catch {
                         // A failed source is done too, as far as the bar is concerned.
                         progress(1)
@@ -95,13 +89,76 @@ extension NotePipeline {
             return results
         }
 
+        let transcripts = zip(audible, results).map { track, result in
+            result.map { TrackTranscript(track: track, transcript: $0) }
+        }
+        return try collect(transcripts, of: audible)
+    }
+
+    /// Each track's samples fed to a live session of its own, in the pieces a recording's would
+    /// be, as fast as it takes them. A track whose session fails doesn't take the others with it,
+    /// as for `transcribeSeparately`.
+    private func transcribeLive(
+        _ tracks: [RecordedTrack],
+        options: TranscriptionOptions
+    ) async throws -> ([TrackTranscript], TrackFailure?) {
+        let audible = audible(tracks)
+        let id = startProgress(of: audible)
+        var results: [Result<TrackTranscript, any Error>] = []
+        for (index, track) in audible.enumerated() {
+            do {
+                results.append(.success(try await transcribeLive(track, index: index, id: id, options: options)))
+            } catch {
+                // Cancelling stops every track, so the rest aren't fed either.
+                if error is CancellationError || Task.isCancelled { throw CancellationError() }
+                // A failed track is done too, as far as the bar is concerned.
+                updateProgress(1, track: index, id: id)
+                results.append(.failure(error))
+            }
+        }
+        return try collect(results, of: audible)
+    }
+
+    /// `track`'s samples fed to a live session; it's track `index` of the transcription `id`.
+    private func transcribeLive(
+        _ track: RecordedTrack,
+        index: Int,
+        id: UUID,
+        options: TranscriptionOptions
+    ) async throws -> TrackTranscript {
+        let samples = track.samples
+        let live = try await engine.makeLiveSession(options: options)
+        var text = LiveTranscript(speakers: [nil])
+        var start = 0
+        var pieces = 0
+        while start < samples.count {
+            try Task.checkCancellation()
+            let end = min(start + Self.liveFeedSampleCount, samples.count)
+            text.apply(try await live.push(Array(samples[start..<end])), fromSource: 0, startHostTime: nil)
+            start = end
+            pieces += 1
+            if pieces.isMultiple(of: Self.liveProgressInterval) {
+                updateProgress(Double(end) / Double(samples.count), track: index, id: id)
+            }
+        }
+        text.apply(try await live.finish(), fromSource: 0, startHostTime: nil)
+        updateProgress(1, track: index, id: id)
+        return TrackTranscript(liveText: text, source: 0, track: track, language: options.language)
+    }
+
+    /// The transcripts of `tracks` that worked, from each one's result, and the failure of the
+    /// others. Throws if the transcription was cancelled.
+    private func collect(
+        _ results: [Result<TrackTranscript, any Error>],
+        of tracks: [RecordedTrack]
+    ) throws -> ([TrackTranscript], TrackFailure?) {
         var transcripts: [TrackTranscript] = []
         var failedDevices: [AudioInputDevice] = []
         var firstError: (any Error)?
-        for (track, result) in zip(audible, results) {
+        for (track, result) in zip(tracks, results) {
             switch result {
             case .success(let transcript):
-                transcripts.append(TrackTranscript(track: track, transcript: transcript))
+                transcripts.append(transcript)
             // Cancelling the transcription stops every track; none of them failed.
             case .failure(let error) where error is CancellationError || Task.isCancelled:
                 throw CancellationError()
@@ -110,56 +167,13 @@ extension NotePipeline {
                     "Transcribing \(track.device.name, privacy: .public) failed: \(error.localizedDescription, privacy: .public)"
                 )
                 firstError = firstError ?? error
-                for device in track.parts.map(\.device) where !failedDevices.contains(where: { $0.id == device.id }) {
+                for device in track.devices where !failedDevices.contains(where: { $0.id == device.id }) {
                     failedDevices.append(device)
                 }
             }
         }
         let failure = firstError.map { TrackFailure(devices: failedDevices, error: $0) }
         return (transcripts, failure)
-    }
-
-    /// Each track's samples fed to a live session of its own, in the pieces a recording's would
-    /// be, as fast as it takes them. Throws the first error, as for a recording that stops live
-    /// transcription.
-    private func transcribeLive(
-        _ tracks: [RecordedTrack],
-        options: TranscriptionOptions
-    ) async throws -> [TrackTranscript] {
-        let id = startProgress(of: tracks)
-        var transcripts: [TrackTranscript] = []
-        for (index, track) in tracks.enumerated() {
-            let samples = track.samples
-            let live = try await engine.makeLiveSession(options: options)
-            var text = LiveTranscript(speakers: [nil])
-            var start = 0
-            var pieces = 0
-            while start < samples.count {
-                try Task.checkCancellation()
-                let end = min(start + RecordingCoordinator.liveFeedSampleCount, samples.count)
-                text.apply(try await live.push(Array(samples[start..<end])), fromSource: 0, startHostTime: nil)
-                start = end
-                pieces += 1
-                if pieces.isMultiple(of: Self.liveProgressInterval) {
-                    updateProgress(Double(end) / Double(samples.count), track: index, id: id)
-                }
-            }
-            text.apply(try await live.finish(), fromSource: 0, startHostTime: nil)
-            updateProgress(1, track: index, id: id)
-            let transcript = Transcript(segments: text.segments(fromSource: 0), language: options.language)
-            transcripts.append(
-                TrackTranscript(
-                    track: track,
-                    transcript: Self.shifted(transcript, by: track.offset),
-                    words: text.words(fromSource: 0).map { segment in
-                        segment.map {
-                            LiveWord(text: $0.text, start: $0.start + track.offset, end: $0.end + track.offset)
-                        }
-                    }
-                )
-            )
-        }
-        return transcripts
     }
 
     // MARK: - Progress
