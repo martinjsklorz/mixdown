@@ -9,8 +9,13 @@ import os
 /// conversion. Not thread-safe: each capture feeds it from a single serial callback context.
 final class AudioResampler {
     private let targetFormat: AVAudioFormat
-    private var sourceFormat: AVAudioFormat?
+    /// The mono format `downmix` writes, kept while the sample rate stays the same.
+    private var monoFormat: AVAudioFormat?
+    /// For the current stretch at one sample rate. A new stretch, even after one at 16 kHz that
+    /// needed none, starts with a new converter, so none of the old one's held-back samples come out.
     private var converter: AVAudioConverter?
+    /// The last format `downmix` couldn't read, so it's logged once rather than for every buffer.
+    private var unsupportedFormat: AVAudioFormat?
 
     init() throws {
         guard
@@ -24,6 +29,11 @@ final class AudioResampler {
             throw AudioCaptureError.deviceUnavailable("Couldn't create the 16 kHz output format")
         }
         targetFormat = format
+    }
+
+    /// Whether `process` can read buffers in `format`: Float32, Int16 or Int32 samples.
+    static func canConvert(_ format: AVAudioFormat) -> Bool {
+        [.pcmFormatFloat32, .pcmFormatInt16, .pcmFormatInt32].contains(format.commonFormat)
     }
 
     /// Converts one buffer. `hostTime` (see `AudioChunk.hostTime`) is passed through.
@@ -52,8 +62,8 @@ final class AudioResampler {
         guard sampleRate > 0, channels > 0 else { return nil }
 
         let format: AVAudioFormat
-        if let sourceFormat, sourceFormat.sampleRate == sampleRate {
-            format = sourceFormat
+        if let monoFormat, monoFormat.sampleRate == sampleRate {
+            format = monoFormat
         } else {
             guard
                 let newFormat = AVAudioFormat(
@@ -64,6 +74,9 @@ final class AudioResampler {
                 )
             else { return nil }
             format = newFormat
+            monoFormat = newFormat
+            // The rate changed, so the converter's held-back samples belong to the old stretch.
+            converter = nil
         }
 
         guard let mono = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: buffer.frameLength),
@@ -79,7 +92,10 @@ final class AudioResampler {
         } else if let data = buffer.int32ChannelData {
             Self.mix(data, of: buffer, into: output, scale: 1 / 2_147_483_648) { Float($0) }
         } else {
-            audioLogger.error("Unsupported capture sample format: \(buffer.format, privacy: .public)")
+            if unsupportedFormat != buffer.format {
+                unsupportedFormat = buffer.format
+                audioLogger.error("Unsupported capture sample format: \(buffer.format, privacy: .public)")
+            }
             return nil
         }
         return mono
@@ -117,14 +133,14 @@ final class AudioResampler {
 
     private func resample(_ mono: AVAudioPCMBuffer) -> [Float]? {
         let format = mono.format
-        if converter == nil || sourceFormat?.sampleRate != format.sampleRate {
+        // `downmix` drops the converter whenever the rate changes.
+        if converter == nil {
             guard let newConverter = AVAudioConverter(from: format, to: targetFormat) else {
                 audioLogger.error("Couldn't create converter from \(format.sampleRate, privacy: .public) Hz")
                 return nil
             }
             newConverter.sampleRateConverterQuality = AVAudioQuality.high.rawValue
             converter = newConverter
-            sourceFormat = format
         }
         guard let converter else { return nil }
 

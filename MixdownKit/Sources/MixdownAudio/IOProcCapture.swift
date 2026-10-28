@@ -7,6 +7,9 @@ import os
 
 /// What an `IOProcCapture` records from: a microphone or the system audio tap. Either runs a
 /// Core Audio IO proc made with `IOProcCapture.ioBlock(writingTo:formats:)`.
+///
+/// `IOProcCapture` calls `start` and `invalidate` one after another on its control queue, never
+/// concurrently, so a source needs no lock for what only they touch.
 protocol CaptureSource: AnyObject, Sendable {
     /// Names the capture in log messages, e.g. "Microphone capture on “AirPods”".
     var logName: String { get }
@@ -19,6 +22,10 @@ protocol CaptureSource: AnyObject, Sendable {
     /// - Parameter onFailure: Called, possibly more than once, when the source can't be recorded
     ///   from anymore.
     func start(into ring: CaptureRing, onFailure: @escaping @Sendable (AudioCaptureError) -> Void) throws
+    /// Reads the IO proc's format again and updates `formats`, for when the cycles stop matching
+    /// it, as if a format notification had been missed. May be called from any thread, also
+    /// before `start` or after `invalidate`.
+    func refreshFormat()
     /// Stops IO and removes whatever `start` set up. Safe after a partial setup. Once it returns,
     /// the IO block isn't called anymore.
     func invalidate()
@@ -34,8 +41,12 @@ extension CaptureSource {
 /// `CaptureRing`, so it never allocates, takes a lock or waits. A timer on `sampleQueue` reads
 /// the ring, converts and delivers.
 ///
-/// `@unchecked Sendable`: mutable state lives behind `state`; `resampler`, `currentFormat` and
-/// `reportedDrops` are only touched on `sampleQueue`.
+/// The source's `start` and `invalidate` run on `controlQueue`, which keeps them in order and
+/// keeps their blocking HAL calls (starting a Bluetooth headset can take seconds) off the Swift
+/// concurrency pool. `state.phase` sees to it that each runs at most once.
+///
+/// `@unchecked Sendable`: mutable state lives behind `state`; `resampler`, `currentFormat`,
+/// `reportedDrops` and `unusable` are only touched on `sampleQueue`.
 final class IOProcCapture: AudioCapturing, @unchecked Sendable {
     private typealias Continuation = AsyncThrowingStream<AudioChunk, any Error>.Continuation
 
@@ -47,16 +58,30 @@ final class IOProcCapture: AudioCapturing, @unchecked Sendable {
         var readTimer: (any DispatchSourceTimer)?
     }
 
+    /// Cycles in a row that couldn't be converted, either because they don't match their format
+    /// (a format notification was missed) or because the format isn't supported.
+    private struct UnusableCycles {
+        var mismatched = 0
+        var unsupported = 0
+        var total: Int { mismatched + unsupported }
+    }
+
     /// How often the ring is read. IO cycles are around 10 ms, so most reads find one.
     private static let readInterval: DispatchTimeInterval = .milliseconds(10)
+    /// Unusable cycles in a row after which the source reads its format again (about 200 ms).
+    static let formatRefreshCycles = 20
+    /// Unusable cycles in a row after which the capture fails (about a second).
+    static let unusableCycleLimit = 100
 
     private let source: any CaptureSource
     private let ring = CaptureRing()
     private let state = OSAllocatedUnfairLock(uncheckedState: State())
     private let sampleQueue = DispatchQueue(label: "app.mixdown.audio.capture", qos: .userInitiated)
+    private let controlQueue = DispatchQueue(label: "app.mixdown.audio.capture-control", qos: .userInitiated)
     private let resampler: AudioResampler
     private var currentFormat: (generation: Int, format: AVAudioFormat)?
     private var reportedDrops = 0
+    private var unusable = UnusableCycles()
 
     init(source: any CaptureSource) throws {
         self.source = source
@@ -84,12 +109,14 @@ final class IOProcCapture: AudioCapturing, @unchecked Sendable {
             try await source.prepare()
             // stop() may have run while a permission prompt was showing.
             guard state.withLockUnchecked({ $0.phase == .starting }) else { return stream }
-            try source.start(into: ring) { [weak self] error in
+            let ring = ring
+            let onFailure: @Sendable (AudioCaptureError) -> Void = { [weak self] error in
                 guard let self else { return }
                 Task { await self.finish(throwing: error) }
             }
+            try await onControlQueue { try source.start(into: ring, onFailure: onFailure) }
         } catch {
-            source.invalidate()
+            await onControlQueue { source.invalidate() }
             state.withLockUnchecked { state in
                 state.phase = .stopped
                 state.continuation = nil
@@ -117,7 +144,7 @@ final class IOProcCapture: AudioCapturing, @unchecked Sendable {
         guard isStillStarting else {
             // stop() ran while the source was starting; it already finished the continuation.
             readTimer.cancel()
-            source.invalidate()
+            await onControlQueue { source.invalidate() }
             return stream
         }
 
@@ -149,7 +176,10 @@ final class IOProcCapture: AudioCapturing, @unchecked Sendable {
         guard let continuation else { return }
 
         // While starting, `start()` stops the source itself once it notices.
-        if wasRunning { source.invalidate() }
+        if wasRunning {
+            let source = source
+            await onControlQueue { source.invalidate() }
+        }
         // Deliver what the IO proc wrote before it stopped, then end the stream.
         await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
             sampleQueue.async { [self] in
@@ -166,6 +196,22 @@ final class IOProcCapture: AudioCapturing, @unchecked Sendable {
         } else {
             continuation.finish()
             audioLogger.info("\(self.source.logName, privacy: .public) stopped")
+        }
+    }
+
+    /// Runs `work` on `controlQueue` and waits for it without holding a thread of the pool.
+    private func onControlQueue<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
+        try await withCheckedThrowingContinuation { continuation in
+            controlQueue.async { continuation.resume(with: Result(catching: work)) }
+        }
+    }
+
+    private func onControlQueue(_ work: @escaping @Sendable () -> Void) async {
+        await withCheckedContinuation { continuation in
+            controlQueue.async {
+                work()
+                continuation.resume()
+            }
         }
     }
 
@@ -199,8 +245,17 @@ final class IOProcCapture: AudioCapturing, @unchecked Sendable {
     /// Converts and delivers every cycle in the ring.
     private func readRing(into continuation: Continuation) {
         ring.readAll { cycle, bytes in
-            guard let chunk = chunk(from: cycle, bytes: bytes) else { return }
-            continuation.yield(chunk)
+            switch chunk(from: cycle, bytes: bytes) {
+            case .converted(let chunk):
+                reportUnusableCycles()
+                if let chunk { continuation.yield(chunk) }
+            case .mismatched:
+                unusable.mismatched += 1
+                noteUnusableCycle()
+            case .unsupported:
+                unusable.unsupported += 1
+                noteUnusableCycle()
+            }
         }
         let drops = ring.droppedCycles
         if drops > reportedDrops {
@@ -211,11 +266,49 @@ final class IOProcCapture: AudioCapturing, @unchecked Sendable {
         }
     }
 
-    private func chunk(from cycle: CapturedCycle, bytes: UnsafeRawBufferPointer) -> AudioChunk? {
+    /// After a burst of cycles that couldn't be converted, says how many were dropped.
+    private func reportUnusableCycles() {
+        guard unusable.total > 0 else { return }
+        audioLogger.warning(
+            "\(self.source.logName, privacy: .public) dropped \(self.unusable.mismatched, privacy: .public) IO cycles that didn't match their format and \(self.unusable.unsupported, privacy: .public) in an unsupported format"
+        )
+        unusable = UnusableCycles()
+    }
+
+    /// A format notification may have been missed, so after `formatRefreshCycles` unusable
+    /// cycles the source reads its format again. If that doesn't help either, the capture fails
+    /// rather than run on without recording anything.
+    private func noteUnusableCycle() {
+        switch unusable.total {
+        case Self.formatRefreshCycles:
+            audioLogger.warning(
+                "\(self.source.logName, privacy: .public) can't convert its IO cycles; reading its format again"
+            )
+            source.refreshFormat()
+        case Self.unusableCycleLimit:
+            reportUnusableCycles()
+            let error = AudioCaptureError.deviceUnavailable("Its audio arrives in a format Mixdown can't read.")
+            Task { await self.finish(throwing: error) }
+        default:
+            break
+        }
+    }
+
+    private enum Conversion {
+        /// The chunk, `nil` if the resampler had nothing to deliver yet.
+        case converted(AudioChunk?)
+        /// The cycle's channels don't match its format.
+        case mismatched
+        /// The resampler can't read the format.
+        case unsupported
+    }
+
+    private func chunk(from cycle: CapturedCycle, bytes: UnsafeRawBufferPointer) -> Conversion {
         // Right after a format change the IO proc can run before the format listener has caught
         // up, so a mismatched buffer is dropped.
         guard let format = format(generation: cycle.formatGeneration), cycle.channelCount == format.channelCount
-        else { return nil }
+        else { return .mismatched }
+        guard AudioResampler.canConvert(format) else { return .unsupported }
         var bufferList = AudioBufferList(
             mNumberBuffers: 1,
             mBuffers: AudioBuffer(
@@ -224,16 +317,16 @@ final class IOProcCapture: AudioCapturing, @unchecked Sendable {
                 mData: UnsafeMutableRawPointer(mutating: bytes.baseAddress)
             )
         )
-        return withUnsafePointer(to: &bufferList) { bufferList -> AudioChunk? in
+        return withUnsafePointer(to: &bufferList) { bufferList -> Conversion in
             // No copy needed: the resampler copies while downmixing, before the ring reuses the bytes.
             guard let buffer = AVAudioPCMBuffer(pcmFormat: format, bufferListNoCopy: bufferList, deallocator: nil)
-            else { return nil }
+            else { return .unsupported }
             let hostTime = HostClock.captureTime(
                 of: cycle,
                 frameCount: buffer.frameLength,
                 sampleRate: format.sampleRate
             )
-            return resampler.process(buffer, hostTime: hostTime)
+            return .converted(resampler.process(buffer, hostTime: hostTime))
         }
     }
 
@@ -263,7 +356,9 @@ final class FormatHistory: @unchecked Sendable {
         formats.withLockUnchecked { formats in
             guard formats.last != format else { return false }
             formats.append(format)
-            // Inside the lock, so updates from two listener queues can't publish out of order.
+            // Inside the lock, so the history and the current generation always agree. Callers
+            // that read a format and then publish it do both on one serial queue, so a format
+            // read earlier can't be published after a newer one.
             current.store(formats.count - 1, ordering: .releasing)
             return true
         }

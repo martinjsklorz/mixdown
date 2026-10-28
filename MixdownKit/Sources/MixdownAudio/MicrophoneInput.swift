@@ -13,14 +13,16 @@ import os
 /// the headset's input switches it to its call profile at a lower sample rate, and the engine
 /// most likely kept the format from before the switch. An IO proc follows the device's format.
 ///
-/// `@unchecked Sendable`: `start` and `invalidate` are called one after another, never
-/// concurrently; `formats` is safe from the listener and IO threads.
+/// `@unchecked Sendable`: `start` and `invalidate` are called one after another on
+/// `IOProcCapture`'s control queue, never concurrently; `formats` and `lifecycle` are safe from
+/// the listener and IO threads.
 final class MicrophoneInput: CaptureSource, @unchecked Sendable {
     /// How long a device may be without input streams before it counts as gone. A Bluetooth
     /// headset can drop them for a moment while it switches profiles.
     private static let lostInputGracePeriod: DispatchTimeInterval = .seconds(1)
 
     let formats = FormatHistory()
+    private let lifecycle = CaptureSourceLifecycle()
     private let device: AudioInputDevice
     private var deviceID = AudioObjectID(kAudioObjectUnknown)
     private var ioProcID: AudioDeviceIOProcID?
@@ -59,6 +61,10 @@ final class MicrophoneInput: CaptureSource, @unchecked Sendable {
         }
         formats.update(initialFormat)
 
+        let onChange: @Sendable () -> Void = { [weak self] in
+            self?.deviceChanged(deviceID, onFailure: onFailure)
+        }
+        lifecycle.setFormatCheck(onChange)
         listeners = [
             HALPropertyListener(
                 objectID: deviceID,
@@ -68,14 +74,11 @@ final class MicrophoneInput: CaptureSource, @unchecked Sendable {
                     kAudioDevicePropertyStreams,
                     kAudioDevicePropertyStreamConfiguration,
                 ],
-                scope: kAudioObjectPropertyScopeWildcard
-            ) { [weak self] in
-                self?.deviceChanged(deviceID, onFailure: onFailure)
-            },
-            // The IO proc dies with the service, without a word from the device.
-            HALPropertyListener(selectors: [kAudioHardwarePropertyServiceRestarted]) {
-                onFailure(.audioServiceRestarted)
-            },
+                scope: kAudioObjectPropertyScopeWildcard,
+                queue: lifecycle.listenerQueue,
+                onChange: onChange
+            ),
+            lifecycle.serviceRestartListener(onFailure: onFailure),
         ]
         listeners.forEach { $0.install() }
 
@@ -83,15 +86,23 @@ final class MicrophoneInput: CaptureSource, @unchecked Sendable {
         let block = IOProcCapture.ioBlock(writingTo: ring, formats: formats)
         try CoreAudioHAL.check(
             AudioDeviceCreateIOProcIDWithBlock(&ioProcID, deviceID, nil, block),
-            "read from “\(name)”"
+            "read from “\(name)”",
+            deviceName: name
         )
-        try CoreAudioHAL.check(AudioDeviceStart(deviceID, ioProcID), "start “\(name)”")
+        try CoreAudioHAL.check(AudioDeviceStart(deviceID, ioProcID), "start “\(name)”", deviceName: name)
+    }
+
+    func refreshFormat() {
+        lifecycle.checkFormat()
     }
 
     func invalidate() {
+        // After a restart of the audio service, the IO proc is gone and the device ID may belong
+        // to another device, so it's only forgotten.
+        let ownsObjects = lifecycle.invalidate()
         listeners.forEach { $0.remove(logsFailures: false) }
         listeners = []
-        if deviceID != AudioObjectID(kAudioObjectUnknown), let ioProcID {
+        if ownsObjects, deviceID != AudioObjectID(kAudioObjectUnknown), let ioProcID {
             CoreAudioHAL.logFailure(AudioDeviceStop(deviceID, ioProcID), "AudioDeviceStop")
             CoreAudioHAL.logFailure(AudioDeviceDestroyIOProcID(deviceID, ioProcID), "AudioDeviceDestroyIOProcID")
         }
@@ -110,9 +121,9 @@ final class MicrophoneInput: CaptureSource, @unchecked Sendable {
         }
         guard let newFormat = CoreAudioHAL.inputFormat(of: deviceID) else {
             let deadline = DispatchTime.now() + Self.lostInputGracePeriod
-            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: deadline) { [weak self] in
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: deadline) { [lifecycle] in
                 // A capture that has stopped in the meantime ignores the failure.
-                guard self != nil, CoreAudioHAL.inputFormat(of: deviceID) == nil else { return }
+                guard lifecycle.isLive, CoreAudioHAL.inputFormat(of: deviceID) == nil else { return }
                 audioLogger.error("“\(name, privacy: .public)” has no input streams anymore")
                 onFailure(.deviceNotFound(name))
             }
