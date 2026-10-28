@@ -317,7 +317,7 @@ struct RecordingCoordinatorTests {
         await coordinator.monitorDevices()
 
         await coordinator.startRecording()
-        try await waitUntil { coordinator.lastNoteURL != nil }
+        try await waitUntil { coordinator.lastNoteURL != nil && !coordinator.isMakingNote }
 
         let expected = RecordingCoordinator.Phase.failed(message: RecordingCoordinator.interruptedMessage(for: error))
         #expect(coordinator.phase == expected)
@@ -1253,7 +1253,7 @@ struct RecordingCoordinatorTests {
         await coordinator.monitorDevices()
 
         await coordinator.startRecording()
-        try await waitUntil { coordinator.lastNoteURL != nil }
+        try await waitUntil { coordinator.lastNoteURL != nil && !coordinator.isMakingNote }
 
         #expect(coordinator.phase == .idle)
         #expect(microphone.stopCount == 1)
@@ -1476,7 +1476,7 @@ struct RecordingCoordinatorTests {
         await coordinator.monitorDevices()
 
         await coordinator.startRecording()
-        try await waitUntil { coordinator.lastNoteURL != nil }
+        try await waitUntil { coordinator.lastNoteURL != nil && !coordinator.isMakingNote }
 
         #expect(coordinator.phase == .failed(message: RecordingCoordinator.interruptedMessage(for: error)))
         // Settings offers to download the model again.
@@ -1523,7 +1523,7 @@ struct RecordingCoordinatorTests {
         await coordinator.monitorDevices()
 
         await coordinator.startRecording()
-        try await waitUntil { coordinator.lastNoteURL != nil }
+        try await waitUntil { coordinator.lastNoteURL != nil && !coordinator.isMakingNote }
 
         #expect(coordinator.phase == .failed(message: RecordingCoordinator.interruptedMessage(for: error)))
         #expect(await writer.notes.first?.transcript.text == "Hello.")
