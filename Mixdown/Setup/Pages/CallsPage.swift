@@ -3,10 +3,11 @@ import UserNotifications
 
 /// The setup assistant's page for call detection and notifications.
 struct CallsPage: View {
-    @AppStorage(AppSettings.Key.showsNotifications) private var showsNotifications = true
+    @Environment(AppEnvironment.self) private var environment
     @State private var notificationAccess: UNAuthorizationStatus?
 
     var body: some View {
+        @Bindable var preferences = environment.preferences
         SetupPage(
             title: "Calls and Notifications",
             systemImage: "phone.bubble",
@@ -24,8 +25,8 @@ struct CallsPage: View {
                 }
 
                 Section {
-                    Toggle("Show notifications", isOn: $showsNotifications)
-                    if showsNotifications {
+                    Toggle("Show notifications", isOn: $preferences.showsNotifications)
+                    if preferences.showsNotifications {
                         LabeledContent("Permission") {
                             notificationAccessControl
                         }

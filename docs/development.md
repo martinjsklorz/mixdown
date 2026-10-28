@@ -40,7 +40,7 @@ window lives in the `MixdownKit` package:
 | `MixdownFoundationModels` | Summaries and titles, and Chat's answers, via Apple Intelligence. |
 | `MixdownNaturalLanguage` | Embeddings of note passages for Chat, with Apple's on-device contextual embedding models. |
 | `MixdownAppleTranslation` | Translating transcripts with Apple's on-device models via the Translation framework. |
-| `MixdownNotes` | Rendering notes to Markdown, writing them, reading the notes folder back, and what Spotlight gets of each note (`NoteSearchIndex`; the app's `NoteSpotlight` hands it to Core Spotlight). Also Chat's passages and search (`NoteChatIndex`) and the questions Mixdown answers by counting (`NoteQuestion`). |
+| `MixdownNotes` | Rendering notes to Markdown, writing them, reading the notes folder back, and what Spotlight gets of each note (`NoteSearchIndex`; the app's `NoteSpotlight` hands it to Core Spotlight). Also Chat (`NoteChat`), its passages and search (`NoteChatIndex`) and the questions Mixdown answers by counting (`NoteQuestion`). |
 
 The speech engines sit behind one protocol (`TranscriptionEngine`), and so do the summarizer
 (`Summarizer`), the translator (`Translator`), and Chat's model (`NoteAnswerer`) and embeddings

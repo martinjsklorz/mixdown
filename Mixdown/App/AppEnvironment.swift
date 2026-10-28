@@ -91,7 +91,12 @@ final class AppEnvironment {
         let noteTrash = NoteTrash()
         let noteReady = NoteReady(navigation: navigation)
         // Likewise the ONE place Chat's model and embeddings are chosen.
-        self.noteChat = NoteChat(answerer: AppleIntelligenceAnswerer(), embedder: NaturalLanguageEmbedder())
+        self.noteChat = NoteChat(
+            answerer: AppleIntelligenceAnswerer(),
+            embedder: NaturalLanguageEmbedder(),
+            indexDirectory: URL.applicationSupportDirectory.appending(path: "ChatIndex", directoryHint: .isDirectory),
+            legacyIndexFile: URL.applicationSupportDirectory.appending(path: "ChatIndex.plist")
+        )
         self.settings = settings
         self.preferences = preferences
         self.model = model
@@ -209,7 +214,7 @@ final class AppEnvironment {
         Self.configure(coordinator, with: preferences, summarizer: summarizer)
         if let callPrompt {
             callPrompt.apps = preferences.callApps.apps
-            callPrompt.notifies = preferences.notifiesAboutCalls
+            callPrompt.notifies = preferences.notifiesAboutCalls && preferences.showsNotifications
             if callPrompt.recordsAutomatically != preferences.recordsCallsAutomatically {
                 callPrompt.recordsAutomatically = preferences.recordsCallsAutomatically
             }

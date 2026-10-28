@@ -27,7 +27,6 @@ struct MainView: View {
     /// What to fill in as heard when adding to the vocabulary, while its sheet is open.
     @State private var vocabularyDraft: VocabularyDraft?
     @AppStorage(AppSettings.Key.suppressesTrashConfirmation) private var suppressesTrashConfirmation = false
-    @AppStorage(AppSettings.Key.showsNotifications) private var showsNotifications = true
     @AppStorage(AppSettings.Key.collapsesPinnedNotes) private var collapsesPinnedNotes = false
     @State private var titleDraft = ""
     @FocusState private var isChatFieldFocused: Bool
@@ -103,7 +102,7 @@ struct MainView: View {
             Button("Cancel", role: .cancel) {}
         } message: { _ in
             Text(
-                showsNotifications
+                environment.preferences.showsNotifications
                     ? "You can restore it from the notification or the Trash."
                     : "You can restore it from the Trash."
             )

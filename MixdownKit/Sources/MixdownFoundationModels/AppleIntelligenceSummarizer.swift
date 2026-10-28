@@ -136,7 +136,7 @@ enum SystemModelSummary {
             let response = try await session.respond(generating: GeneratedSummary.self, includeSchemaInPrompt: true) {
                 prompt
             }
-            return response.content.noteSummary
+            return response.content.noteSummary(template: template)
         }
         let response = try await session.respond(
             generating: GeneratedSectionedSummary.self,
@@ -218,8 +218,9 @@ struct GeneratedSummary {
     @Guide(description: SummaryFields.title)
     var title: String
 
-    var noteSummary: NoteSummary {
+    func noteSummary(template: SummaryTemplate) -> NoteSummary {
         NoteSummary(
+            template: template,
             title: title.trimmingCharacters(in: .whitespacesAndNewlines),
             overview: overview.trimmingCharacters(in: .whitespacesAndNewlines),
             keyPoints: keyPoints.map(SummaryPrompt.listItem),
