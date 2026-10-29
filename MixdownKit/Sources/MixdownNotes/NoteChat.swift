@@ -176,7 +176,8 @@ public final class NoteChat {
         let notes = self.notes
 
         if parsed.asksForCount {
-            let counted = notes.filter(parsed.counts)
+            // Reads every note in the folder the first time.
+            let counted = await Task.detached(priority: .userInitiated) { notes.filter(parsed.counts) }.value
             updateMessage(messageID) { message in
                 message.text = parsed.countAnswer(for: counted)
                 message.sources = counted.prefix(Self.maxCountedSources).enumerated().map { offset, note in
@@ -319,16 +320,14 @@ actor NoteChatIndexStore {
         save()
         guard !pending.isEmpty else { return }
 
-        var embedder: (any TextEmbedder)? = self.embedder
-        for (done, note) in pending.enumerated() {
-            guard let indexed = try? await NoteChatIndex.index(note, embedder: embedder) else { break }
+        // Only cancellation ends it early.
+        try? await NoteChatIndex.index(pending, embedder: embedder) { indexed, done in
             if indexed.embedderFailed {
                 Self.logger.info("Indexing notes for Chat without embeddings, as the embedder failed")
-                embedder = nil
             }
             index?.insert(indexed)
             save()
-            await progress(done + 1, pending.count)
+            await progress(done, pending.count)
         }
     }
 

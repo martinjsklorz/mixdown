@@ -114,9 +114,10 @@ public enum MarkdownNoteRenderer {
     /// leaving out empty parts.
     /// Action items are `- [ ]` task items to tick off. `nil` if the summary has nothing to show.
     static func summaryBody(_ summary: NoteSummary) -> String? {
-        let overview = escapedMarkdown(singleLine(summary.overview))
+        // Each starts a line: the overview its paragraph, an item's text its list item.
+        let overview = escapedLineStart(singleLine(summary.overview))
         let list = { (marker: String, items: [String]) -> String in
-            items.map { escapedMarkdown(singleLine($0)) }.filter { !$0.isEmpty }.map { marker + $0 }
+            items.map { escapedLineStart(singleLine($0)) }.filter { !$0.isEmpty }.map { marker + $0 }
                 .joined(separator: "\n")
         }
         var blocks: [String] = []
@@ -264,12 +265,25 @@ public enum MarkdownNoteRenderer {
     }
 
     /// Backslash-escapes the characters that start inline Markdown, inline HTML or entities, so
-    /// text shows as written. Block syntax needs no escaping: the text never starts a line.
+    /// text shows as written. Block syntax isn't escaped; text that starts a line needs
+    /// `escapedLineStart(_:)`.
     static func escapedMarkdown(_ text: String) -> String {
         var escaped = ""
         for character in text {
             if "\\`*_[]<&~".contains(character) { escaped.append("\\") }
             escaped.append(character)
+        }
+        return escaped
+    }
+
+    /// `escapedMarkdown(_:)` for text that starts a line or a list item's text, also escaping
+    /// what would make it a heading, list item, quote or rule, like a leading `#`, `- ` or `1. `.
+    static func escapedLineStart(_ text: String) -> String {
+        var escaped = escapedMarkdown(text)
+        if let first = escaped.first, "#-+>".contains(first) {
+            escaped.insert("\\", at: escaped.startIndex)
+        } else if let marker = escaped.firstMatch(of: /^\d{1,9}([.)])/) {
+            escaped.insert("\\", at: marker.1.startIndex)
         }
         return escaped
     }
@@ -284,12 +298,10 @@ public enum MarkdownNoteRenderer {
         return String(escaped[..<marks]) + "\\" + escaped[marks...]
     }
 
-    /// Collapses line breaks so multi-line text stays a single Markdown line or paragraph.
+    /// Collapses line breaks so multi-line text stays a single Markdown line or paragraph, and
+    /// runs of whitespace, so the text reads back the same: see `String.collapsingWhitespace`.
     static func singleLine(_ text: String) -> String {
-        text.components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
+        text.collapsingWhitespace
     }
 
     private static func pad(_ value: Int) -> String {

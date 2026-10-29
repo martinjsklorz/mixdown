@@ -10,56 +10,23 @@ public enum NoteLibrary {
     /// that doesn't exist yet has no notes. Only reads the files that are new or changed since
     /// `cache` last saw them, and updates `cache`.
     public static func loadNotes(in directory: URL, cache: inout Cache) throws -> [NoteDocument] {
-        let fileManager = FileManager.default
-        guard fileManager.fileExists(atPath: directory.path(percentEncoded: false)) else {
-            cache = Cache()
-            return []
-        }
-
-        let keys: Set<URLResourceKey> = [
-            .isRegularFileKey, .isDirectoryKey, .isPackageKey, .creationDateKey, .contentModificationDateKey,
-            .fileSizeKey,
-        ]
         var entries: [URL: Cache.Entry] = [:]
-        // Folders still to read, with their paths relative to `directory`.
-        var folders: [(url: URL, path: String?)] = [(directory, nil)]
-        while let folder = folders.popLast() {
-            let urls: [URL]
-            do {
-                urls = try fileManager.contentsOfDirectory(
-                    at: folder.url,
-                    includingPropertiesForKeys: Array(keys),
-                    options: [.skipsHiddenFiles]
-                )
-            } catch {
-                // Only the notes folder itself has to be readable.
-                if folder.path == nil { throw error }
+        for file in try noteFiles(in: directory) {
+            let stamp = Cache.Stamp(file.values)
+            if let entry = cache.entries[file.url], entry.stamp == stamp {
+                entries[file.url] = entry
                 continue
             }
-            for url in urls {
-                guard let values = try? url.resourceValues(forKeys: keys) else { continue }
-                // Symbolic links aren't followed, so a link to a parent folder can't loop.
-                if values.isDirectory == true, values.isPackage != true {
-                    let name = url.lastPathComponent
-                    folders.append((url, folder.path.map { "\($0)/\(name)" } ?? name))
-                    continue
-                }
-                guard isNote(url), values.isRegularFile == true else { continue }
-                let stamp = Cache.Stamp(values)
-                if let entry = cache.entries[url], entry.stamp == stamp {
-                    entries[url] = entry
-                    continue
-                }
-                guard let data = try? Data(contentsOf: url) else { continue }
-                var note = NoteDocument(
-                    url: url,
-                    contents: String(decoding: data, as: UTF8.self),
-                    fileDate: values.creationDate ?? values.contentModificationDate ?? .distantPast
-                )
-                note.folder = folder.path
-                note.cachedFingerprint.value = NoteSearchIndex.fingerprint(of: note)
-                entries[url] = Cache.Entry(stamp: stamp, note: note)
-            }
+            guard let data = try? Data(contentsOf: file.url) else { continue }
+            var note = NoteDocument(
+                url: file.url,
+                contents: String(decoding: data, as: UTF8.self),
+                fileDate: file.values.creationDate ?? file.values.contentModificationDate ?? .distantPast
+            )
+            note.folder = file.folder
+            // Worked out here, off the main thread, and kept with the note.
+            _ = NoteSearchIndex.fingerprint(of: note)
+            entries[file.url] = Cache.Entry(stamp: stamp, note: note)
         }
         cache.entries = entries
 
@@ -69,9 +36,54 @@ public enum NoteLibrary {
         }
     }
 
+    /// The resource values `noteFiles(in:)` reads of each file.
+    private static let fileKeys: Set<URLResourceKey> = [
+        .isRegularFileKey, .isDirectoryKey, .isPackageKey, .creationDateKey, .contentModificationDateKey,
+        .fileSizeKey,
+    ]
+
+    /// The files `loadNotes(in:cache:)` reads as notes, in no particular order, each with the
+    /// subfolder it's in, as `NoteDocument.folder` has it, and its `fileKeys`. A folder that
+    /// doesn't exist yet has none. Throws only if `directory` itself can't be read.
+    static func noteFiles(in directory: URL) throws -> [(url: URL, folder: String?, values: URLResourceValues)] {
+        let fileManager = FileManager.default
+        var files: [(url: URL, folder: String?, values: URLResourceValues)] = []
+        guard fileManager.fileExists(atPath: directory.path(percentEncoded: false)) else { return files }
+        // Folders still to read, with their paths relative to `directory`.
+        var folders: [(url: URL, path: String?)] = [(directory, nil)]
+        while let folder = folders.popLast() {
+            let urls: [URL]
+            do {
+                urls = try fileManager.contentsOfDirectory(
+                    at: folder.url,
+                    includingPropertiesForKeys: Array(fileKeys),
+                    options: [.skipsHiddenFiles]
+                )
+            } catch {
+                // Only the notes folder itself has to be readable.
+                if folder.path == nil { throw error }
+                continue
+            }
+            for url in urls {
+                guard let values = try? url.resourceValues(forKeys: fileKeys) else { continue }
+                // Symbolic links aren't followed, so a link to a parent folder can't loop.
+                if values.isDirectory == true, values.isPackage != true {
+                    let name = url.lastPathComponent
+                    folders.append((url, folder.path.map { "\($0)/\(name)" } ?? name))
+                    continue
+                }
+                guard isNote(url), values.isRegularFile == true else { continue }
+                files.append((url, folder.path, values))
+            }
+        }
+        return files
+    }
+
     /// The notes of `notes` that match `query`, for the sidebar's search, each with the line of its
     /// text that matches best, or `""` if only its title or folder does. A note matches if every
     /// one of `searchTerms(in: query)` is in its title, text or folder, ignoring case and accents.
+    /// Its text is the plain text of `NoteSearchIndex.lines(of:)`, like Spotlight has it: without
+    /// Markdown's escapes and markup, and without the headings every note has.
     /// Looking through long transcripts takes a while, so it's meant to run off the main thread,
     /// and throws `CancellationError` as soon as it's cancelled.
     public static func search(_ notes: [NoteDocument], for query: String) throws -> [NoteDocument.ID: String] {
@@ -80,7 +92,8 @@ public enum NoteLibrary {
         var matches: [NoteDocument.ID: String] = [:]
         for note in notes {
             try Task.checkCancellation()
-            let inBody = terms.filter { note.body.localizedStandardContains($0) }
+            let lines = NoteSearchIndex.lines(of: note)
+            let inBody = terms.filter { term in lines.contains { $0.text.localizedStandardContains(term) } }
             let matchesAll = terms.allSatisfy { term in
                 inBody.contains(term) || note.title.localizedStandardContains(term)
                     || note.folder?.localizedStandardContains(term) == true
@@ -99,7 +112,7 @@ public enum NoteLibrary {
             if index.isMultiple(of: 2) {
                 terms += part.split(whereSeparator: \.isWhitespace).map(String.init)
             } else {
-                let phrase = part.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+                let phrase = part.collapsingWhitespace
                 if !phrase.isEmpty { terms.append(phrase) }
             }
         }
@@ -189,7 +202,7 @@ public enum NoteLibrary {
     /// Runs of whitespace in the title become one space, and a blank title becomes "Untitled".
     /// A note that isn't valid UTF-8 is left alone: writing it back would garble it.
     public static func rename(noteAt url: URL, to title: String) throws -> URL {
-        var title = title.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        var title = title.collapsingWhitespace
         if title.isEmpty { title = "Untitled" }
 
         try rewrite(noteAt: url) { NoteDocument.retitled($0, url: url, to: title) }
@@ -217,14 +230,14 @@ public enum NoteLibrary {
     /// valid UTF-8 is left alone, like by `rename(noteAt:to:)`.
     @discardableResult
     public static func renameSpeaker(_ old: String, to new: String, inNoteAt url: URL) throws -> Bool {
-        let new = new.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        let new = new.collapsingWhitespace
         return try rewriteIfChanged(noteAt: url) { NoteDocument.renamingSpeaker($0, from: old, to: new) }
     }
 
     /// Applies `vocabulary` to every note in `directory` and its subfolders, as listed by
     /// `loadNotes(in:cache:)`. See `NoteDocument.corrected(_:by:)` for what changes; file names
     /// stay as they are. A note that can't be read or written is skipped, and the others are
-    /// still corrected.
+    /// still corrected; so is one deleted while the others are corrected.
     public static func applyVocabulary(
         _ vocabulary: Vocabulary,
         toNotesIn directory: URL
@@ -234,14 +247,17 @@ public enum NoteLibrary {
         let correction = NoteDocument.VocabularyCorrection(vocabulary)
         var changes = VocabularyChanges()
         guard !correction.isEmpty else { return changes }
-        var cache = Cache()
-        for note in try loadNotes(in: directory, cache: &cache) {
+        // In a stable order: newest first for the dated names Mixdown gives notes.
+        let urls = try noteFiles(in: directory).map(\.url).sorted { $0.lastPathComponent > $1.lastPathComponent }
+        for url in urls {
             do {
-                if try rewriteIfChanged(noteAt: note.url, { NoteDocument.corrected($0, by: correction) }) {
-                    changes.correctedNotes.append(note.url)
+                if try rewriteIfChanged(noteAt: url, { NoteDocument.corrected($0, by: correction) }) {
+                    changes.correctedNotes.append(url)
                 }
+            } catch CocoaError.fileReadNoSuchFile, CocoaError.fileNoSuchFile {
+                continue
             } catch {
-                changes.failures.append(.init(url: note.url, message: error.localizedDescription))
+                changes.failures.append(.init(url: url, message: error.localizedDescription))
             }
         }
         return changes
@@ -260,17 +276,47 @@ public enum NoteLibrary {
         public var failures: [Failure] = []
     }
 
+    /// How many times `rewriteIfChanged(noteAt:_:)` reads a note that changed while it was being
+    /// rewritten before it gives up.
+    static let maxRewriteAttempts = 3
+
     /// Like `rewrite(noteAt:_:)`, but leaves the file alone when `transform` returns `nil`.
     /// Returns whether it was rewritten.
-    private static func rewriteIfChanged(noteAt url: URL, _ transform: (String) -> String?) throws -> Bool {
-        guard let contents = transform(try contents(ofNoteAt: url)) else { return false }
-        try replaceContents(ofNoteAt: url, with: contents)
-        return true
+    ///
+    /// If the file changes between reading and writing it back, by another app or a sync, it's
+    /// read and transformed again, so that change isn't lost, and after `maxRewriteAttempts`
+    /// it throws. A file deleted meanwhile isn't written back. Mixdown's own changes don't get
+    /// here at once: they go through `NoteFileEditor` one at a time.
+    static func rewriteIfChanged(noteAt url: URL, _ transform: (String) -> String?) throws -> Bool {
+        for _ in 0..<maxRewriteAttempts {
+            // Before reading, so a change made while reading counts as one.
+            let stamp = try stamp(ofNoteAt: url)
+            guard let contents = transform(try contents(ofNoteAt: url)) else { return false }
+            if try replaceContents(ofNoteAt: url, with: contents, ifStill: stamp) { return true }
+        }
+        throw KeptChangingError(url: url)
     }
 
     /// Replaces the contents of the note at `url` with what `transform` makes of them.
     private static func rewrite(noteAt url: URL, _ transform: (String) -> String) throws {
-        try replaceContents(ofNoteAt: url, with: transform(try contents(ofNoteAt: url)))
+        _ = try rewriteIfChanged(noteAt: url) { transform($0) }
+    }
+
+    /// Thrown when a note kept changing while it was being rewritten.
+    struct KeptChangingError: LocalizedError {
+        var url: URL
+
+        var errorDescription: String? {
+            "“\(url.deletingPathExtension().lastPathComponent)” kept changing while Mixdown was saving it."
+        }
+    }
+
+    /// What `rewriteIfChanged(noteAt:_:)` checks to tell whether a file changed.
+    private static func stamp(ofNoteAt url: URL) throws -> Cache.Stamp {
+        var url = url
+        // A URL keeps the values it read, which would hide a change.
+        url.removeAllCachedResourceValues()
+        return Cache.Stamp(try url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey]))
     }
 
     private static func contents(ofNoteAt url: URL) throws -> String {
@@ -280,14 +326,25 @@ public enum NoteLibrary {
         return contents
     }
 
-    private static func replaceContents(ofNoteAt url: URL, with contents: String) throws {
+    /// Replaces the contents of the note at `url` with `contents`, unless the file no longer has
+    /// `stamp`. Returns whether it did. Throws if the file is gone.
+    private static func replaceContents(
+        ofNoteAt url: URL,
+        with contents: String,
+        ifStill stamp: Cache.Stamp
+    ) throws
+        -> Bool
+    {
         let fileManager = FileManager.default
         let temporaryURL = MarkdownNoteWriter.temporaryURL(in: url.deletingLastPathComponent())
         defer { try? fileManager.removeItem(at: temporaryURL) }
         try Data(contents.utf8).write(to: temporaryURL)
+        // Checked last, to leave as little time as can be for another change to slip in.
+        guard try self.stamp(ofNoteAt: url) == stamp else { return false }
         // Swaps the contents in atomically while keeping the file's creation date, which dates
         // notes without a `created` field.
         _ = try fileManager.replaceItemAt(url, withItemAt: temporaryURL)
+        return true
     }
 
     /// Moves a note that was moved to the Trash back to where it was. If a note with its old name

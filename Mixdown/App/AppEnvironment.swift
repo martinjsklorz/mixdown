@@ -663,18 +663,19 @@ final class AppEnvironment {
 
     // MARK: Vocabulary
 
+    /// How many `correctNotes(with:)` calls are running or waiting their turn.
+    private var correctionsRunning = 0
     /// Whether `correctNotes(with:)` is running.
-    private(set) var isCorrectingNotes = false
+    var isCorrectingNotes: Bool { correctionsRunning > 0 }
 
-    /// Applies `vocabulary` to every note in the notes folder, off the main thread. `nil` without
-    /// a notes folder. The main window picks up the changed files as it watches the folder.
+    /// Applies `vocabulary` to every note in the notes folder, off the main thread, after any
+    /// other change to notes asked for before. `nil` without a notes folder. The main window picks
+    /// up the changed files as it watches the folder.
     func correctNotes(with vocabulary: Vocabulary) async throws -> NoteLibrary.VocabularyChanges? {
         guard let directory = notesFolder.directory else { return nil }
-        isCorrectingNotes = true
-        defer { isCorrectingNotes = false }
-        return try await Task.detached(priority: .userInitiated) {
-            try NoteLibrary.applyVocabulary(vocabulary, toNotesIn: directory)
-        }.value
+        correctionsRunning += 1
+        defer { correctionsRunning -= 1 }
+        return try await library.applyVocabulary(vocabulary, toNotesIn: directory)
     }
 
     // MARK: Notes
