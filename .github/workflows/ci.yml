@@ -1,0 +1,61 @@
+# Lint and test MixdownKit, and build the app, on every push to main and every pull request.
+# `make ci` runs the same checks locally.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The Xcode the app is built with. swift-format ships with it, so lint results follow it too, and
+  # the macOS 27 SDK it has is needed for the `#available(macOS 27, *)` code. The runner image has
+  # to provide it.
+  XCODE_VERSION: "27.1"
+
+jobs:
+  package:
+    name: Lint and test MixdownKit
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      # Shared runners are slower than a Mac on a desk; tests wait this many times longer.
+      MIXDOWN_TEST_TIMEOUT_SCALE: "5"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: ${{ env.XCODE_VERSION }}
+      # Resolving clones about 40 repositories, so the build folder is kept between runs.
+      - uses: actions/cache@v4
+        with:
+          path: MixdownKit/.build
+          key: spm-${{ runner.os }}-${{ env.XCODE_VERSION }}-${{ hashFiles('MixdownKit/Package.resolved', 'MixdownKit/Package.swift') }}
+          restore-keys: spm-${{ runner.os }}-${{ env.XCODE_VERSION }}-
+      - run: make lint
+      - run: cd MixdownKit && swift build --build-tests && swift test --skip-build
+
+  app:
+    name: Build the app
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: ${{ env.XCODE_VERSION }}
+      - run: make bootstrap
+      # Only the versions in Mixdown.resolved, so a dependency that moved on fails here rather
+      # than shipping unnoticed. Unsigned: CI has no signing identity.
+      - run: >-
+          make build XCODEBUILD_FLAGS="-skipPackagePluginValidation -skipMacroValidation
+          -onlyUsePackageVersionsFromResolvedFile CODE_SIGNING_ALLOWED=NO"
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-log
+          path: build/xcodebuild.log
