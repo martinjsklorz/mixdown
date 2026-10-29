@@ -59,8 +59,9 @@ Two switches under **Settings → Recording → Calls** decide what happens.
 
 On by default. A notification asks **Record This Call?** Click it, or its **Record** button
 (which shows when you point at it), to start recording with System Audio turned on, plus your
-microphone if one is selected. If Mixdown can't record yet, for example because the model isn't
-downloaded, the window opens at **Record** to show why.
+microphone if one is selected. System Audio stays on for later recordings too; turn it off under
+**Record** or in **Settings → Recording**. If Mixdown can't record yet, for example because the
+model isn't downloaded, the window opens at **Record** to show why.
 
 The notification goes away when the call ends, and none appears while Mixdown is already
 recording. When the call ends while Mixdown is recording (and no other call is going on), a

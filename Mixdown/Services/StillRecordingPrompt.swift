@@ -45,14 +45,7 @@ final class StillRecordingPrompt {
         let id = "still-recording-\(UUID().uuidString)"
         promptID = id
         let body = Self.message(for: coordinator()?.stillRecordingDelay)
-        Task {
-            await Notifications.post(
-                title: "Still Recording?",
-                body: body,
-                categoryIdentifier: Self.categoryIdentifier,
-                id: id
-            )
-        }
+        Notifications.send(title: "Still Recording?", body: body, categoryIdentifier: Self.categoryIdentifier, id: id)
     }
 
     /// Takes the notification away, as the question was answered.

@@ -250,7 +250,8 @@ public enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
 
             - **Notify when calls start and end** (on by default): a notification asks **Record \
             This Call?** Click it to record with System Audio turned on, plus your microphone if one \
-            is selected. When the call ends, a notification asks **Stop Recording?** Close a \
+            is selected. System Audio stays on for later recordings too. When the call ends, a \
+            notification asks **Stop Recording?** Close a \
             **Record This Call?** notification, and Mixdown won't ask about that app for 30 minutes.
             - **Record calls automatically** (off by default): recording starts by itself when a \
             call starts and stops when it ends, once no one has spoken for 20 seconds (two minutes \
