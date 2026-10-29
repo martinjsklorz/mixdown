@@ -14,13 +14,13 @@ concurrency:
 env:
   # The Xcode the app is built with. swift-format ships with it, so lint results follow it too, and
   # the macOS 27 SDK it has is needed for the `#available(macOS 27, *)` code. The runner image has
-  # to provide it.
+  # to provide it: `macos-26` stops at Xcode 26, so the jobs run on `xcode-27` (a public preview).
   XCODE_VERSION: "27.1"
 
 jobs:
   package:
     name: Lint and test MixdownKit
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 60
     env:
       # Shared runners are slower than a Mac on a desk; tests wait this many times longer.
@@ -41,7 +41,7 @@ jobs:
 
   app:
     name: Build the app
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
