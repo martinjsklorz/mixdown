@@ -33,14 +33,9 @@ final class CatchUpRequest {
 @MainActor
 final class CatchUpCard {
     static let width: CGFloat = 360
-    /// Space between the card and the notch or island above it.
-    private static let spacing: CGFloat = 6
 
     private let island: IslandController
-    /// The Dynamic Island's frame while it's shown, to go under it.
-    private let islandFrame: () -> NSRect?
-    /// Created on the first `show(_:)`, as windows shouldn't be made before the app has launched.
-    private var panel: NotchPanel?
+    private let dropdown: NotchDropdown
     /// The request the card is showing, if it's open.
     private var shownRequest: CatchUpRequest?
     /// As tall as the view last measured itself, which changes once the catch-up is in.
@@ -50,7 +45,14 @@ final class CatchUpCard {
 
     init(island: IslandController, islandFrame: @escaping () -> NSRect?) {
         self.island = island
-        self.islandFrame = islandFrame
+        dropdown = NotchDropdown(islandFrame: islandFrame) {
+            NotchPanel(
+                // Over every Space and full-screen app, as a catch-up can be asked for from any of
+                // them. Never takes focus from the app in front.
+                showsOverFullScreenApps: true,
+                isDark: true
+            )
+        }
     }
 
     /// Opens the card for `request`, or switches it to `request` if it's open.
@@ -60,7 +62,6 @@ final class CatchUpCard {
         // Not as tall as the last catch-up, which would leave clear space under the card that
         // takes clicks.
         height = Self.initialHeight
-        let panel = panel ?? makePanel()
         let hostingView = NSHostingView(
             rootView: CatchUpView(
                 island: island,
@@ -70,46 +71,26 @@ final class CatchUpCard {
         )
         // The panel is sized here, from the height the view reports, so it grows downwards.
         hostingView.sizingOptions = []
-        panel.contentView = hostingView
-        place(panel)
-        panel.orderFrontRegardless()
+        dropdown.show(hostingView, size: NSSize(width: Self.width, height: height)).orderFrontRegardless()
     }
 
     func hide() {
-        guard shownRequest != nil, let panel else { return }
+        guard shownRequest != nil else { return }
         shownRequest = nil
-        panel.orderOut(nil)
         // Ends the view, and with it the hover tracking.
-        panel.contentView = nil
+        dropdown.hide()
     }
 
-    private func makePanel() -> NotchPanel {
-        let panel = NotchPanel(
-            // Over every Space and full-screen app, as a catch-up can be asked for from any of
-            // them. Never takes focus from the app in front.
-            showsOverFullScreenApps: true,
-            isDark: true
-        )
-        self.panel = panel
-        return panel
+    /// Moves the card under the island, or up under the notch, as the island shows or hides.
+    func islandMoved() {
+        dropdown.place()
     }
 
     private func heightChanged(_ height: CGFloat) {
         guard abs(height - self.height) >= 0.5 else { return }
         self.height = height
-        guard shownRequest != nil, let panel else { return }
-        place(panel)
-    }
-
-    /// Centers the card under the notch, or under the island while it's shown.
-    private func place(_ panel: NotchPanel) {
-        guard let screen = DynamicIsland.screen else { return }
-        let notch = DynamicIsland.notch(on: screen)
-        let top = (islandFrame()?.minY ?? notch.minY) - Self.spacing
-        panel.setFrame(
-            NSRect(x: notch.midX - Self.width / 2, y: top - height, width: Self.width, height: height),
-            display: true
-        )
+        guard shownRequest != nil else { return }
+        dropdown.resize(to: NSSize(width: Self.width, height: height))
     }
 }
 

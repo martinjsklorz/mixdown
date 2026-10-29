@@ -51,6 +51,6 @@ hands every change on to the coordinator from one place.
 
 ## In-app Help
 
-Mixdown Help (⌘?) is written in `Mixdown/Help/HelpTopic.swift` as Markdown, one topic per case,
-rendered like a note. Links of the form `mixdown-help:<topic>` open another topic. When a feature
-changes, update the matching topic there and the page in `docs/`.
+Mixdown Help (⌘?) is written in `MixdownKit/Sources/MixdownNotes/HelpTopic.swift` as Markdown,
+one topic per case, rendered like a note. Links of the form `mixdown-help:<topic>` open another
+topic. When a feature changes, update the matching topic there and the page in `docs/`.

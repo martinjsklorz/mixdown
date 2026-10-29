@@ -192,6 +192,12 @@ public final class RecordingCoordinator {
         return !isPreparingModelForRecording && !isCancellingPreparation
     }
 
+    /// Whether `prepareEngine()` would download the model: it isn't downloaded yet, and nothing
+    /// else is going on.
+    public var canDownloadModel: Bool {
+        !isModelDownloaded && isIdle
+    }
+
     /// The name of the file `importAudio(from:)` is reading, transcribing or summarizing, until its
     /// note is saved or it fails; `nil` otherwise.
     public internal(set) var importingFileName: String?

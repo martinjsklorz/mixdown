@@ -12,21 +12,7 @@ struct MenuBarContent: View {
     var body: some View {
         let coordinator = environment.coordinator
 
-        Button(coordinator.canStopRecording ? "Stop Recording" : "Start Recording") {
-            Task { await coordinator.toggleRecording() }
-        }
-        .recordingShortcut(isGlobal: environment.preferences.isRecordingShortcutEnabled)
-        .disabled(!coordinator.canStartRecording && !coordinator.canStopRecording)
-        if coordinator.isRecording {
-            Button(coordinator.isPaused ? "Resume Recording" : "Pause Recording") {
-                Task { await coordinator.togglePause() }
-            }
-            .keyboardShortcut("p", modifiers: [.command, .shift])
-            Button("Mark Moment") { environment.island.markMoment() }
-                .globalKeyboardShortcut(.markMoment)
-            Button("Catch Me Up") { environment.island.catchUp() }
-                .globalKeyboardShortcut(.catchUp)
-        }
+        RecordingControls(environment: environment, hidesUnavailable: true, showsGlobalShortcut: true)
 
         RecordingStatusView(
             phase: coordinator.phase,
@@ -52,17 +38,7 @@ struct MenuBarContent: View {
         if environment.notesFolder.directory == nil && !coordinator.isRecording {
             Button("Choose Notes Folder…") { environment.chooseNotesFolder() }
         }
-        if case .preparingModel = coordinator.phase {
-            // A download for a finished recording can't be cancelled.
-            if !coordinator.isPreparingModelForRecording {
-                Button("Cancel Download") { coordinator.cancelPreparation() }
-                    .disabled(!coordinator.canCancelPreparation)
-            }
-        } else if !coordinator.isModelDownloaded && coordinator.isIdle {
-            Button("Download Model") {
-                Task { await coordinator.prepareEngine() }
-            }
-        }
+        ModelDownloadControls(coordinator: coordinator, hidesUnavailable: true)
 
         Divider()
 

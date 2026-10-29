@@ -81,8 +81,7 @@ struct DynamicIslandView: View {
 
     /// How far the wings reach out from the notch on either side.
     private var wingWidths: (left: CGFloat, right: CGFloat) {
-        let levels = layout.showsLevels ? Self.levelsWingWidth : 0
-        return layout.timeSide == .left ? (timeWingWidth, levels) : (levels, timeWingWidth)
+        layout.geometry(timeWingWidth: timeWingWidth).wingWidths
     }
 
     @ViewBuilder

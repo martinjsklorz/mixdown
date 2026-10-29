@@ -1,4 +1,5 @@
 import AppKit
+import MixdownNotes
 import Observation
 import SwiftUI
 

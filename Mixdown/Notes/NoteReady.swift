@@ -30,12 +30,20 @@ final class NoteReady {
     }
 
     /// Posts the notification for the note just saved at `url`, with the note's title as its body.
-    func notify(noteAt url: URL) async {
-        // The file name if the note can't be read back, which is unlikely right after writing it.
-        let title =
-            (try? Data(contentsOf: url)).map {
-                NoteDocument(url: url, contents: String(decoding: $0, as: UTF8.self), fileDate: .now).title
-            } ?? url.deletingPathExtension().lastPathComponent
+    /// The title comes from `notes` if they have the note already, else from the file, read off the
+    /// main thread.
+    func notify(noteAt url: URL, in notes: [NoteDocument]) async {
+        let title: String
+        if let note = NoteLibrary.note(at: url, in: notes) {
+            title = note.title
+        } else {
+            // The file name if the note can't be read back, which is unlikely right after writing it.
+            title = await Task.detached(priority: .utility) {
+                (try? Data(contentsOf: url)).map {
+                    NoteDocument(url: url, contents: String(decoding: $0, as: UTF8.self), fileDate: .now).title
+                } ?? url.deletingPathExtension().lastPathComponent
+            }.value
+        }
         await Notifications.post(
             title: "Note Ready",
             body: title,
