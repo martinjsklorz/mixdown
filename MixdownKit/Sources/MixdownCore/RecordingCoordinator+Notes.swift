@@ -67,6 +67,21 @@ extension RecordingCoordinator {
         set { pipeline.vocabulary = newValue }
     }
 
+    /// Whether the spell checker knows a word, in a language if one is given, so fuzzy vocabulary
+    /// entries don't change words that were right. Without one, only short and common words are
+    /// left alone.
+    public var isKnownWord: @MainActor (_ word: String, _ language: String?) -> Bool {
+        get { pipeline.isKnownWord }
+        set { pipeline.isKnownWord = newValue }
+    }
+
+    /// Called with what fuzzy vocabulary entries corrected in a transcript, to add to `vocabulary`
+    /// with `Vocabulary.learning(_:)`.
+    public var didMatchFuzzily: @MainActor ([Vocabulary.FuzzyMatch]) -> Void {
+        get { pipeline.didMatchFuzzily }
+        set { pipeline.didMatchFuzzily = newValue }
+    }
+
     /// Renames the speakers `speakerDiarizer` told apart after what's said, where it can tell who
     /// they are; `nil` while that's off. Read once the recording is transcribed.
     public var speakerNamer: (any Summarizer)? {

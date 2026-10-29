@@ -49,7 +49,7 @@ struct SettingsView: View {
         case .summary: 580
         case .templates: 520
         case .translation: 400
-        case .vocabulary: 520
+        case .vocabulary: 640
         case .notifications: 590
         case .design: 570
         }

@@ -39,15 +39,7 @@ struct NoteSaverTests {
 
     /// Waits until `writer` has started `count` writes.
     private func waitForWrites(_ count: Int, of writer: GatedNoteWriter) async throws {
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(2))
-        while await writer.startedWrites < count {
-            guard clock.now < deadline else {
-                Issue.record("Timed out waiting for \(count) writes")
-                return
-            }
-            try await Task.sleep(for: .milliseconds(5))
-        }
+        try await waitUntil { await writer.startedWrites >= count }
     }
 
     @Test func aNoteSavedDuringAnotherSaveIsSavedAfterIt() async throws {

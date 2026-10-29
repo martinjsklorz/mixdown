@@ -383,6 +383,31 @@ struct RecordingCoordinatorTests {
         #expect(summarizer.receivedTranscripts == [note.transcript])
     }
 
+    @Test func correctsFuzzyEntriesWithTheTranscriptsLanguageAndReportsThem() async throws {
+        let entry = Vocabulary.Entry(term: "Sklorz", soundsLike: [], fuzzy: .strict)
+        var checked: [String: String?] = [:]
+        var reported: [Vocabulary.FuzzyMatch] = []
+        let (_, note) = try await recordNote(
+            transcript: Transcript(
+                segments: [TranscriptSegment(start: 0, end: 1, text: "Ask sklortz about the closure.")],
+                language: "de"
+            ),
+            summarizer: nil,
+            configure: {
+                $0.vocabulary = Vocabulary(entries: [entry])
+                $0.isKnownWord = { word, language in
+                    checked[word] = language
+                    return false
+                }
+                $0.didMatchFuzzily = { reported += $0 }
+            }
+        )
+
+        #expect(note.transcript.text == "Ask Sklorz about the closure.")
+        #expect(checked == ["sklortz": "de"])
+        #expect(reported == [.init(heard: "sklortz", entryID: entry.id, term: "Sklorz")])
+    }
+
     @Test func tellsTheEngineTheVocabularyTerms() async throws {
         let engine = MockEngine(transcript: Transcript(segments: [TranscriptSegment(start: 0, end: 1, text: "Hi.")]))
         let writer = InMemoryNoteWriter()
