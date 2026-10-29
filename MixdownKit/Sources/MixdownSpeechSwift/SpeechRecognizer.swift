@@ -23,16 +23,16 @@ struct RecognizedSegment: Sendable {
 /// Conformers wrap non-thread-safe speech-swift classes. They're `@unchecked Sendable` because
 /// `SpeechSwiftEngine` is their only user and runs one call at a time.
 protocol SpeechRecognizer: AnyObject, Sendable {
-    /// Downloads (if needed) and loads the weights for `repositoryID` below `cacheBase`.
+    /// Downloads (if needed) and loads `model`'s weights below `cacheBase`.
     /// - Parameter progress: 0...1; may be called from any thread.
     static func load(
-        repositoryID: String,
+        _ model: CachedModel,
         cacheBase: URL,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws -> Self
 
-    /// Whether `directory` (from `ModelCache.directory`) holds enough of the model to try an offline load.
-    static func cacheLooksComplete(in directory: URL) -> Bool
+    /// The files besides the weights that loading needs, for `CachedModel.requiredFiles`.
+    static var requiredFiles: [String] { get }
 
     /// How the engine cuts the recording before calling `recognize`.
     var chunking: SpeechChunker.Configuration { get }
@@ -68,10 +68,78 @@ extension SpeechPiece {
 
 // MARK: - Loading
 
+/// One speech-swift model's files below the models folder: where they go, whether they look
+/// complete, and loading them from there.
+struct CachedModel: Sendable {
+    /// Hugging Face repository with the weights.
+    let repositoryID: String
+    /// Files that must be there besides the weights.
+    let requiredFiles: [String]
+    /// Whether the weights are files `HuggingFaceDownloader.weightsExist` recognizes. Otherwise
+    /// `requiredFiles` has to name them.
+    var requiresWeights = true
+
+    /// Where the files go below `base`. Created if missing, so only for loading.
+    func directory(base: URL) throws -> URL {
+        try ModelCache.directory(for: repositoryID, base: base)
+    }
+
+    /// Whether `directory` holds enough of the model to try an offline load.
+    func looksComplete(in directory: URL) -> Bool {
+        requiresWeights
+            ? ModelCache.contains(weightsAnd: requiredFiles, in: directory)
+            : ModelCache.contains(requiredFiles, in: directory)
+    }
+
+    /// Whether the model is on disk below `base`. Checks files only and creates nothing, so it's
+    /// cheap enough for the main actor.
+    func isDownloaded(base: URL) -> Bool {
+        guard let directory = ModelCache.existingDirectory(for: repositoryID, base: base) else { return false }
+        return looksComplete(in: directory)
+    }
+
+    /// Loads the model from below `base` with `ModelDirectory.loadPreferringCache`, which
+    /// downloads what's missing.
+    /// - Parameter fromPretrained: speech-swift's loader, given the directory, whether to stay
+    ///   offline, and the progress to report.
+    func load<Model>(
+        base: URL,
+        progress: @escaping @Sendable (Double) -> Void,
+        _ fromPretrained: (
+            _ directory: URL, _ offline: Bool, _ progress: @escaping @Sendable (Double) -> Void
+        ) async throws -> Model
+    ) async throws -> Model {
+        let directory = try directory(base: base)
+        return try await ModelDirectory.loadPreferringCache(
+            repositoryID,
+            cacheLooksComplete: looksComplete(in: directory),
+            progress: progress
+        ) { offline, progress in
+            try await fromPretrained(directory, offline, progress)
+        }
+    }
+}
+
 enum ModelCache {
     /// Per-repository directory below `base` (speech-swift's `models/<org>/<name>` layout). Created if missing.
     static func directory(for repositoryID: String, base: URL) throws -> URL {
         try HuggingFaceDownloader.getCacheDirectory(for: repositoryID, basePath: base)
+    }
+
+    /// The directory `directory(for:base:)` returns, without creating it: the older flat layout's
+    /// if that holds weights, else `models/<org>/<name>`. `nil` if it doesn't exist.
+    static func existingDirectory(for repositoryID: String, base: URL) -> URL? {
+        let legacy = base.appendingPathComponent(
+            HuggingFaceDownloader.sanitizedCacheKey(for: repositoryID),
+            isDirectory: true
+        )
+        let directory =
+            HuggingFaceDownloader.weightsExist(in: legacy)
+            ? legacy : base.appending(component: "models").appending(component: repositoryID)
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: directory.path, isDirectory: &isDirectory), isDirectory.boolValue
+        else { return nil }
+        return directory
     }
 
     /// Whether `directory` holds weights (all shards, if indexed) and every one of `files`.

@@ -9,7 +9,11 @@ import MixdownCore
 /// calls, so text appears about half a second after it's spoken without reprocessing what came
 /// before, and no audio needs keeping. One loaded model serves a session per input.
 final class LiveRecognizer: @unchecked Sendable {
-    static let repositoryID = NemotronMLXVariant.int5.modelId
+    /// `NemotronStreamingASRMLXModel.requiredBundleFiles` plus the language map it also needs.
+    static let cachedModel = CachedModel(
+        repositoryID: NemotronMLXVariant.int5.modelId,
+        requiredFiles: ["config.json", "vocab.json", "languages.json"]
+    )
 
     private let model: NemotronStreamingASRMLXModel
 
@@ -18,12 +22,7 @@ final class LiveRecognizer: @unchecked Sendable {
     }
 
     static func load(cacheBase: URL, progress: @escaping @Sendable (Double) -> Void) async throws -> LiveRecognizer {
-        let directory = try ModelCache.directory(for: repositoryID, base: cacheBase)
-        let model = try await ModelDirectory.loadPreferringCache(
-            repositoryID,
-            cacheLooksComplete: cacheLooksComplete(in: directory),
-            progress: progress
-        ) { offline, progress in
+        let model = try await cachedModel.load(base: cacheBase, progress: progress) { directory, offline, progress in
             try await NemotronStreamingASRMLXModel.fromPretrained(
                 variant: .int5,
                 cacheDir: directory,
@@ -32,11 +31,6 @@ final class LiveRecognizer: @unchecked Sendable {
             )
         }
         return LiveRecognizer(model: model)
-    }
-
-    /// `NemotronStreamingASRMLXModel.requiredBundleFiles` plus the language map it also needs.
-    static func cacheLooksComplete(in directory: URL) -> Bool {
-        ModelCache.contains(weightsAnd: ["config.json", "vocab.json", "languages.json"], in: directory)
     }
 
     /// - Parameter languageCode: ISO 639-1, or `nil` to detect the language.
@@ -54,8 +48,7 @@ final class LiveRecognizer: @unchecked Sendable {
 /// `SpeechSwiftEngine` actor, which runs every model call.
 final class LiveSessionState: @unchecked Sendable {
     private let session: NemotronMLXStreamingSession
-    private var reportedWordCount = 0
-    private var lastReportedWord: String?
+    private var diff = LiveWordDiff()
 
     init(session: NemotronMLXStreamingSession) {
         self.session = session
@@ -73,9 +66,26 @@ final class LiveSessionState: @unchecked Sendable {
         return update(for: latest.words)
     }
 
-    /// Turns the session's cumulative words into what changed. The decoder only ever appends
-    /// tokens, so only the last word can still change, when it gains pieces or punctuation.
     private func update(for words: [TimedWord]) -> LiveTranscriptUpdate {
+        diff.update(words.map { LiveWord(text: $0.text, start: $0.startTime, end: $0.endTime) })
+    }
+}
+
+/// Turns a session's cumulative words into what changed since the last call. The decoder only
+/// ever appends tokens, so only the last word can still change, when it gains pieces or
+/// punctuation.
+struct LiveWordDiff {
+    private var reportedWordCount = 0
+    private var lastReportedWord: String?
+
+    mutating func update(_ words: [LiveWord]) -> LiveTranscriptUpdate {
+        defer {
+            reportedWordCount = words.count
+            lastReportedWord = words.last?.text
+        }
+        // Fewer words than reported isn't expected (re-segmenting, say), and the words already
+        // reported can't be taken back. Carrying on from the shorter list keeps the words that
+        // follow it.
         guard words.count >= reportedWordCount else { return LiveTranscriptUpdate() }
         var first = reportedWordCount
         var revisesLastWord = false
@@ -83,12 +93,7 @@ final class LiveSessionState: @unchecked Sendable {
             first -= 1
             revisesLastWord = true
         }
-        reportedWordCount = words.count
-        lastReportedWord = words.last?.text
-        return LiveTranscriptUpdate(
-            revisesLastWord: revisesLastWord,
-            words: words[first...].map { LiveWord(text: $0.text, start: $0.startTime, end: $0.endTime) }
-        )
+        return LiveTranscriptUpdate(revisesLastWord: revisesLastWord, words: Array(words[first...]))
     }
 }
 

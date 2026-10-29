@@ -99,5 +99,6 @@ let package = Package(
         .testTarget(name: "MixdownAudioTests", dependencies: ["MixdownAudio"]),
         .testTarget(name: "MixdownNotesTests", dependencies: ["MixdownNotes"]),
         .testTarget(name: "MixdownSpeechSwiftTests", dependencies: ["MixdownSpeechSwift"]),
+        .testTarget(name: "MixdownAppleSpeechTests", dependencies: ["MixdownAppleSpeech"]),
     ]
 )
