@@ -177,28 +177,29 @@ struct ModelResidencyTests {
     }
 
     @Test func cancellingOneOfTwoCallersKeepsTheSharedLoad() async throws {
-        let probe = Probe(loadDelay: .milliseconds(200))
+        // Scaled, so a slow machine doesn't finish the load before the first caller is cancelled.
+        let probe = Probe(loadDelay: .milliseconds(200) * testTimeoutScale)
         let residency = probe.residency()
         let first = Task { try await residency.load() }
-        try await Task.sleep(for: .milliseconds(30))
+        try await Task.sleep(for: .milliseconds(30) * testTimeoutScale)
         let second = Task { try await residency.load() }
-        try await Task.sleep(for: .milliseconds(30))
+        try await Task.sleep(for: .milliseconds(30) * testTimeoutScale)
         first.cancel()
         // The cancelled caller doesn't wait for the load.
         let cancelled = ContinuousClock.now
         await #expect(throws: CancellationError.self) { try await first.value }
-        #expect(ContinuousClock.now - cancelled < .milliseconds(100))
+        #expect(ContinuousClock.now - cancelled < .milliseconds(100) * testTimeoutScale)
         let weights = try await second.value
         #expect(weights.id == 1)
         #expect(probe.loads == 1)
     }
 
     @Test func unloadDuringLoadFailsWaitersAndStaysUnloaded() async throws {
-        let probe = Probe(loadDelay: .milliseconds(150), ignoresCancellation: true)
+        let probe = Probe(loadDelay: .milliseconds(150) * testTimeoutScale, ignoresCancellation: true)
         let residency = probe.residency()
         let first = Task { try await residency.load() }
         let second = Task { try await residency.load() }
-        try await Task.sleep(for: .milliseconds(30))
+        try await Task.sleep(for: .milliseconds(30) * testTimeoutScale)
         await residency.unload()
         await #expect(throws: CancellationError.self) { try await first.value }
         await #expect(throws: CancellationError.self) { try await second.value }
