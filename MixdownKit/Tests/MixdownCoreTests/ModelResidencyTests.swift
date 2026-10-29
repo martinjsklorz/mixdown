@@ -209,18 +209,4 @@ struct ModelResidencyTests {
         #expect(probe.weightsAliveAtDidUnload == [false])
         #expect(await !residency.isLoaded)
     }
-
-    private func waitUntil(
-        timeout: Duration = .seconds(2),
-        _ condition: @Sendable () async -> Bool
-    ) async throws {
-        let deadline = ContinuousClock.now + timeout
-        while await !condition() {
-            guard ContinuousClock.now < deadline else {
-                Issue.record("Timed out")
-                return
-            }
-            try await Task.sleep(for: .milliseconds(10))
-        }
-    }
 }

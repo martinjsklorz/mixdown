@@ -116,16 +116,20 @@ final class Gate: Sendable {
     }
 }
 
-/// Polls `condition` on the main actor, recording an issue on timeout.
+/// How much longer than locally tests wait for what they expect, from the environment variable
+/// `MIXDOWN_TEST_TIMEOUT_SCALE`, which CI sets for its slower, shared machines. 1 if unset.
+let testTimeoutScale = ProcessInfo.processInfo.environment["MIXDOWN_TEST_TIMEOUT_SCALE"].flatMap(Double.init) ?? 1
+
+/// Polls `condition` on the main actor, recording an issue if it isn't met within `timeout`
+/// (times `testTimeoutScale`).
 @MainActor
 func waitUntil(
     timeout: Duration = .seconds(2),
     _ condition: () -> Bool
 ) async throws {
-    let clock = ContinuousClock()
-    let deadline = clock.now.advanced(by: timeout)
+    let deadline = ContinuousClock.now + timeout * testTimeoutScale
     while !condition() {
-        guard clock.now < deadline else {
+        guard ContinuousClock.now < deadline else {
             Issue.record("Timed out waiting for condition")
             return
         }
