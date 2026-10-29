@@ -37,9 +37,7 @@ public enum MarkdownBlock: Sendable, Equatable {
 
     /// Inline Markdown reduced to plain text on a single line.
     public static func plainText(_ markdown: String) -> String {
-        String(inline(markdown).characters)
-            .split(whereSeparator: \.isWhitespace)
-            .joined(separator: " ")
+        String(inline(markdown).characters).collapsingWhitespace
     }
 }
 

@@ -72,7 +72,7 @@ public struct NoteQuestion: Sendable, Equatable {
             }
             parsed.searchText = searchText
         }
-        parsed.searchText = singleLine(parsed.searchText)
+        parsed.searchText = parsed.searchText.collapsingWhitespace
         for (kind, pattern) in Patterns.kinds {
             guard let range = rest.firstRange(of: pattern) else { continue }
             parsed.kind = kind
@@ -96,13 +96,27 @@ public struct NoteQuestion: Sendable, Equatable {
 
     /// Whether `note` counts towards the answer: it's from `dates`, of `kind` and has every word of
     /// `topic` as a word of its own, so "AI" doesn't count "said" and "Ben" doesn't count "benefit".
-    /// A plural `s` and case don't matter.
+    /// A plural `s` and case don't matter. Only the title and the text of `NoteSearchIndex.lines(of:)`
+    /// count, not the headings and placeholders every note has: a note doesn't mention decisions
+    /// for an empty `### Decisions` section.
     public func counts(_ note: NoteDocument) -> Bool {
         guard isInDates(note), kind.map({ Self.note(note, is: $0) }) ?? true else { return false }
         guard !topic.isEmpty else { return true }
-        let words = Set((NoteChatText.words(in: note.title) + NoteChatText.words(in: note.body)).map(NoteChatText.term))
-        return topic.allSatisfy { words.contains(NoteChatText.term($0)) }
+        let terms = Self.terms(of: note)
+        return topic.allSatisfy { terms.contains(NoteChatText.term($0)) }
     }
+
+    /// The `NoteChatText.term(_:)` of every word `counts(_:)` looks at in `note`. Worked out once
+    /// per note and kept with it.
+    static func terms(of note: NoteDocument) -> Set<String> {
+        note.derived.value(\.terms) {
+            let lines = NoteSearchIndex.lines(of: note).map(\.text).filter { $0 != markedMoment }
+            return Set(([note.title] + lines).flatMap { NoteChatText.words(in: $0) }.map(NoteChatText.term))
+        }
+    }
+
+    /// How a moment without a note or speech reads in `NoteSearchIndex.lines(of:)`.
+    private static let markedMoment = MarkdownBlock.plainText(MarkdownNoteRenderer.emptyMomentPlaceholder)
 
     private func isInDates(_ note: NoteDocument) -> Bool {
         dates.map { $0.start <= note.createdAt && note.createdAt < $0.end } ?? true
@@ -235,10 +249,6 @@ public struct NoteQuestion: Sendable, Equatable {
         var english = Calendar(identifier: .gregorian)
         english.locale = Locale(identifier: "en_US_POSIX")
         return english.monthSymbols[month - 1]
-    }
-
-    private static func singleLine(_ text: String) -> String {
-        text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 }
 

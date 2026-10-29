@@ -5,14 +5,15 @@ import Foundation
 enum Frontmatter {
     /// Splits off a leading `---` … `---` block and reads its top-level `key: value` fields.
     /// Values are kept as written, with the lines they continue on; decode them with
-    /// `yamlScalar(_:)` or `yamlSequence(_:)`.
+    /// `yamlScalar(_:)` or `yamlSequence(_:)`. Of a key written twice, the first is read, the one
+    /// `fieldLines(_:in:end:)` finds to change.
     static func split(_ contents: String) -> (fields: [String: String], body: String) {
         let lines = normalizedLines(contents)
         guard let end = Self.end(of: lines) else { return ([:], lines.joined(separator: "\n")) }
 
         var fields: [String: String] = [:]
         for index in 1..<end {
-            guard let key = Self.key(of: lines[index]) else { continue }
+            guard let key = Self.key(of: lines[index]), fields[key] == nil else { continue }
             fields[key] = value(of: lines[index..<fieldEnd(after: index, in: lines, end: end)])
         }
         return (fields, lines[(end + 1)...].joined(separator: "\n"))
@@ -35,6 +36,29 @@ enum Frontmatter {
     static func fieldLines(_ key: String, in lines: [String], end: Int) -> Range<Int>? {
         guard let index = lines[1..<end].firstIndex(where: { Self.key(of: $0) == key }) else { return nil }
         return index..<fieldEnd(after: index, in: lines, end: end)
+    }
+
+    /// Sets the items of the top-level sequence field `key` in the frontmatter of `lines` to what
+    /// `transform` makes of them, quoted, and written the way they were: `key: [a, b]`, or an
+    /// item per `- a` line, the way Obsidian writes lists. Leaves `lines` alone if there's no
+    /// such field or `transform` returns `nil`. Returns whether it changed them.
+    static func rewriteSequenceField(
+        _ key: String,
+        in lines: inout [String],
+        transform: ([String]) -> [String]?
+    )
+        -> Bool
+    {
+        guard let end = end(of: lines), let field = fieldLines(key, in: lines, end: end) else { return false }
+        let value = value(of: lines[field])
+        guard let items = yamlSequence(value), let rewritten = transform(items) else { return false }
+        let quoted = rewritten.map(MarkdownNoteRenderer.yamlQuoted)
+        lines.replaceSubrange(
+            field,
+            with: value.first == "["
+                ? ["\(key): [\(quoted.joined(separator: ", "))]"] : ["\(key):"] + quoted.map { "  - \($0)" }
+        )
+        return true
     }
 
     /// The value of the field on the first of `lines`, with the lines it continues on, as written:

@@ -206,20 +206,36 @@ public struct NoteChatIndex: Sendable {
     /// Throws only `CancellationError`, keeping the notes done so far.
     ///
     /// Holds on to the index while it waits for the embedder, so an actor that keeps one should
-    /// rather call those methods itself, and search between them.
+    /// rather call `index(_:embedder:didIndex:)` and `insert(_:)` itself, and search between them.
     public mutating func update(
         to notes: [NoteDocument],
         embedder: (any TextEmbedder)?,
         progress: (_ done: Int, _ total: Int) -> Void = { _, _ in }
     ) async throws {
-        var embedder = embedder
         removeNotes(notIn: notes)
         let pending = notesToIndex(notes, canEmbed: embedder != nil)
-        for (done, note) in pending.enumerated() {
-            let indexed = try await Self.index(note, embedder: embedder)
-            if indexed.embedderFailed { embedder = nil }
+        try await Self.index(pending, embedder: embedder) { indexed, done in
             insert(indexed)
-            progress(done + 1, pending.count)
+            progress(done, pending.count)
+        }
+    }
+
+    /// Makes `notes` into passages one after the other with `index(_:embedder:)`, handing each to
+    /// `didIndex` with how many are done before starting on the next, so what's done can be kept
+    /// as it goes. Stops using `embedder` once it fails. Throws only `CancellationError`.
+    ///
+    /// Runs on the caller's actor, so `didIndex` can change what the actor keeps.
+    public static func index(
+        _ notes: [NoteDocument],
+        embedder: (any TextEmbedder)?,
+        isolation: isolated (any Actor)? = #isolation,
+        didIndex: (_ note: IndexedNote, _ done: Int) async -> Void
+    ) async throws {
+        var embedder = embedder
+        for (done, note) in notes.enumerated() {
+            let indexed = try await index(note, embedder: embedder)
+            if indexed.embedderFailed { embedder = nil }
+            await didIndex(indexed, done + 1)
         }
     }
 

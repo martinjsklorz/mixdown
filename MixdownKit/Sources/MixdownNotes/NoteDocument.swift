@@ -1,5 +1,6 @@
 import Foundation
 import MixdownCore
+import Synchronization
 
 /// A Markdown note read back from disk: its frontmatter metadata and Markdown body.
 ///
@@ -7,13 +8,13 @@ import MixdownCore
 /// falls back to the first `#` heading, then the file name; a missing `created` date falls back
 /// to the date the caller got from the file system.
 public struct NoteDocument: Sendable, Equatable, Identifiable {
-    public var url: URL { didSet { cachedFingerprint = .init() } }
-    public var title: String { didSet { cachedFingerprint = .init() } }
-    public var createdAt: Date { didSet { cachedFingerprint = .init() } }
+    public var url: URL { didSet { derived = .init() } }
+    public var title: String { didSet { derived = .init() } }
+    public var createdAt: Date { didSet { derived = .init() } }
     /// In seconds. `nil` unless the frontmatter has a usable `duration`.
     public var duration: TimeInterval?
     /// Names of the recorded inputs, from the frontmatter's `sources` list or single `source`.
-    public var sources: [String] { didSet { cachedFingerprint = .init() } }
+    public var sources: [String] { didSet { derived = .init() } }
     /// How the recording was started. `nil` for notes from before Mixdown recorded it, and ones
     /// edited to something else.
     public var trigger: RecordingTrigger?
@@ -25,12 +26,12 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
     /// `general`, which Mixdown doesn't write, and for notes from before it did.
     public var template: String?
     /// The Markdown after the frontmatter.
-    public var body: String { didSet { cachedFingerprint = .init() } }
+    public var body: String { didSet { derived = .init() } }
     /// The first text of the body as a single line of plain text. Empty if there is none.
     public var snippet: String
     /// The subfolder of the notes folder the note is in, like `Clients/Acme`, or `nil` if it's
     /// directly inside. Set by `NoteLibrary`.
-    public var folder: String? { didSet { cachedFingerprint = .init() } }
+    public var folder: String? { didSet { derived = .init() } }
     /// Whether the note is listed above the others, from the frontmatter's `pinned: true`.
     public var isPinned: Bool
     /// The transcript's speakers in order of first appearance, from the frontmatter's `speakers`
@@ -38,11 +39,12 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
     public var speakers: [String]
     /// How long each side talked, minute by minute, from the frontmatter's `talk_microphone` and
     /// `talk_system_audio` lists. `nil` if they're missing or unusable.
-    public var talkTimeline: TalkTimeline?
+    public var talkTimeline: TalkTimeline? { didSet { derived = .init() } }
 
-    /// `NoteSearchIndex.fingerprint(of:)`, worked out once by `NoteLibrary` rather than on every
-    /// index update. Cleared when a field it's made from changes.
-    var cachedFingerprint = CachedFingerprint()
+    /// What's worked out from the fields above, like `NoteSearchIndex.fingerprint(of:)` and
+    /// `lines(of:)`, kept so it's worked out once rather than on every search, index update and
+    /// redraw. Emptied when a field it's made from changes.
+    var derived = DerivedValues()
 
     public var id: URL { url }
 
@@ -82,8 +84,14 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
     /// already shows. A first heading with different text is kept. With a `talkTimeline`, which
     /// the window shows as a chart, the `## Talk Time` section is left out too.
     public func displayBlocks() -> [MarkdownBlock] {
+        derived.value(\.displayBlocks) { uncachedDisplayBlocks() }
+    }
+
+    /// `displayBlocks()` without keeping them, for when only something made from them is kept.
+    func uncachedDisplayBlocks() -> [MarkdownBlock] {
         var blocks = MarkdownBlock.parse(body)
-        if case .heading(1, let text) = blocks.first, MarkdownBlock.plainText(text) == title {
+        // Collapsed like the heading's plain text, so a title with runs of spaces still matches.
+        if case .heading(1, let text) = blocks.first, MarkdownBlock.plainText(text) == title.collapsingWhitespace {
             blocks.removeFirst()
         }
         if talkTimeline != nil, let section = Self.section(MarkdownNoteRenderer.talkTimeHeading, in: blocks) {
@@ -190,9 +198,34 @@ public struct NoteDocument: Sendable, Equatable, Identifiable {
     }
 }
 
-/// A note's fingerprint, kept with it. Left out when comparing notes, as it only saves work.
-struct CachedFingerprint: Sendable, Equatable {
-    var value: String?
+/// What's worked out from a note's fields, kept with it. Each value is worked out the first time
+/// it's asked for, on whichever thread asks, and shared by the note's copies, so the copy the
+/// sidebar shows and the one `NoteLibrary.Cache` keeps work it out once between them. A note gets
+/// new, empty values when a field changes, so they never go stale; a field the values are made
+/// from needs a `didSet` that does that. Left out when comparing notes, as it only saves work.
+final class DerivedValues: Sendable, Equatable {
+    struct Values {
+        /// `NoteSearchIndex.fingerprint(of:)`.
+        var fingerprint: String?
+        /// `NoteDocument.displayBlocks()`, kept only for notes shown, as it's as long as the note.
+        var displayBlocks: [MarkdownBlock]?
+        /// `NoteSearchIndex.lines(of:)`.
+        var lines: [NoteSearchIndex.Line]?
+        /// `NoteQuestion.terms(of:)`.
+        var terms: Set<String>?
+    }
 
-    static func == (lhs: Self, rhs: Self) -> Bool { true }
+    private let values = Mutex(Values())
+
+    /// The value at `key`, made with `make` if there isn't one yet. Two threads asking at once may
+    /// both make it; they make the same.
+    func value<Value: Sendable>(_ key: WritableKeyPath<Values, Value?> & Sendable, make: () -> Value) -> Value {
+        if let value = values.withLock({ $0[keyPath: key] }) { return value }
+        // Made without holding the lock, as making one value may ask for another.
+        let value = make()
+        values.withLock { $0[keyPath: key] = value }
+        return value
+    }
+
+    static func == (lhs: DerivedValues, rhs: DerivedValues) -> Bool { true }
 }

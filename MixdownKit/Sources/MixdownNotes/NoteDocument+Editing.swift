@@ -16,7 +16,7 @@ extension NoteDocument {
     static func retitled(_ contents: String, url: URL, to title: String) -> String {
         // Collapsed like the heading's plain text, so a title with runs of spaces still matches.
         let currentTitle = NoteDocument(url: url, contents: contents, fileDate: .distantPast).title
-            .split(whereSeparator: \.isWhitespace).joined(separator: " ")
+            .collapsingWhitespace
         var lines = Frontmatter.normalizedLines(contents)
         let titleLine = "title: \(MarkdownNoteRenderer.yamlQuoted(title))"
 
@@ -51,20 +51,23 @@ extension NoteDocument {
 
     /// `contents` with the frontmatter's `pinned` field set to `true`, or removed when unpinning.
     /// A note without frontmatter gets some when pinned, and loses frontmatter that held nothing
-    /// else when unpinned. Line endings become `\n`.
+    /// else when unpinned. A field written more than once becomes one. Line endings become `\n`.
     static func pinned(_ contents: String, _ isPinned: Bool) -> String {
         var lines = Frontmatter.normalizedLines(contents)
         let pinnedLines = isPinned ? ["pinned: true"] : []
 
-        guard let end = Frontmatter.end(of: lines) else {
+        guard var end = Frontmatter.end(of: lines) else {
             if isPinned { lines.insert(contentsOf: ["---"] + pinnedLines + ["---", ""], at: 0) }
             return lines.joined(separator: "\n")
         }
-        if let field = Frontmatter.fieldLines("pinned", in: lines, end: end) {
-            lines.replaceSubrange(field, with: pinnedLines)
-        } else {
-            lines.insert(contentsOf: pinnedLines, at: end)
+        // Every copy goes, as the next would be read once the first is gone.
+        var position: Int?
+        while let field = Frontmatter.fieldLines("pinned", in: lines, end: end) {
+            lines.removeSubrange(field)
+            end -= field.count
+            position = position ?? field.lowerBound
         }
+        lines.insert(contentsOf: pinnedLines, at: position ?? end)
         // Frontmatter left empty goes, with the blank line pinning added after it.
         if !isPinned, Frontmatter.end(of: lines) == 1 {
             lines.removeFirst(lines.count > 2 && lines[2].isEmpty ? 3 : 2)
@@ -83,31 +86,21 @@ extension NoteDocument {
     /// translation, before quotes in the moments, and in the Talk Time section. A label with a
     /// number in it, such as "Others (Speaker 2)", which can't be mistaken for a word, is replaced
     /// wherever else the body has it too, as summaries may name speakers by their labels. Code
-    /// blocks and headings of level 2 and below are left alone. Line endings become `\n`.
+    /// blocks and headings are left alone, so the title stays as the frontmatter has it. Line
+    /// endings become `\n`.
     static func renamingSpeaker(_ contents: String, from old: String, to new: String) -> String? {
         guard !old.isEmpty, !new.isEmpty, old != new else { return nil }
         var lines = Frontmatter.normalizedLines(contents)
         let original = lines
 
         var bodyStart = 0
-        if let end = Frontmatter.end(of: lines) {
+        if Frontmatter.end(of: lines) != nil {
             for key in ["speakers", "talk_labels"] {
-                guard let field = Frontmatter.fieldLines(key, in: lines, end: end) else { continue }
-                let value = Frontmatter.value(of: lines[field])
-                guard let items = Frontmatter.yamlSequence(value), items.contains(old) else { continue }
-                var renamed = items.map { $0 == old ? new : $0 }
-                // Two speakers merged into one. Talk Time's labels stay two, for its two sides.
-                if key == "speakers" {
-                    var seen = Set<String>()
-                    renamed = renamed.filter { seen.insert($0).inserted }
+                _ = Frontmatter.rewriteSequenceField(key, in: &lines) { items in
+                    guard items.contains(old) else { return nil }
+                    let renamed = items.map { $0 == old ? new : $0 }
+                    return key == "speakers" ? mergingDuplicates(renamed) : renamed
                 }
-                let quoted = renamed.map(MarkdownNoteRenderer.yamlQuoted)
-                // Written the way it was: Obsidian writes lists an item per line.
-                lines.replaceSubrange(
-                    field,
-                    with: value.first == "["
-                        ? ["\(key): [\(quoted.joined(separator: ", "))]"] : ["\(key):"] + quoted.map { "  - \($0)" }
-                )
             }
             bodyStart = (Frontmatter.end(of: lines) ?? 0) + 1
         }
@@ -121,7 +114,7 @@ extension NoteDocument {
         )
         for index in linesOutsideCode(lines, from: bodyStart) {
             var line = lines[index]
-            if let (level, _) = Parser.atxHeading(line.trimmingCharacters(in: .whitespaces)), level > 1 { continue }
+            if Parser.atxHeading(line.trimmingCharacters(in: .whitespaces)) != nil { continue }
             if isDistinctive, let elsewhere {
                 lines[index] = elsewhere.stringByReplacingMatches(
                     in: line,
@@ -169,42 +162,56 @@ extension NoteDocument {
         var isEmpty: Bool { plain.isEmpty }
     }
 
-    /// `contents` with the vocabulary applied to the frontmatter's `title` and to the body, or
-    /// `nil` if nothing changes. Headings of level 2 and below are left alone, as they name the
-    /// sections Mixdown and other apps look for, like `## Transcript`; so are code blocks. Line
-    /// endings become `\n`.
+    /// `contents` with the vocabulary applied to the frontmatter's `title`, `speakers` and
+    /// `talk_labels`, and to the body, or `nil` if nothing changes. The speakers change along with
+    /// their labels in the body, so renaming one later still finds them; two that become the
+    /// same are merged. Headings of level 2 and below are left alone, as they name the sections
+    /// Mixdown and other apps look for, like `## Transcript`; so are code blocks. Line endings
+    /// become `\n`.
     static func corrected(_ contents: String, by correction: VocabularyCorrection) -> String? {
         var lines = Frontmatter.normalizedLines(contents)
         var isChanged = false
-        let replace = { (index: Int, line: String) in
-            guard line != lines[index] else { return }
-            lines[index] = line
-            isChanged = true
-        }
 
         var bodyStart = 0
         if let end = Frontmatter.end(of: lines) {
-            if let field = Frontmatter.fieldLines("title", in: lines, end: end), field.count == 1,
-                let colon = lines[field.lowerBound].firstIndex(of: ":")
-            {
-                let raw = lines[field.lowerBound][lines[field.lowerBound].index(after: colon)...]
-                    .trimmingCharacters(in: .whitespaces)
-                let title = Frontmatter.yamlScalar(raw)
+            if let field = Frontmatter.fieldLines("title", in: lines, end: end) {
+                // Read like `NoteDocument` reads it.
+                let title = Frontmatter.yamlScalar(Frontmatter.value(of: lines[field]))
                 let corrected = correction.plain.replace(in: title)
                 if corrected != title {
-                    replace(field.lowerBound, "title: \(MarkdownNoteRenderer.yamlQuoted(corrected))")
+                    // On one line, like renaming writes it, even if it was on several.
+                    lines.replaceSubrange(field, with: ["title: \(MarkdownNoteRenderer.yamlQuoted(corrected))"])
+                    isChanged = true
                 }
             }
-            bodyStart = end + 1
+            for key in ["speakers", "talk_labels"] {
+                let isRewritten = Frontmatter.rewriteSequenceField(key, in: &lines) { items in
+                    let corrected = items.map { correction.plain.replace(in: $0) }
+                    guard corrected != items else { return nil }
+                    return key == "speakers" ? mergingDuplicates(corrected) : corrected
+                }
+                isChanged = isChanged || isRewritten
+            }
+            bodyStart = (Frontmatter.end(of: lines) ?? 0) + 1
         }
 
         for index in linesOutsideCode(lines, from: bodyStart) {
             if let (level, _) = Parser.atxHeading(lines[index].trimmingCharacters(in: .whitespaces)), level > 1 {
                 continue
             }
-            replace(index, correction.markdown.replace(in: lines[index]))
+            let line = correction.markdown.replace(in: lines[index])
+            guard line != lines[index] else { continue }
+            lines[index] = line
+            isChanged = true
         }
         return isChanged ? lines.joined(separator: "\n") : nil
+    }
+
+    /// `speakers` with each name once, where it first appears: two speakers renamed to one name
+    /// are one speaker. Talk Time's labels stay two, for its two sides.
+    private static func mergingDuplicates(_ speakers: [String]) -> [String] {
+        var seen = Set<String>()
+        return speakers.filter { seen.insert($0).inserted }
     }
 
     /// The indices of `lines` from `start` on that are outside fenced code blocks, without the
