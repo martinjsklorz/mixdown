@@ -273,19 +273,21 @@ final class AppEnvironment {
 
     // MARK: Observation
     //
-    // Each `observe…` method reads what it depends on in `withObservationTracking`, acts on it, and
-    // re-registers itself on the next change, as tracking only fires once. Those that read
-    // `coordinator` also run again when it's replaced, by a new one that starts out idle and
-    // without a note.
+    // Each `observe…` method acts on what it depends on now and on every change to it, with
+    // `observeContinuously`. Those that read `coordinator` also run again when it's replaced, by a
+    // new one that starts out idle and without a note.
 
     /// Ticks `recordingElapsed` while recording and holds it while paused, and tells the call
     /// prompt when a recording starts and stops.
     private func observeRecording() {
-        let phase = withObservationTracking {
-            coordinator.phase
-        } onChange: { [weak self] in
-            Task { @MainActor in self?.observeRecording() }
+        observeContinuously(self) {
+            $0.coordinator.phase
+        } onValue: {
+            $0.recordingPhaseChanged(to: $1)
         }
+    }
+
+    private func recordingPhaseChanged(to phase: RecordingCoordinator.Phase) {
         switch phase {
         case .startingCapture:
             // Neither started nor stopped yet; the call prompt is waiting for the recording to start.
@@ -329,40 +331,37 @@ final class AppEnvironment {
 
     /// Posts "Still Recording?" while the coordinator asks, and takes it away once answered.
     private func observeStillRecording() {
-        let isAsking = withObservationTracking {
-            coordinator.isAskingIfStillRecording
-        } onChange: { [weak self] in
-            Task { @MainActor in self?.observeStillRecording() }
-        }
-        if isAsking {
-            stillRecordingPrompt?.ask()
-        } else {
-            stillRecordingPrompt?.withdraw()
+        observeContinuously(self) {
+            $0.coordinator.isAskingIfStillRecording
+        } onValue: { environment, isAsking in
+            if isAsking {
+                environment.stillRecordingPrompt?.ask()
+            } else {
+                environment.stillRecordingPrompt?.withdraw()
+            }
         }
     }
 
     /// Plays the audio cue for each phase change, such as recording starting.
     private func observePhaseForCues() {
-        let phase = withObservationTracking {
-            coordinator.phase
-        } onChange: { [weak self] in
-            Task { @MainActor in self?.observePhaseForCues() }
+        observeContinuously(self) {
+            $0.coordinator.phase
+        } onValue: { environment, phase in
+            defer { environment.cuedPhase = phase }
+            guard let cue = AudioCue.cue(from: environment.cuedPhase, to: phase) else { return }
+            AudioCues.play(cue, settings: environment.settings)
         }
-        defer { cuedPhase = phase }
-        guard let cue = AudioCue.cue(from: cuedPhase, to: phase) else { return }
-        AudioCues.play(cue, settings: settings)
     }
 
     /// Points the coordinator and `library` at the notes folder whenever it's chosen, goes away or
     /// comes back. Without one, recording is disabled.
     private func observeNotesFolder() {
-        let directory = withObservationTracking {
-            notesFolder.directory
-        } onChange: { [weak self] in
-            Task { @MainActor in self?.observeNotesFolder() }
+        observeContinuously(self) {
+            $0.notesFolder.directory
+        } onValue: { environment, directory in
+            environment.coordinator.noteWriter = environment.notesFolder.noteWriter
+            environment.watchLibrary(in: directory)
         }
-        coordinator.noteWriter = notesFolder.noteWriter
-        watchLibrary(in: directory)
     }
 
     /// Reads the notes in `directory` into `library`, and again whenever its files change, until
@@ -394,22 +393,25 @@ final class AppEnvironment {
     /// Hands Spotlight the notes whenever they change, and adds or removes them as the preference
     /// is turned on or off.
     private func observeSpotlight() {
-        let (notes, isEnabled) = withObservationTracking {
+        observeContinuously(self) { environment in
             // Without following the notes while it's off, so they aren't taken out on every change.
-            preferences.indexesNotesInSpotlight ? (library.folder.map { _ in library.notes }, true) : (nil, false)
-        } onChange: { [weak self] in
-            Task { @MainActor in self?.observeSpotlight() }
+            environment.preferences.indexesNotesInSpotlight
+                ? (environment.library.folder.map { _ in environment.library.notes }, true) : (nil, false)
+        } onValue: { environment, value in
+            environment.noteSpotlight.update(notes: value.0, isEnabled: value.1)
         }
-        noteSpotlight.update(notes: notes, isEnabled: isEnabled)
     }
 
     /// Posts "Note Ready", and plays its cue, for every note the coordinator writes.
     private func observeNewNotes() {
-        let url = withObservationTracking {
-            coordinator.lastNoteURL
-        } onChange: { [weak self] in
-            Task { @MainActor in self?.observeNewNotes() }
+        observeContinuously(self) {
+            $0.coordinator.lastNoteURL
+        } onValue: {
+            $0.noteSaved(at: $1)
         }
+    }
+
+    private func noteSaved(at url: URL?) {
         guard let url, url != notifiedNoteURL else { return }
         notifiedNoteURL = url
         // Making the note may have downloaded the speaker or summary model.
