@@ -61,6 +61,13 @@ final class ModelDownload {
         }
     }
 
+    /// Checks the disk again, for when the model may have been downloaded or removed elsewhere: by
+    /// a recording that needed it, say, or in Finder. Left alone while it downloads.
+    func refresh() {
+        guard download == nil, !isDeleting else { return }
+        isDownloaded = checkDownloaded()
+    }
+
     /// Stops downloading. What's on disk is kept, so a new download resumes.
     func cancel() {
         download?.cancel()

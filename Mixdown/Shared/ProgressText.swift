@@ -13,12 +13,12 @@ enum ProgressText {
 
     /// "34% · about 6 min left", or "34% · estimating time left…" until there's an estimate.
     static func detail(progress: Double, remaining: TimeInterval?) -> String {
-        "\(percentText(progress)) · \(remaining.map(remainingText) ?? "estimating time left…")"
+        "\(percent(progress)) · \(remaining.map(remainingText) ?? "estimating time left…")"
     }
 
     /// Short text next to the menu bar icon: "6 min" once estimated, "34%" before.
     static func compact(progress: Double, remaining: TimeInterval?) -> String {
-        guard let remaining else { return percentText(progress) }
+        guard let remaining else { return percent(progress) }
         guard remaining >= 60 else { return "<1 min" }
         return minutes(remaining).formatted(.units(allowed: [.hours, .minutes], width: .abbreviated))
     }
@@ -30,7 +30,8 @@ enum ProgressText {
         return "about \(duration) left"
     }
 
-    private static func percentText(_ progress: Double) -> String {
+    /// "34%", for progress from 0 to 1.
+    static func percent(_ progress: Double) -> String {
         progress.formatted(.percent.precision(.fractionLength(0)))
     }
 

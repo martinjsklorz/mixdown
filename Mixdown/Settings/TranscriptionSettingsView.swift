@@ -111,6 +111,8 @@ struct TranscriptionSettingsView: View {
         .task(id: preferences.language) {
             isAppleSpeechInstalled = await AppleSpeechEngine.isInstalled(language: preferences.language)
         }
+        // The speaker model may have been downloaded or removed elsewhere meanwhile.
+        .onAppear { environment.refreshModelDownloads() }
     }
 
     /// A row under the model while it downloads or after it failed; nothing otherwise, as the
@@ -139,7 +141,7 @@ struct TranscriptionSettingsView: View {
                 ProgressView(value: progress) {
                     Text("Downloading the speaker model…")
                 } currentValueLabel: {
-                    Text(progress.formatted(.percent.precision(.fractionLength(0))))
+                    Text(ProgressText.percent(progress))
                         .monospacedDigit()
                 }
                 Button("Cancel", systemImage: "xmark.circle") { environment.speakerModelDownload.cancel() }

@@ -85,6 +85,8 @@ struct SummarySettingsView: View {
             }
         }
         .formStyle(.grouped)
+        // The model may have been downloaded or removed elsewhere meanwhile.
+        .onAppear { environment.refreshModelDownloads() }
     }
 
     private func templatePicker(_ title: String, selection: Binding<SummaryTemplate>) -> some View {
@@ -121,12 +123,17 @@ struct SummarySettingsView: View {
             ProgressView(value: progress) {
                 Text("Downloading \(environment.summaryModel.displayName)…")
             } currentValueLabel: {
-                Text(progress.formatted(.percent.precision(.fractionLength(0))))
+                Text(ProgressText.percent(progress))
                     .monospacedDigit()
             }
         } else if let error = environment.summaryModelDownload?.error {
-            Text(error)
-                .foregroundStyle(.red)
+            HStack {
+                Text(error)
+                    .foregroundStyle(.red)
+                Spacer()
+                Button("Retry", systemImage: "arrow.clockwise") { environment.summaryModelDownload?.start() }
+                    .labelStyle(.titleAndIcon)
+            }
         }
     }
 

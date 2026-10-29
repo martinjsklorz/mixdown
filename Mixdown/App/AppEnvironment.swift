@@ -438,6 +438,8 @@ final class AppEnvironment {
         }
         guard let url, url != notifiedNoteURL else { return }
         notifiedNoteURL = url
+        // Making the note may have downloaded the speaker or summary model.
+        refreshModelDownloads()
         AudioCues.play(.noteReady, settings: settings)
         Task { await noteReady.notify(noteAt: url, in: library.notes) }
     }
@@ -660,6 +662,13 @@ final class AppEnvironment {
 
     /// Whether `summaryModel` is on disk; always true for one macOS provides.
     var isSummaryModelDownloaded: Bool { summaryModelDownload?.isDownloaded ?? true }
+
+    /// Checks again whether the speaker and summary models are on disk, for views that show it,
+    /// as recordings download them when they need them and Finder can remove them.
+    func refreshModelDownloads() {
+        speakerModelDownload.refresh()
+        summaryModelDownload?.refresh()
+    }
 
     /// Whether `summarizer` can summarize right now, and if not, why. Read this rather than
     /// `summarizer.availability` in views, so they update when the model finishes downloading.
