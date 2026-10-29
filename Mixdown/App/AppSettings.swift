@@ -1,5 +1,6 @@
 import Foundation
 import MixdownCore
+import os
 
 /// Typed access to Mixdown's preferences in `UserDefaults`.
 ///
@@ -193,10 +194,7 @@ struct AppSettings {
     /// they came is stored.
     var summaryTemplates: SummaryTemplateLibrary {
         get {
-            let stored =
-                defaults.data(forKey: Key.summaryTemplates).flatMap {
-                    try? JSONDecoder().decode([SummaryTemplate].self, from: $0)
-                } ?? []
+            let stored = decoded(LossyArray<SummaryTemplate>.self, forKey: Key.summaryTemplates)?.elements ?? []
             return SummaryTemplateLibrary(
                 stored: stored,
                 recordingTemplateID: defaults.string(forKey: Key.summaryTemplate),
@@ -279,10 +277,7 @@ struct AppSettings {
 
     /// Words to correct in transcripts. Empty if none were added, or what's stored can't be read.
     var vocabulary: Vocabulary {
-        get {
-            defaults.data(forKey: Key.vocabulary).flatMap { try? JSONDecoder().decode(Vocabulary.self, from: $0) }
-                ?? Vocabulary()
-        }
+        get { decoded(Vocabulary.self, forKey: Key.vocabulary) ?? Vocabulary() }
         nonmutating set { defaults.set(try? JSONEncoder().encode(newValue), forKey: Key.vocabulary) }
     }
 
@@ -306,10 +301,7 @@ struct AppSettings {
 
     /// Which apps count as calls. Every known one unless changed.
     var callApps: CallAppSelection {
-        get {
-            defaults.data(forKey: Key.callApps).flatMap { try? JSONDecoder().decode(CallAppSelection.self, from: $0) }
-                ?? CallAppSelection()
-        }
+        get { decoded(CallAppSelection.self, forKey: Key.callApps) ?? CallAppSelection() }
         nonmutating set { defaults.set(try? JSONEncoder().encode(newValue), forKey: Key.callApps) }
     }
 
@@ -349,4 +341,26 @@ struct AppSettings {
             defaults.set(newValue.showsTalkShare, forKey: Key.islandShowsTalkShare)
         }
     }
+}
+
+extension AppSettings {
+    private static let logger = Logger(subsystem: "app.mixdown", category: "settings")
+
+    /// The JSON stored at `key`, decoded; `nil` if there's none. The types stored this way decode
+    /// leniently, so this only fails for data that isn't JSON of the right shape at all. Then the
+    /// data is copied to `<key>.unreadable` before the caller falls back to a default, which the
+    /// next change would write over it.
+    func decoded<Value: Decodable>(_ type: Value.Type, forKey key: String) -> Value? {
+        guard let data = defaults.data(forKey: key) else { return nil }
+        do {
+            return try JSONDecoder().decode(type, from: data)
+        } catch {
+            Self.logger.error("Can't read setting \(key, privacy: .public): \(error.localizedDescription)")
+            defaults.set(data, forKey: Self.unreadableKey(key))
+            return nil
+        }
+    }
+
+    /// Where `decoded(_:forKey:)` keeps a copy of data at `key` it couldn't read.
+    static func unreadableKey(_ key: String) -> String { "\(key).unreadable" }
 }

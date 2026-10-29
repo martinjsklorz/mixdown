@@ -20,12 +20,34 @@ public struct Vocabulary: Sendable, Equatable, Codable {
 
         /// `term` without surrounding whitespace.
         var trimmedTerm: String { term.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+        private enum CodingKeys: String, CodingKey {
+            case id, term, soundsLike
+        }
+
+        /// Lenient, so an entry stored by another version still reads.
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = (try? container.decodeIfPresent(UUID.self, forKey: .id)) ?? UUID()
+            term = (try? container.decodeIfPresent(String.self, forKey: .term)) ?? ""
+            soundsLike = container.decodeLossyArray([String].self, forKey: .soundsLike)
+        }
     }
 
     public var entries: [Entry]
 
     public init(entries: [Entry] = []) {
         self.entries = entries
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case entries
+    }
+
+    /// Lenient, so one odd entry doesn't lose all of the user's words.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        entries = container.decodeLossyArray([Entry].self, forKey: .entries)
     }
 
     /// The entries' terms, each once, in order, for models that can be told which words to expect.
