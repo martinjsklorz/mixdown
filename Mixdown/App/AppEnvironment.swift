@@ -40,8 +40,10 @@ final class AppEnvironment {
     let notesFolder: NotesFolderStore
     /// The notes in `notesFolder`, read and watched for as long as the app runs, for the main
     /// window, Chat and Spotlight alike.
-    let library = NoteLibraryModel()
+    let library: NoteLibraryModel
     let noteTrash: NoteTrash
+    /// Searching, selecting, renaming and trashing the notes in the main window.
+    let noteBrowser: NoteBrowserModel
     /// Chat across the notes, kept while the main window is closed.
     let noteChat: NoteChat
     private let noteReady: NoteReady
@@ -90,6 +92,7 @@ final class AppEnvironment {
         let translator: any Translator = AppleTranslator()
         let noteTrash = NoteTrash()
         let noteReady = NoteReady(navigation: navigation)
+        let library = NoteLibraryModel()
         // Likewise the ONE place Chat's model and embeddings are chosen.
         self.noteChat = NoteChat(
             answerer: AppleIntelligenceAnswerer(),
@@ -106,14 +109,21 @@ final class AppEnvironment {
         self.speakerModelDownload = Self.makeSpeakerModelDownload()
         self.translator = translator
         self.notesFolder = notesFolder
+        self.library = library
         self.noteTrash = noteTrash
+        self.noteBrowser = NoteBrowserModel(
+            library: library,
+            notesFolder: notesFolder,
+            noteTrash: noteTrash,
+            navigation: navigation
+        )
         self.noteReady = noteReady
         self.notificationResponder = NotificationResponder(noteTrash: noteTrash, noteReady: noteReady)
         self.coordinator = Self.makeCoordinator(
             model: model,
             summarizer: summarizer,
             translator: translator,
-            notesDirectory: notesFolder.directory,
+            noteWriter: notesFolder.noteWriter,
             preferredDeviceIDs: settings.selectedDeviceIDs,
             preferences: preferences
         )
@@ -150,7 +160,7 @@ final class AppEnvironment {
         model: TranscriptionModel,
         summarizer: any Summarizer,
         translator: any Translator,
-        notesDirectory: URL?,
+        noteWriter: (any NoteWriting)?,
         pendingNotes: [Note] = [],
         recordingsInMemory: RecordingsInMemory = RecordingsInMemory(),
         preferredDeviceIDs: [String],
@@ -162,7 +172,7 @@ final class AppEnvironment {
             // `TranscriptionModel.makeEngine()` is the ONE place the transcription engine is chosen.
             // To add a backend, give it a case there; nothing else here changes.
             engine: model.makeEngine(),
-            noteWriter: notesDirectory.map { MarkdownNoteWriter(directory: $0) },
+            noteWriter: noteWriter,
             pendingNotes: pendingNotes,
             recordingsInMemory: recordingsInMemory,
             summarizer: nil,
@@ -377,7 +387,7 @@ final class AppEnvironment {
         } onChange: { [weak self] in
             Task { @MainActor in self?.observeNotesFolder() }
         }
-        coordinator.noteWriter = directory.map { MarkdownNoteWriter(directory: $0) }
+        coordinator.noteWriter = notesFolder.noteWriter
         watchLibrary(in: directory)
     }
 
@@ -388,12 +398,21 @@ final class AppEnvironment {
             guard libraryWatch.directory != directory else { return }
             libraryWatch.task.cancel()
         }
-        let task = Task { [library] in
+        let task = Task { [library, notesFolder] in
             // Started first, so nothing that changes during the first reload is missed.
             let changes = directory.map { NotesFolderWatcher.changes(in: $0) }
             await library.reload(from: directory)
             guard let changes else { return }
-            for await _ in changes { await library.reload(from: directory) }
+            for await change in changes {
+                // The folder was renamed or moved, which the app doesn't otherwise notice until
+                // it's next in front. `refresh()` finds it again, and `observeNotesFolder()`
+                // watches it there.
+                if change == .rootChanged {
+                    notesFolder.refresh()
+                    guard notesFolder.directory == directory else { return }
+                }
+                await library.reload(from: directory)
+            }
         }
         libraryWatch = (directory, task)
     }
@@ -420,7 +439,7 @@ final class AppEnvironment {
         guard let url, url != notifiedNoteURL else { return }
         notifiedNoteURL = url
         AudioCues.play(.noteReady, settings: settings)
-        Task { await noteReady.notify(noteAt: url) }
+        Task { await noteReady.notify(noteAt: url, in: library.notes) }
     }
 
     // MARK: Input
@@ -628,7 +647,7 @@ final class AppEnvironment {
             model: model,
             summarizer: summarizer,
             translator: translator,
-            notesDirectory: notesFolder.directory,
+            noteWriter: notesFolder.noteWriter,
             pendingNotes: coordinator.takePendingNotes(),
             recordingsInMemory: coordinator.takeRecordingsInMemory(),
             preferredDeviceIDs: settings.selectedDeviceIDs,

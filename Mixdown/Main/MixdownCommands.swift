@@ -176,32 +176,9 @@ private struct RecordingMenuItems: View {
     var body: some View {
         let coordinator = environment.coordinator
 
-        Button(coordinator.canStopRecording ? "Stop Recording" : "Start Recording") {
-            Task { await coordinator.toggleRecording() }
-        }
-        .keyboardShortcut("r")
-        .disabled(!coordinator.canStartRecording && !coordinator.canStopRecording)
-        Button(coordinator.isPaused ? "Resume Recording" : "Pause Recording") {
-            Task { await coordinator.togglePause() }
-        }
-        .keyboardShortcut("p", modifiers: [.command, .shift])
-        .disabled(!coordinator.isRecording)
-        Button("Mark Moment") { environment.island.markMoment() }
-            .globalKeyboardShortcut(.markMoment)
-            .disabled(!coordinator.isRecording)
-        Button("Catch Me Up") { environment.island.catchUp() }
-            .globalKeyboardShortcut(.catchUp)
-            .disabled(!coordinator.isRecording)
+        RecordingControls(environment: environment, hidesUnavailable: false, showsGlobalShortcut: false)
 
-        if case .preparingModel = coordinator.phase {
-            Button("Cancel Download") { coordinator.cancelPreparation() }
-                .disabled(!coordinator.canCancelPreparation)
-        } else {
-            Button("Download Model") {
-                Task { await coordinator.prepareEngine() }
-            }
-            .disabled(coordinator.isModelDownloaded || !coordinator.isIdle)
-        }
+        ModelDownloadControls(coordinator: coordinator, hidesUnavailable: false)
         if case .failed = coordinator.phase {
             Button("Dismiss Error") { coordinator.dismissError() }
         }

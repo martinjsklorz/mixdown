@@ -12,12 +12,6 @@ struct MainView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(MainNavigation.self) private var navigation
     @Environment(\.openSettings) private var openSettings
-    @State private var searchText = ""
-    /// The notes the latest finished search matched, with the line of each that matches, which
-    /// the sidebar shows while the next one runs. `nil` while not searching.
-    @State private var searchMatches: [NoteDocument.ID: String]?
-    /// Calls to `reload(selecting:line:)` still running, which pick the selection themselves.
-    @State private var pendingReloads = 0
     @State private var columnVisibility = NavigationSplitViewVisibility.automatic
     @State private var noteToRename: NoteDocument?
     /// The speaker to rename and their note, while asking for the new name.
@@ -30,7 +24,6 @@ struct MainView: View {
     @AppStorage(AppSettings.Key.collapsesPinnedNotes) private var collapsesPinnedNotes = false
     @State private var titleDraft = ""
     @FocusState private var isChatFieldFocused: Bool
-    @State private var failure: Failure?
 
     private struct VocabularyDraft: Identifiable {
         let id = UUID()
@@ -40,12 +33,6 @@ struct MainView: View {
     private struct SpeakerToRename {
         var note: NoteDocument
         var speaker: String
-    }
-
-    /// An action on a note that didn't work, for an alert.
-    private struct Failure {
-        var title: String
-        var message: String
     }
 
     var body: some View {
@@ -68,28 +55,22 @@ struct MainView: View {
         // `AppEnvironment` keeps the notes up to date as the folder changes.
         .task(id: environment.notesFolder.directory) {
             let shown = navigation.takeNoteToShow()
-            await reload(selecting: shown?.url, line: shown?.line)
+            await browser.reload(selecting: shown?.url, line: shown?.line)
         }
         // A note removed by another app takes the selection with it.
-        .onChange(of: library.notes) {
-            if pendingReloads == 0 { keepSelection() }
-        }
+        .onChange(of: library.notes) { browser.notesChanged() }
         // Searches off the main thread, as long transcripts take a while to look through. A new
         // search or a change to the notes cancels the running one.
-        .task(id: SearchRequest(query: searchQuery, notes: library.notes)) {
-            await search(searchQuery, in: library.notes)
+        .task(id: SearchRequest(query: browser.searchQuery, notes: library.notes)) {
+            await browser.search(browser.searchQuery, in: library.notes)
         }
         .onChange(of: environment.coordinator.lastNoteURL) { _, url in
-            Task {
-                await reload(selecting: url)
-                // Show the note that was just recorded, unless the user moved on to something else.
-                if url != nil, navigation.destination == .recorder { navigation.destination = .notes }
-            }
+            Task { await browser.showSavedNote(at: url) }
         }
         // In case the watcher missed a change. FSEvents doesn't see changes made by other
         // computers on a network volume, for one.
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            Task { await reload() }
+            Task { await browser.reload() }
         }
         .focusedSceneValue(\.shownNote, shownNote.map { ShownNote(note: $0, actions: noteActions) })
         .confirmationDialog(
@@ -112,7 +93,7 @@ struct MainView: View {
         .alert("Rename Note", isPresented: isPresent($noteToRename), presenting: noteToRename) { note in
             TextField("Title", text: $titleDraft)
             Button("Rename") {
-                Task { await rename(note, to: titleDraft) }
+                Task { await browser.rename(note, to: titleDraft) }
             }
             Button("Cancel", role: .cancel) {}
         }
@@ -123,7 +104,7 @@ struct MainView: View {
         ) { rename in
             TextField("Name", text: $speakerDraft)
             Button("Rename") {
-                Task { await renameSpeaker(rename.speaker, to: speakerDraft, in: rename.note) }
+                Task { await browser.renameSpeaker(rename.speaker, to: speakerDraft, in: rename.note) }
             }
             Button("Cancel", role: .cancel) {}
         } message: { _ in
@@ -134,17 +115,21 @@ struct MainView: View {
         .onChange(of: navigation.noteToShow) { _, url in
             guard url != nil else { return }
             let shown = navigation.takeNoteToShow()
-            Task { await reload(selecting: shown?.url, line: shown?.line) }
+            Task { await browser.reload(selecting: shown?.url, line: shown?.line) }
         }
         // Shows a note put back with Restore in its notification.
         .onChange(of: environment.noteTrash.lastRestored) { _, restored in
             guard let restored else { return }
             Task {
-                await reload(selecting: restored.url)
+                await browser.reload(selecting: restored.url)
                 navigation.destination = .notes
             }
         }
-        .alert(failure?.title ?? "", isPresented: isPresent($failure), presenting: failure) { _ in
+        .alert(
+            browser.failure?.title ?? "",
+            isPresented: isPresent(Bindable(browser).failure),
+            presenting: browser.failure
+        ) { _ in
             Button("OK") {}
         } message: { failure in
             Text(failure.message)
@@ -178,12 +163,15 @@ struct MainView: View {
     /// The notes `library` has, for the sidebar, Chat and the detail column.
     private var library: NoteLibraryModel { environment.library }
 
+    /// Searches, selects and changes the notes for the sidebar and the detail column.
+    private var browser: NoteBrowserModel { environment.noteBrowser }
+
     private var sidebar: some View {
-        let notes = filteredNotes
+        let notes = browser.filteredNotes
 
         return VStack(spacing: 0) {
             HStack(spacing: 8) {
-                SidebarSearchField(text: $searchText)
+                SidebarSearchField(text: Bindable(browser).searchText)
                 if environment.preferences.isChatEnabled {
                     SidebarSectionButton(
                         "Chat",
@@ -224,7 +212,7 @@ struct MainView: View {
             ),
             showsSelection: navigation.destination == .notes,
             collapsesPinned: $collapsesPinnedNotes,
-            excerpts: searchQuery.isEmpty ? [:] : searchMatches ?? [:],
+            excerpts: browser.searchQuery.isEmpty ? [:] : browser.searchMatches ?? [:],
             actions: noteActions
         ) {
             notesPlaceholder(isEmptyAfterSearch: notes.isEmpty)
@@ -235,7 +223,7 @@ struct MainView: View {
     private func noteCount(shown: Int) -> some View {
         let total = library.notes.count
         return Group {
-            if searchText.trimmingCharacters(in: .whitespaces).isEmpty {
+            if browser.searchQuery.isEmpty {
                 Text("^[\(total) note](inflect: true)")
             } else {
                 Text("\(shown) of ^[\(total) note](inflect: true)")
@@ -273,8 +261,8 @@ struct MainView: View {
                 Label("Can't read notes: \(error)", systemImage: "exclamationmark.triangle")
             } else if library.hasLoaded && library.notes.isEmpty {
                 Text("Notes you record appear here.")
-            } else if isEmptyAfterSearch && !searchText.isEmpty {
-                Text("No recordings match “\(searchText)”.")
+            } else if isEmptyAfterSearch && !browser.searchText.isEmpty {
+                Text("No recordings match “\(browser.searchText)”.")
             }
         }
         .font(.callout)
@@ -328,7 +316,7 @@ struct MainView: View {
     private var noteActions: NoteActions {
         NoteActions(
             togglePinned: { note in
-                Task { await setPinned(!note.isPinned, note) }
+                Task { await browser.setPinned(!note.isPinned, note) }
             },
             rename: { note in
                 titleDraft = note.title
@@ -351,127 +339,12 @@ struct MainView: View {
         )
     }
 
-    private func rename(_ note: NoteDocument, to title: String) async {
-        guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, title != note.title else { return }
-        let wasSelected = navigation.selectedNoteID == note.id
-        do {
-            let url = try await library.rename(note, to: title)
-            await reload(selecting: wasSelected ? url : nil)
-        } catch {
-            failure = Failure(title: "Couldn't Rename Note", message: error.localizedDescription)
-            // The title may have changed even if the file name couldn't.
-            await reload()
-        }
-    }
-
-    private func renameSpeaker(_ speaker: String, to name: String, in note: NoteDocument) async {
-        guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        do {
-            try await library.renameSpeaker(speaker, to: name, in: note)
-        } catch {
-            failure = Failure(title: "Couldn't Rename Speaker", message: error.localizedDescription)
-        }
-        await reload()
-    }
-
-    private func setPinned(_ isPinned: Bool, _ note: NoteDocument) async {
-        do {
-            try await library.setPinned(isPinned, note)
-        } catch {
-            failure = Failure(
-                title: isPinned ? "Couldn't Pin Note" : "Couldn't Unpin Note",
-                message: error.localizedDescription
-            )
-            return
-        }
-        await reload()
-    }
-
-    /// Moves the note to the Trash and, if it was selected, selects the one below it in the
-    /// sidebar, or the one above if it was the last.
     private func moveToTrash(_ note: NoteDocument) {
-        let index = sidebarNotes.firstIndex { $0.id == note.id }
-        do {
-            try environment.noteTrash.moveToTrash(note)
-            library.didRemove(note)
-        } catch {
-            failure = Failure(title: "Couldn't Delete Note", message: error.localizedDescription)
-            return
-        }
-        if navigation.selectedNoteID == note.id, let index {
-            let remaining = sidebarNotes
-            navigation.selectedNoteID = remaining.isEmpty ? nil : remaining[min(index, remaining.count - 1)].id
-        }
-        Task { await reload() }
+        Task { await browser.moveToTrash(note, collapsesPinned: collapsesPinnedNotes) }
     }
-
-    /// The `filteredNotes` the sidebar shows, in its order: pinned ones first, unless they're
-    /// folded away.
-    private var sidebarNotes: [NoteDocument] {
-        NoteSection.sections(for: filteredNotes)
-            .filter { !(collapsesPinnedNotes && $0.group == .pinned) }
-            .flatMap(\.notes)
-    }
-
-    /// The notes that match the search, from the latest search that finished. All of them until
-    /// the first one has.
-    private var filteredNotes: [NoteDocument] {
-        guard !searchQuery.isEmpty, let searchMatches else { return library.notes }
-        return library.notes.filter { searchMatches[$0.id] != nil }
-    }
-
-    private var searchQuery: String { searchText.trimmingCharacters(in: .whitespaces) }
 
     private struct SearchRequest: Equatable {
         var query: String
         var notes: [NoteDocument]
-    }
-
-    /// Sets `searchMatches` to the notes of `notes` that match `query`, unless cancelled first.
-    private func search(_ query: String, in notes: [NoteDocument]) async {
-        guard !query.isEmpty else {
-            searchMatches = nil
-            return
-        }
-        let search = Task.detached(priority: .userInitiated) { try NoteLibrary.search(notes, for: query) }
-        let matches = await withTaskCancellationHandler {
-            try? await search.value
-        } onCancel: {
-            search.cancel()
-        }
-        guard let matches, !Task.isCancelled else { return }
-        searchMatches = matches
-    }
-
-    /// Reloads the folder, then selects the note at `url` if given, else keeps the selection if
-    /// that note still exists, else selects the newest note. With a `line` of the note at `url`
-    /// (see `MainNavigation.noteLineToShow`), has its view scroll to it.
-    private func reload(selecting url: URL? = nil, line: Int? = nil) async {
-        pendingReloads += 1
-        await library.reload(from: environment.notesFolder.directory)
-        pendingReloads -= 1
-        let notes = library.notes
-        // By name: the writer's URL and the directory listing's can differ in form. Notes in
-        // different subfolders can share a name, so then by resolved path.
-        let named = url.map { url in notes.filter { $0.url.lastPathComponent == url.lastPathComponent } } ?? []
-        let resolvedPath = { (url: URL) in url.resolvingSymlinksInPath().path(percentEncoded: false) }
-        if let url,
-            let note = named.count > 1
-                ? named.first(where: { resolvedPath($0.url) == resolvedPath(url) }) ?? named.first : named.first
-        {
-            navigation.selectedNoteID = note.id
-            if let line, let block = NoteSearchIndex.lines(of: note).dropFirst(line).first?.block {
-                navigation.blockToShow = MainNavigation.NoteBlock(noteID: note.id, index: block)
-            }
-        } else {
-            keepSelection()
-        }
-    }
-
-    /// Selects the newest note if the selected one is gone.
-    private func keepSelection() {
-        if !library.notes.contains(where: { $0.id == navigation.selectedNoteID }) {
-            navigation.selectedNoteID = library.notes.first?.id
-        }
     }
 }

@@ -25,14 +25,11 @@ final class MomentDraft {
 @MainActor
 final class MomentEntry {
     private static let size = NSSize(width: 320, height: 32)
-    /// Space between the field and the notch or island above it.
-    private static let spacing: CGFloat = 6
 
     private let island: IslandController
     /// The Dynamic Island's frame while it's shown, to go under it.
     private let islandFrame: () -> NSRect?
-    /// Created on the first `show(_:)`, as windows shouldn't be made before the app has launched.
-    private var panel: NotchPanel?
+    private lazy var dropdown = NotchDropdown(islandFrame: islandFrame) { [unowned self] in makePanel() }
     /// The draft the field is showing, if it's open.
     private var shownDraft: MomentDraft?
     /// The app that was in front, while Mixdown had to come forward for the field to get the
@@ -48,9 +45,10 @@ final class MomentEntry {
     func show(_ draft: MomentDraft) {
         guard draft !== shownDraft else { return }
         shownDraft = draft
-        let panel = panel ?? makePanel()
-        panel.contentView = NSHostingView(rootView: MomentEntryView(island: island, draft: draft))
-        place(panel)
+        let panel = dropdown.show(
+            NSHostingView(rootView: MomentEntryView(island: island, draft: draft)),
+            size: Self.size
+        )
         panel.makeKeyAndOrderFront(nil)
         // A nonactivating panel normally gets the keyboard as it is; just in case it didn't.
         Task { [weak self] in
@@ -63,10 +61,9 @@ final class MomentEntry {
 
     /// Closes the field, which hands the keyboard back to the app in front.
     func hide() {
-        guard shownDraft != nil, let panel else { return }
+        guard shownDraft != nil else { return }
         shownDraft = nil
-        panel.orderOut(nil)
-        panel.contentView = nil
+        dropdown.hide()
         if let app = appToReactivate {
             appToReactivate = nil
             app.activate(options: [])
@@ -82,7 +79,6 @@ final class MomentEntry {
             // Light text and caret on black, whatever the system appearance.
             isDark: true
         )
-        self.panel = panel
         // Clicking anywhere else, or switching apps, drops the moment, like Escape.
         _ = NotificationCenter.default.addObserver(
             forName: NSWindow.didResignKeyNotification,
@@ -97,20 +93,9 @@ final class MomentEntry {
         return panel
     }
 
-    /// Centers the field under the notch, or under the island while it's shown.
-    private func place(_ panel: NotchPanel) {
-        guard let screen = DynamicIsland.screen else { return }
-        let notch = DynamicIsland.notch(on: screen)
-        let top = islandFrame()?.minY ?? notch.minY
-        panel.setFrame(
-            NSRect(
-                x: notch.midX - Self.size.width / 2,
-                y: top - Self.spacing - Self.size.height,
-                width: Self.size.width,
-                height: Self.size.height
-            ),
-            display: true
-        )
+    /// Moves the field under the island, or up under the notch, as the island shows or hides.
+    func islandMoved() {
+        dropdown.place()
     }
 }
 

@@ -76,6 +76,9 @@ final class IslandController {
         } else {
             dynamicIsland?.hide()
         }
+        // The field and the card go under the island while it's shown, else under the notch.
+        momentEntry?.islandMoved()
+        catchUpCard?.islandMoved()
     }
 
     /// Takes the Mark Moment shortcut only while recording, so other apps get those keys

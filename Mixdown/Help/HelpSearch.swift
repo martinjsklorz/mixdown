@@ -1,4 +1,5 @@
 import AppKit
+import MixdownNotes
 
 /// Lists matching help topics in the Help menu's search field, below the menu items it finds
 /// itself. Mixdown has no Apple Help Book for the field to search instead.
