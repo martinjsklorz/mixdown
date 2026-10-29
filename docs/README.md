@@ -22,6 +22,8 @@ The same topics are in the app under **Help → Mixdown Help** (⌘?).
 - [Settings](settings.md): every setting, tab by tab
 - [Keyboard shortcuts](keyboard-shortcuts.md): and `mixdown://` links for Raycast, Stream Deck
   and Keyboard Maestro
+- [Command line and AI agents](command-line.md): the `mixdown` command, and the skill that lets
+  agents like Claude Code read your notes and record
 - [Privacy and permissions](privacy.md)
 - [Troubleshooting](troubleshooting.md)
 

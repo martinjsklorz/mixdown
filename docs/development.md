@@ -12,6 +12,8 @@ make run         # build and launch
 make open        # open the generated project in Xcode
 make project     # regenerate the project from project.yml
 make install     # build a Release copy into /Applications, for every account on this Mac
+make install-cli # build the `mixdown` command and install it in /usr/local/bin
+make install-skill # install the agent skill in ~/.claude/skills (SKILL_DIR=… for another agent)
 make test        # run the MixdownKit tests
 make logs        # follow the app's log output
 make format      # format with swift-format (`make lint` checks)
@@ -55,6 +57,7 @@ window lives in the `MixdownKit` package:
 | `MixdownMLXLLM` | Summaries, titles, speaker names and catch-ups with open models such as Qwen3 on MLX ([mlx-swift-lm](https://github.com/ml-explore/mlx-swift-lm)), downloaded from Hugging Face into the speech models' folder. |
 | `MixdownNaturalLanguage` | Embeddings of note passages for Chat, with Apple's on-device contextual embedding models, and which language a transcript is in. |
 | `MixdownAppleTranslation` | Translating transcripts with Apple's on-device models via the Translation framework. |
+| `MixdownCLI` | The `mixdown` command-line tool (see [Command line and AI agents](command-line.md)): lists, searches and prints notes with MixdownNotes, and controls recording by opening `URLCommand` links. Built with SwiftPM alone (`make cli`); not part of the app. Its agent skill is `skills/mixdown/SKILL.md`. |
 | `MixdownNotes` | Rendering notes to Markdown, writing them, reading the notes folder back, and what Spotlight gets of each note (`NoteSearchIndex`; the app's `NoteSpotlight` hands it to Core Spotlight). Also Chat (`NoteChat`), its passages and search (`NoteChatIndex`) and the questions Mixdown answers by counting (`NoteQuestion`). |
 
 The speech engines sit behind one protocol (`TranscriptionEngine`), and so do the summarizers

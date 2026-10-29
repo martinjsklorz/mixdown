@@ -51,6 +51,35 @@ public enum URLCommand: Equatable, Sendable {
         default: return nil
         }
     }
+
+    /// The `mixdown://` link for the command, which `init(url:)` reads back, for the `mixdown`
+    /// command-line tool.
+    public var url: URL {
+        let (action, query): (String, (name: String, value: String)?) =
+            switch self {
+            case .toggleRecording: ("toggle", nil)
+            case .startRecording: ("start", nil)
+            case .stopRecording: ("stop", nil)
+            case .pauseRecording: ("pause", nil)
+            case .resumeRecording: ("resume", nil)
+            case .togglePause: ("toggle-pause", nil)
+            case .markMoment(let text): ("mark", text.map { ("text", $0) })
+            case .open(let note): ("open", note.map { ("note", $0) })
+            }
+        var components = URLComponents()
+        components.scheme = Self.scheme
+        components.host = action
+        if let query {
+            // `queryItems` would leave `&`, `=` and `+` as they are, which split or change the value.
+            let allowed = CharacterSet.urlQueryAllowed.subtracting(CharacterSet(charactersIn: "&=+#"))
+            let value = query.value.addingPercentEncoding(withAllowedCharacters: allowed) ?? query.value
+            components.percentEncodedQuery = "\(query.name)=\(value)"
+        }
+        guard let url = components.url else {
+            preconditionFailure("A scheme, a host and an encoded query always make a URL.")
+        }
+        return url
+    }
 }
 
 /// What to do for a `URLCommand` (or the global recording shortcut), given what the coordinator is

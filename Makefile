@@ -22,13 +22,18 @@ LSREGISTER    := /System/Library/Frameworks/CoreServices.framework/Frameworks/La
 RELEASE_DIR   := build/release
 RELEASE_APP   := $(RELEASE_DIR)/Build/Products/Release/Mixdown.app
 INSTALL_DIR   ?= /Applications
+# `make install-cli` puts the `mixdown` command here, and `make install-skill` the agent skill
+# (skills/mixdown) in a folder of SKILL_DIR, which is Claude Code's; Codex reads ~/.codex/skills.
+CLI           := MixdownKit/.build/release/mixdown
+BIN_DIR       ?= /usr/local/bin
+SKILL_DIR     ?= $(HOME)/.claude/skills
 
 # Shell snippet printing one of the scheme's build settings, e.g. $(call setting,BUILD_DIR).
 # Builds go to Xcode's global DerivedData, so this is how to find them.
 setting = $$(xcodebuild -project $(PROJECT) -scheme $(SCHEME) -destination $(DESTINATION) $(XCODEBUILD_FLAGS) \
 	-showBuildSettings 2>/dev/null | awk -F" = " '/ $(1) /{print $$2; exit}')
 
-.PHONY: bootstrap project pin resolve open build run install logs test format lint ci clean
+.PHONY: bootstrap project pin resolve open build run install cli install-cli install-skill logs test format lint ci clean
 
 ## Install XcodeGen (Homebrew) and the Metal Toolchain MLX needs. swift-format ships with Xcode.
 bootstrap:
@@ -88,6 +93,24 @@ install: $(PBXPROJ)
 	sudo ditto "$(RELEASE_APP)" "$(INSTALL_DIR)/Mixdown.app"
 	@$(LSREGISTER) -f "$(INSTALL_DIR)/Mixdown.app"
 	@echo "Installed $(INSTALL_DIR)/Mixdown.app"
+
+## Build the `mixdown` command-line tool. It only needs MixdownCore and MixdownNotes, not the
+## models, so it builds with SwiftPM alone.
+cli:
+	cd MixdownKit && swift build -c release --product mixdown
+
+## Install the `mixdown` command in BIN_DIR (/usr/local/bin), asking for your password if that
+## folder isn't yours.
+install-cli: cli
+	@if [ -w "$(BIN_DIR)" ]; then install -m 755 $(CLI) "$(BIN_DIR)/mixdown"; \
+	else sudo install -d "$(BIN_DIR)" && sudo install -m 755 $(CLI) "$(BIN_DIR)/mixdown"; fi
+	@echo "Installed $(BIN_DIR)/mixdown"
+
+## Install the agent skill that teaches AI agents to use `mixdown`, in SKILL_DIR/mixdown
+## (~/.claude/skills/mixdown).
+install-skill:
+	@mkdir -p "$(SKILL_DIR)/mixdown"
+	cp skills/mixdown/SKILL.md "$(SKILL_DIR)/mixdown/SKILL.md"
 
 ## Follow the app's log output (os.Logger, subsystem app.mixdown).
 logs:

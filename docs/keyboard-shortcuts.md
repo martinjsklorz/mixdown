@@ -45,4 +45,5 @@ space). Pausing, resuming and marking a moment beep when Mixdown isn't recording
 note that isn't in the notes folder beeps and shows Notes.
 
 To keep the app you're in at the front, open the link in the background: `open -g mixdown://toggle`
-in Terminal or a shell script action.
+in Terminal or a shell script action. The [`mixdown` command](command-line.md) does that for you
+(`mixdown toggle`), and can wait for the note after stopping.

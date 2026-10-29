@@ -40,6 +40,21 @@ struct URLCommandTests {
         #expect(command("mixdown://open?NOTE=Standup") == .open(note: "Standup"))
     }
 
+    @Test(arguments: [
+        URLCommand.toggleRecording, .startRecording, .stopRecording, .pauseRecording, .resumeRecording, .togglePause,
+        .markMoment(text: nil), .markMoment(text: "Budget & dates = 50% + tax #1"), .markMoment(text: "Größe?/ok"),
+        .open(note: nil), .open(note: "latest"), .open(note: "Clients/Acme/2026-10-24 0930 Weekly Sync.md"),
+    ])
+    func makesLinksThatReadBack(_ command: URLCommand) {
+        #expect(command.url.scheme == "mixdown")
+        #expect(URLCommand(url: command.url) == command)
+    }
+
+    @Test func makesReadableLinks() {
+        #expect(URLCommand.togglePause.url.absoluteString == "mixdown://toggle-pause")
+        #expect(URLCommand.open(note: "Weekly Sync").url.absoluteString == "mixdown://open?note=Weekly%20Sync")
+    }
+
     @Test func rejectsOtherLinks() {
         #expect(command("https://toggle") == nil)
         #expect(command("mixdown://") == nil)

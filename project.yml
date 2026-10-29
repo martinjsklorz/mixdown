@@ -97,6 +97,7 @@ schemes:
         - package: MixdownKit/MixdownCoreTests
         - package: MixdownKit/MixdownAudioTests
         - package: MixdownKit/MixdownNotesTests
+        - package: MixdownKit/MixdownCLITests
         - package: MixdownKit/MixdownSpeechSwiftTests
         - package: MixdownKit/MixdownAppleSpeechTests
         - package: MixdownKit/MixdownMLXLLMTests

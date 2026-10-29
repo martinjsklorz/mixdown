@@ -20,6 +20,7 @@ let package = Package(
         .library(name: "MixdownAppleTranslation", targets: ["MixdownAppleTranslation"]),
         .library(name: "MixdownNaturalLanguage", targets: ["MixdownNaturalLanguage"]),
         .library(name: "MixdownNotes", targets: ["MixdownNotes"]),
+        .executable(name: "mixdown", targets: ["MixdownCLI"]),
     ],
     dependencies: [
         // Pre-1.0 and its API still moves between releases, so pin exactly and bump deliberately.
@@ -109,9 +110,19 @@ let package = Package(
         // Markdown rendering and persistence of notes, and finding what Chat answers from.
         .target(name: "MixdownNotes", dependencies: ["MixdownCore"], swiftSettings: strict),
 
+        // The `mixdown` command-line tool: lists, searches and prints notes, and controls
+        // recording through `mixdown://` links, for terminals, scripts and AI agents. Only needs
+        // MixdownNotes, so `swift build --product mixdown` doesn't build the models.
+        .executableTarget(
+            name: "MixdownCLI",
+            dependencies: ["MixdownCore", "MixdownNotes"],
+            swiftSettings: strict
+        ),
+
         .testTarget(name: "MixdownCoreTests", dependencies: ["MixdownCore"], swiftSettings: strict),
         .testTarget(name: "MixdownAudioTests", dependencies: ["MixdownAudio"], swiftSettings: strict),
         .testTarget(name: "MixdownNotesTests", dependencies: ["MixdownNotes"], swiftSettings: strict),
+        .testTarget(name: "MixdownCLITests", dependencies: ["MixdownCLI"], swiftSettings: strict),
         .testTarget(name: "MixdownSpeechSwiftTests", dependencies: ["MixdownSpeechSwift"], swiftSettings: strict),
         .testTarget(name: "MixdownAppleSpeechTests", dependencies: ["MixdownAppleSpeech"], swiftSettings: strict),
         .testTarget(name: "MixdownMLXLLMTests", dependencies: ["MixdownMLXLLM"], swiftSettings: strict),
