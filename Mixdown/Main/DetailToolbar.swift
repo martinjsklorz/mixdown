@@ -35,6 +35,11 @@ struct DetailToolbar: CustomizableToolbarContent {
                     .help("Rename a speaker")
                     Button("Add to Vocabulary", systemImage: "character.book.closed") { actions.addToVocabulary() }
                         .help("Add the selected word to the vocabulary")
+                    SummarizeAgainMenu(note: note, actions: actions) {
+                        Label("Summarize Again", systemImage: "sparkles")
+                    }
+                    .menuStyle(.button)
+                    .menuIndicator(.hidden)
                     Button("Delete", systemImage: "trash") { actions.moveToTrash(note) }
                 }
             }

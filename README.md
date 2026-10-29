@@ -23,7 +23,7 @@ Everything happens on your Mac. Your audio never leaves it.
   right from a note, and every note, old and new, gets them right.
 - **Summaries**: Apple Intelligence, or an open model like Qwen3 run on your Mac with MLX, adds an
   overview, key points and action items, and names the note. Templates for 1:1s, standups and
-  client calls.
+  client calls, and Summarize Again to redo a note's summary with another template or model.
 - **Catch me up**: drifted off? ⌃⌥⌘C sums up the last few minutes of the live text in a card
   under the notch. Apple Intelligence does it on your Mac, so it's free and private, with no API
   key or local model server to set up.

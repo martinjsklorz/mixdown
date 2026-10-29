@@ -1,4 +1,5 @@
 import AppKit
+import MixdownCore
 import MixdownNotes
 import SwiftUI
 
@@ -15,6 +16,8 @@ struct NoteActions {
     var moveToTrash: @MainActor (NoteDocument) -> Void
     /// Asks how to write the text selected in the note, if any, and adds it to the vocabulary.
     var addToVocabulary: @MainActor () -> Void
+    /// Summarizes the note again with the template, replacing its summary.
+    var summarizeAgain: @MainActor (NoteDocument, SummaryTemplate) -> Void
 
     /// Puts the note's transcript on the clipboard as plain text, and confirms with a
     /// notification.
@@ -41,6 +44,48 @@ struct RenameSpeakerMenu<Label: View>: View {
             label()
         }
         .disabled(note.speakers.isEmpty)
+    }
+}
+
+/// A menu of the summary templates, each summarizing the note again with it; the note's own is
+/// checked. Disabled while summaries can't be made, or a note is being summarized again.
+struct SummarizeAgainMenu<Label: View>: View {
+    @Environment(AppEnvironment.self) private var environment
+    let note: NoteDocument
+    let actions: NoteActions
+    @ViewBuilder let label: () -> Label
+
+    var body: some View {
+        Menu {
+            ForEach(templates) { template in
+                Toggle(
+                    template.displayName,
+                    isOn: Binding(
+                        get: { template.id == currentTemplate.id },
+                        set: { _ in actions.summarizeAgain(note, template) }
+                    )
+                )
+            }
+        } label: {
+            label()
+        }
+        .disabled(unavailableReason != nil || environment.library.summarizingNoteID != nil)
+        .help(unavailableReason ?? "Summarize the note again, with this template or another")
+    }
+
+    private var templates: [SummaryTemplate] { environment.preferences.summaryTemplates.templates }
+
+    /// The note's template: its `template` field is a built-in's id or the name of one of the
+    /// user's. General without one.
+    private var currentTemplate: SummaryTemplate {
+        templates.first { $0.id == note.template || (!$0.isBuiltIn && $0.displayName == note.template) }
+            ?? environment.preferences.summaryTemplates.template(id: nil)
+    }
+
+    private var unavailableReason: String? {
+        guard environment.preferences.summarizesNotes else { return "Summaries are turned off in Settings" }
+        if case .unavailable(let reason) = environment.summaryAvailability { return reason }
+        return nil
     }
 }
 

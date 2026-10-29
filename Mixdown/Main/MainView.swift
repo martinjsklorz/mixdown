@@ -335,6 +335,9 @@ struct MainView: View {
             },
             addToVocabulary: {
                 vocabularyDraft = VocabularyDraft(soundsLike: SelectedText.current() ?? "")
+            },
+            summarizeAgain: { note, template in
+                Task { await browser.summarizeAgain(note, with: template, by: environment.summarizer) }
             }
         )
     }

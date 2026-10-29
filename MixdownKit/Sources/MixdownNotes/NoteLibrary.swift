@@ -234,6 +234,21 @@ public enum NoteLibrary {
         return try rewriteIfChanged(noteAt: url) { NoteDocument.renamingSpeaker($0, from: old, to: new) }
     }
 
+    /// What the summary of the note at `url` is made from, or `nil` if it has no transcript. See
+    /// `NoteDocument.summarySource(of:)`.
+    public static func summarySource(ofNoteAt url: URL) throws -> NoteDocument.SummarySource? {
+        NoteDocument.summarySource(of: try contents(ofNoteAt: url))
+    }
+
+    /// Replaces the summary of the note at `url` with `summary`, made with another template or
+    /// model. See `NoteDocument.replacingSummary(in:with:)` for how the contents change; the title
+    /// and file name stay as they are. Returns whether the note changed: not if the summary has
+    /// nothing to show. A note that isn't valid UTF-8 is left alone, like by `rename(noteAt:to:)`.
+    @discardableResult
+    public static func replaceSummary(ofNoteAt url: URL, with summary: NoteSummary) throws -> Bool {
+        try rewriteIfChanged(noteAt: url) { NoteDocument.replacingSummary(in: $0, with: summary) }
+    }
+
     /// Applies `vocabulary` to every note in `directory` and its subfolders, as listed by
     /// `loadNotes(in:cache:)`. See `NoteDocument.corrected(_:by:)` for what changes; file names
     /// stay as they are. A note that can't be read or written is skipped, and the others are

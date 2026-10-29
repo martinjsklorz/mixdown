@@ -248,6 +248,7 @@ struct NoteListView<Footer: View>: View {
             Button("Rename…") { actions.rename(note) }
             RenameSpeakerMenu(note: note, actions: actions) { Text("Rename Speaker") }
             Button("Copy Transcript") { NoteActions.copyTranscript(of: note) }
+            SummarizeAgainMenu(note: note, actions: actions) { Text("Summarize Again") }
             ShareLink(item: note.url, preview: SharePreview(note.title))
             Divider()
             Button("Open in Default App") { NSWorkspace.shared.open(note.url) }

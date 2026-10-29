@@ -26,6 +26,12 @@ public actor NoteFileEditor {
         try NoteLibrary.renameSpeaker(old, to: new, inNoteAt: url)
     }
 
+    /// See `NoteLibrary.replaceSummary(ofNoteAt:with:)`.
+    @discardableResult
+    public func replaceSummary(ofNoteAt url: URL, with summary: NoteSummary) throws -> Bool {
+        try NoteLibrary.replaceSummary(ofNoteAt: url, with: summary)
+    }
+
     /// See `NoteLibrary.applyVocabulary(_:toNotesIn:)`. Other changes wait until every note is
     /// done.
     public func applyVocabulary(

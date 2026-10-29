@@ -216,7 +216,7 @@ extension NoteDocument {
 
     /// The indices of `lines` from `start` on that are outside fenced code blocks, without the
     /// fences themselves.
-    private static func linesOutsideCode(_ lines: [String], from start: Int) -> [Int] {
+    static func linesOutsideCode(_ lines: [String], from start: Int) -> [Int] {
         var indices: [Int] = []
         var fence: Substring?
         for index in lines.indices.dropFirst(start) {

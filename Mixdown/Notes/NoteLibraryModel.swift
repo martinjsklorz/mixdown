@@ -13,6 +13,8 @@ final class NoteLibraryModel {
     private(set) var folder: URL?
     private(set) var errorMessage: String?
     private(set) var hasLoaded = false
+    /// The note `summarizeAgain(_:template:with:)` is summarizing, if any.
+    private(set) var summarizingNoteID: NoteDocument.ID?
 
     /// Reads the folder for `reload(from:)`.
     @ObservationIgnored private lazy var loader = NoteLibraryLoader { [weak self] result, directory in
@@ -56,6 +58,25 @@ final class NoteLibraryModel {
         try await editor.renameSpeaker(speaker, to: name, inNoteAt: note.url)
     }
 
+    /// Summarizes the note again with `template`, by `summarizer`, and replaces its summary and
+    /// `template` field, as if it had been made with that template. The title, transcript and
+    /// moments stay. One note at a time; see `summarizingNoteID`.
+    func summarizeAgain(_ note: NoteDocument, template: SummaryTemplate, with summarizer: any Summarizer) async throws {
+        guard summarizingNoteID == nil else { return }
+        summarizingNoteID = note.id
+        defer { summarizingNoteID = nil }
+        let url = note.url
+        let source = try await Task.detached(priority: .userInitiated) {
+            try NoteLibrary.summarySource(ofNoteAt: url)
+        }.value
+        guard let source else { throw SummarizeAgainError.noTranscript }
+        let summary = try await summarizer.summarize(source.transcript, moments: source.moments, template: template)
+        // Written into the note as it is by now, so changes made meanwhile stay.
+        guard try await editor.replaceSummary(ofNoteAt: url, with: summary) else {
+            throw SummarizeAgainError.emptySummary
+        }
+    }
+
     /// Pins or unpins the note, off the main thread.
     func setPinned(_ isPinned: Bool, _ note: NoteDocument) async throws {
         try await editor.setPinned(isPinned, noteAt: note.url)
@@ -75,5 +96,18 @@ final class NoteLibraryModel {
     /// Drops a note that was moved away from `notes` right away, ahead of the next reload.
     func didRemove(_ note: NoteDocument) {
         withAnimation(.snappy) { notes.removeAll { $0.id == note.id } }
+    }
+}
+
+/// Why `NoteLibraryModel.summarizeAgain(_:template:with:)` didn't change a note.
+enum SummarizeAgainError: LocalizedError {
+    case noTranscript
+    case emptySummary
+
+    var errorDescription: String? {
+        switch self {
+        case .noTranscript: "The note has no transcript to summarize."
+        case .emptySummary: "The summary came out empty, so the note was left as it was."
+        }
     }
 }

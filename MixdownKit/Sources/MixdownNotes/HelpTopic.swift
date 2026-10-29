@@ -288,6 +288,8 @@ public enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             `pinned: true` in the note's frontmatter.
             - **Rename** it. This changes both the title inside the note and its file name.
             - **Copy Transcript** as plain text.
+            - **Summarize Again**, with the same template or another. See \
+            [Summaries](mixdown-help:summaries).
             - **Add to Vocabulary** a word the speech model got wrong: select it first. See \
             [Speech Models](mixdown-help:speech-models).
             - **Share** it.
@@ -476,6 +478,12 @@ public enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             That template is preselected for each recording. To use another one for this \
             recording only, pick it on **Record** while recording or transcribing, until the \
             summary starts.
+
+            To summarize a saved note again, click **Summarize Again** (the sparkles) above it, \
+            or use **File → Summarize Again**, and pick a template; the note's own is checked. \
+            Pick it to just try again, e.g. after summarizing failed or with another model. The \
+            summary and the `template` field are replaced; the transcript, moments, title and \
+            file name stay as they are, but edits made inside the old summary are lost.
 
             Turn summaries off under **Settings → Summary → Summarize recordings**. That \
             tab also says why summaries aren't available on this Mac if they aren't.
