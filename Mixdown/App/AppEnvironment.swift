@@ -188,40 +188,14 @@ final class AppEnvironment {
             audioFileDecoder: AudioFileDecoder(),
             recordingStore: .default
         )
-        configure(coordinator, with: preferences, summarizer: summarizer)
+        coordinator.apply(preferences.coordinatorSettings, summarizer: summarizer, diarizer: speakerDiarizer)
         return coordinator
-    }
-
-    /// Hands `coordinator` everything in `preferences` it uses. Assigning a value it already has
-    /// changes nothing.
-    private static func configure(
-        _ coordinator: RecordingCoordinator,
-        with preferences: Preferences,
-        summarizer: any Summarizer
-    ) {
-        coordinator.options.language = preferences.language
-        coordinator.sourceLabels = preferences.sourceLabels
-        coordinator.vocabulary = preferences.vocabulary
-        coordinator.cancelsEcho = preferences.cancelsEcho
-        coordinator.measuresTalkTime = preferences.measuresTalkTime
-        coordinator.keepsAudioOnDisk = preferences.keepsAudioOnDisk
-        let minutes = preferences.stillRecordingMinutes
-        coordinator.stillRecordingDelay = minutes > 0 ? .seconds(minutes * 60) : nil
-        coordinator.speakerDiarizer = preferences.identifiesSpeakers ? speakerDiarizer : nil
-        coordinator.speakerNamer = preferences.identifiesSpeakers && preferences.namesSpeakers ? summarizer : nil
-        coordinator.summarizer = preferences.summarizesNotes ? summarizer : nil
-        let templates = preferences.summaryTemplates
-        coordinator.summaryTemplate = templates.recordingTemplate
-        coordinator.callSummaryTemplate = templates.callTemplate
-        coordinator.updateRecordingSummaryTemplate(from: templates.templates)
-        coordinator.translationLanguage = preferences.translatesNotes ? preferences.translationLanguage : nil
-        coordinator.translatesLiveText = preferences.translatesLiveText
     }
 
     /// Hands the preferences to the coordinator, the call prompt and the recording shortcut. Runs
     /// whenever one changes.
     private func applyPreferences() {
-        Self.configure(coordinator, with: preferences, summarizer: summarizer)
+        coordinator.apply(preferences.coordinatorSettings, summarizer: summarizer, diarizer: Self.speakerDiarizer)
         if let callPrompt {
             callPrompt.apps = preferences.callApps.apps
             callPrompt.notifies = preferences.notifiesAboutCalls && preferences.showsNotifications

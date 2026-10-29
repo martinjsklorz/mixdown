@@ -141,6 +141,26 @@ final class Preferences {
         isChatEnabled = settings.isChatEnabled
     }
 
+    /// What of these the recording coordinator follows; see `RecordingCoordinator.apply`.
+    var coordinatorSettings: CoordinatorSettings {
+        CoordinatorSettings(
+            language: language,
+            sourceLabels: sourceLabels,
+            vocabulary: vocabulary,
+            cancelsEcho: cancelsEcho,
+            measuresTalkTime: measuresTalkTime,
+            keepsAudioOnDisk: keepsAudioOnDisk,
+            stillRecordingMinutes: stillRecordingMinutes,
+            identifiesSpeakers: identifiesSpeakers,
+            namesSpeakers: namesSpeakers,
+            summarizesNotes: summarizesNotes,
+            summaryTemplates: summaryTemplates,
+            translatesNotes: translatesNotes,
+            translationLanguage: translationLanguage,
+            translatesLiveText: translatesLiveText
+        )
+    }
+
     private func save(_ write: (AppSettings) -> Void) {
         write(settings)
         didChange()
