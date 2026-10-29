@@ -93,8 +93,9 @@ struct VocabularyTests {
             ],
             language: "en"
         )
-        let corrected = vocabulary.apply(to: transcript)
+        let (corrected, fuzzyMatches) = vocabulary.correct(transcript) { _ in false }
         #expect(corrected.segments.map(\.text) == ["Mixdown", "on Kubernetes"])
+        #expect(fuzzyMatches.isEmpty)
         #expect(corrected.segments.map(\.speaker) == ["Me", nil])
         #expect(corrected.language == "en")
     }
@@ -109,5 +110,15 @@ struct VocabularyTests {
         #expect(vocabulary.entries.map(\.term) == ["Kubernetes", "Mixdown"])
         #expect(vocabulary.entries[0].soundsLike == ["cooper netties", "kuber nettis"])
         #expect(vocabulary.entries[1].soundsLike == ["mix down"])
+    }
+
+    @Test func decodesEntriesWithoutFuzzyAsOff() throws {
+        let json = #"{"entries": [{"term": "A", "soundsLike": []}, {"term": "B", "soundsLike": [], "fuzzy": "odd"}]}"#
+        let vocabulary = try JSONDecoder().decode(Vocabulary.self, from: Data(json.utf8))
+        #expect(vocabulary.entries.map(\.fuzzy) == [.off, .off])
+
+        let entry = Vocabulary.Entry(term: "Sklorz", soundsLike: [], fuzzy: .loose)
+        let stored = try JSONDecoder().decode(Vocabulary.self, from: JSONEncoder().encode(Vocabulary(entries: [entry])))
+        #expect(stored.entries == [entry])
     }
 }

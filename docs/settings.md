@@ -81,6 +81,11 @@ name, its sections and instructions on what kind of recording it's for and what 
 
 - Words the speech model gets wrong: **Write as** how each is written and **Heard as** what the
   model writes instead, separated by commas. **Add Word** adds a row, the minus button removes one.
+- **Fuzzy**: off by default. **Strict** or **Loose** also corrects spellings close to **Write as**
+  in new recordings and adds them to **Heard as**. See
+  [Speech models](speech-models.md#fuzzy-matching).
+- **Import…** and **Export…**: the words as a JSON file. Import also reads Muesli's custom words.
+  See [Speech models](speech-models.md#import-and-export).
 - **Correct Existing Notes…** makes the same corrections in every note in the notes folder. See
   [Speech models](speech-models.md#vocabulary).
 

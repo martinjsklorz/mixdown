@@ -19,6 +19,11 @@ final class NotePipeline {
     var translator: (any Translator)?
     var translationLanguage: String?
     var vocabulary = Vocabulary()
+    /// Whether the spell checker knows a word, in the transcript's language if it's known, so
+    /// fuzzy vocabulary entries leave it alone.
+    @ObservationIgnored var isKnownWord: @MainActor (_ word: String, _ language: String?) -> Bool = { _, _ in false }
+    /// Called with what fuzzy vocabulary entries corrected in a transcript, if anything.
+    @ObservationIgnored var didMatchFuzzily: @MainActor ([Vocabulary.FuzzyMatch]) -> Void = { _ in }
     /// Renames the speakers the diarizer told apart.
     var speakerNamer: (any Summarizer)?
     /// Speaker names for multi-track notes.
@@ -105,7 +110,11 @@ final class NotePipeline {
         template: () -> SummaryTemplate,
         details: NoteDetails
     ) async throws -> (Note, (any Error)?) {
-        var transcript = vocabulary.apply(to: transcript)
+        let isKnownWord = isKnownWord
+        let language = transcript.language
+        let correction = vocabulary.correct(transcript) { isKnownWord($0, language) }
+        var transcript = correction.transcript
+        if !correction.fuzzyMatches.isEmpty { didMatchFuzzily(correction.fuzzyMatches) }
         let names: [String: String]
         (transcript, names) = await nameSpeakers(speakers, in: transcript)
         try Task.checkCancellation()

@@ -81,6 +81,54 @@ it in existing notes** on to fix it in every note in your notes folder right awa
 notification says how many changed. **Correct Existing Notes…** under **Settings → Vocabulary**
 does the same for every word in the vocabulary.
 
+### Fuzzy matching
+
+A name can come out a little differently each time: "sklortz", "sklorts", "sklorz". Rather than
+listing every one, set **Fuzzy** for the word to **Strict** or **Loose**, and new recordings also
+get spellings close to **Write as** corrected. Closeness is measured by Jaro-Winkler similarity:
+**Strict** takes 0.93 or more, which catches "kubernetis" for Kubernetes (0.96) and "mixtown" for
+Mixdown (0.93); **Loose** takes 0.88 or more, which also catches "sklorts" for Sklorz (0.91).
+
+It's off by default and meant for unusual names, as ordinary words come just as close: "clause"
+scores 0.93 against Claude and "marketing" 0.92 against Martin. So it never changes words your
+Mac's spell checker knows, in the transcript's language or yours, words shorter than five
+letters, very common words, or words that are part of another entry. It only looks at words the
+exact matches left alone, and the words of a name of several words have to follow each other
+with nothing but spaces between them. **Write as** has to be letters and digits, with a word of
+five letters or more.
+
+What it corrects is added to **Heard as**, so you can see it, and from then on it's matched
+exactly. If one is wrong, remove it and set **Fuzzy** back to **Off**. **Correct Existing Notes…**
+only makes exact matches, so it changes nothing you haven't seen under **Heard as**.
+
+### Import and export
+
+**Export…** under **Settings → Vocabulary** saves your words as a JSON file, to share a team's
+customer and product names, move to another Mac, keep in git or edit in a text editor:
+
+```json
+[
+  {
+    "term": "Kubernetes",
+    "soundsLike": ["cooper netties", "kuber nettis"]
+  },
+  {
+    "term": "Sklorz",
+    "soundsLike": [],
+    "fuzzy": "strict"
+  }
+]
+```
+
+**Import…** adds the words in such a file to yours: new words are added at the end, a word you
+have already (ignoring case) gets the ways of hearing it that are new, and nothing is removed.
+`fuzzy` changes the word's setting only when the file has it. Mixdown then says how many words
+were added, updated and unchanged, and offers to correct your existing notes with what's new.
+
+Import also reads Muesli's custom words, `[{"word": "museli", "replacement": "muesli"}]`: the
+replacement becomes **Write as** and the word **Heard as**. Their matching threshold isn't taken
+over, so fuzzy matching stays off until you turn it on.
+
 Correcting a note changes its file in place: its title, the `# Title` heading and the text below
 it. Section headings like `## Transcript` and code blocks stay as they are, and so does the file
 name; rename the note to change it. This can't be undone.

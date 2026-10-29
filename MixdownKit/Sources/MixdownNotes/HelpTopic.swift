@@ -412,6 +412,16 @@ public enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
             it in all your notes right away. **Correct Existing Notes…** in Settings does that for \
             the whole vocabulary. This changes the note files and can't be undone.
 
+            For an unusual name that comes out a little differently each time, like "sklortz" for \
+            Sklorz, set **Fuzzy** to **Strict** or **Loose**. New recordings then also get \
+            spellings close to it corrected. It leaves alone short and common words, and any the \
+            spell checker knows, as "clause" is just as close to Claude. What it corrects is added \
+            to **Heard as**; if one is wrong, remove it and set **Fuzzy** back to **Off**.
+
+            **Export…** saves your words as a JSON file, to share or move to another Mac. \
+            **Import…** adds the words in such a file to yours, without removing any, and reads \
+            Muesli's custom words too. Mixdown then offers to correct your notes with the new ones.
+
             ## Speakers
 
             Turn on **Settings → Transcription → Tell speakers apart** to label the people on the \

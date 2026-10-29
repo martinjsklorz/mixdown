@@ -189,6 +189,9 @@ final class AppEnvironment {
             recordingStore: .default
         )
         coordinator.apply(preferences.coordinatorSettings, summarizer: summarizer, diarizer: speakerDiarizer)
+        coordinator.isKnownWord = { KnownWords.contains($0, language: $1) }
+        // Shown under Heard as, where wrong ones can be removed.
+        coordinator.didMatchFuzzily = { preferences.vocabulary = preferences.vocabulary.learning($0) }
         return coordinator
     }
 
