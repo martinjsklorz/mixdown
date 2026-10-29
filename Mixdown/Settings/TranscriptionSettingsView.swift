@@ -60,18 +60,12 @@ struct TranscriptionSettingsView: View {
             Section {
                 TextField(
                     "Microphone",
-                    text: Binding(
-                        get: { preferences.sourceLabels.microphone },
-                        set: { preferences.sourceLabels.microphone = $0 }
-                    ),
+                    text: Bindable(preferences).sourceLabels.microphone,
                     prompt: Text(SourceLabels.defaultMicrophone)
                 )
                 TextField(
                     "System audio",
-                    text: Binding(
-                        get: { preferences.sourceLabels.systemAudio },
-                        set: { preferences.sourceLabels.systemAudio = $0 }
-                    ),
+                    text: Bindable(preferences).sourceLabels.systemAudio,
                     prompt: Text(SourceLabels.defaultSystemAudio)
                 )
             } header: {
@@ -95,10 +89,7 @@ struct TranscriptionSettingsView: View {
                 speakerModelStatus
                 Toggle(
                     "Name speakers from the conversation",
-                    isOn: Binding(
-                        get: { preferences.namesSpeakers },
-                        set: { preferences.namesSpeakers = $0 }
-                    )
+                    isOn: Bindable(preferences).namesSpeakers
                 )
                 .disabled(!preferences.identifiesSpeakers)
             } header: {

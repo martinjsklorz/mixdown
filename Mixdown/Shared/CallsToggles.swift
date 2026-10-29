@@ -17,10 +17,7 @@ struct CallsToggles: View {
         .disabled(!environment.preferences.showsNotifications)
         Toggle(
             "Record calls automatically",
-            isOn: Binding(
-                get: { environment.preferences.recordsCallsAutomatically },
-                set: { environment.preferences.recordsCallsAutomatically = $0 }
-            )
+            isOn: Bindable(environment.preferences).recordsCallsAutomatically
         )
     }
 }

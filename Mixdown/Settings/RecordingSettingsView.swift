@@ -30,10 +30,7 @@ struct RecordingSettingsView: View {
                 Section {
                     Toggle(
                         "Remove echo from the microphone",
-                        isOn: Binding(
-                            get: { preferences.cancelsEcho },
-                            set: { preferences.cancelsEcho = $0 }
-                        )
+                        isOn: Bindable(preferences).cancelsEcho
                     )
                 } header: {
                     Text("Echo")
@@ -48,10 +45,7 @@ struct RecordingSettingsView: View {
                 Section {
                     Toggle(
                         "Measure talk time",
-                        isOn: Binding(
-                            get: { preferences.measuresTalkTime },
-                            set: { preferences.measuresTalkTime = $0 }
-                        )
+                        isOn: Bindable(preferences).measuresTalkTime
                     )
                 } header: {
                     Text("Talk Time")
@@ -67,10 +61,7 @@ struct RecordingSettingsView: View {
             Section {
                 Picker(
                     "Ask if still recording after",
-                    selection: Binding(
-                        get: { preferences.stillRecordingMinutes },
-                        set: { preferences.stillRecordingMinutes = $0 }
-                    )
+                    selection: Bindable(preferences).stillRecordingMinutes
                 ) {
                     ForEach(AppSettings.stillRecordingMinuteChoices, id: \.self) { minutes in
                         Text("\(minutes) Minutes").tag(minutes)
@@ -92,10 +83,7 @@ struct RecordingSettingsView: View {
             Section {
                 Picker(
                     "Keep audio until the note is saved",
-                    selection: Binding(
-                        get: { preferences.keepsAudioOnDisk },
-                        set: { preferences.keepsAudioOnDisk = $0 }
-                    )
+                    selection: Bindable(preferences).keepsAudioOnDisk
                 ) {
                     Text("On Disk").tag(true)
                     Text("In Memory Only").tag(false)

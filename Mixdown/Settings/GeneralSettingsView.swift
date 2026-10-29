@@ -36,10 +36,7 @@ struct GeneralSettingsView: View {
                 )
                 Toggle(
                     "Show notes in Spotlight",
-                    isOn: Binding(
-                        get: { preferences.indexesNotesInSpotlight },
-                        set: { preferences.indexesNotesInSpotlight = $0 }
-                    )
+                    isOn: Bindable(preferences).indexesNotesInSpotlight
                 )
                 Caption("Search for any line of a note with Spotlight (⌘Space). The index stays on this Mac.")
             }
@@ -65,10 +62,7 @@ struct GeneralSettingsView: View {
                 KeyboardShortcuts.Recorder("Catch me up while recording", name: .catchUp)
                 Picker(
                     "Catch up on the last",
-                    selection: Binding(
-                        get: { preferences.catchUpMinutes },
-                        set: { preferences.catchUpMinutes = $0 }
-                    )
+                    selection: Bindable(preferences).catchUpMinutes
                 ) {
                     ForEach(AppSettings.catchUpMinuteChoices, id: \.self) { minutes in
                         Text(minutes == 1 ? "Minute" : "\(minutes) Minutes").tag(minutes)

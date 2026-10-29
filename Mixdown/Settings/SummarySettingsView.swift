@@ -15,10 +15,7 @@ struct SummarySettingsView: View {
             Section {
                 Toggle(
                     "Summarize recordings",
-                    isOn: Binding(
-                        get: { preferences.summarizesNotes },
-                        set: { preferences.summarizesNotes = $0 }
-                    )
+                    isOn: Bindable(preferences).summarizesNotes
                 )
             } footer: {
                 Caption(footer)
@@ -27,17 +24,11 @@ struct SummarySettingsView: View {
             Section {
                 templatePicker(
                     "Manual recordings",
-                    selection: Binding(
-                        get: { preferences.summaryTemplates.recordingTemplate },
-                        set: { preferences.summaryTemplates.recordingTemplate = $0 }
-                    )
+                    selection: Bindable(preferences).summaryTemplates.recordingTemplate
                 )
                 templatePicker(
                     "Detected calls",
-                    selection: Binding(
-                        get: { preferences.summaryTemplates.callTemplate },
-                        set: { preferences.summaryTemplates.callTemplate = $0 }
-                    )
+                    selection: Bindable(preferences).summaryTemplates.callTemplate
                 )
                 Button("Edit Templates…") { navigation.settingsTab = .templates }
             } header: {

@@ -22,18 +22,12 @@ struct DesignSettingsView: View {
             Section {
                 Toggle(
                     "Show recording in the Dynamic Island",
-                    isOn: Binding(
-                        get: { preferences.showsRecordingInDynamicIsland },
-                        set: { preferences.showsRecordingInDynamicIsland = $0 }
-                    )
+                    isOn: Bindable(preferences).showsRecordingInDynamicIsland
                 )
                 Group {
                     Picker(
                         "Time",
-                        selection: Binding(
-                            get: { preferences.islandLayout.timeSide },
-                            set: { preferences.islandLayout.timeSide = $0 }
-                        )
+                        selection: Bindable(preferences).islandLayout.timeSide
                     ) {
                         ForEach(DynamicIsland.Side.allCases) { side in
                             Text(side.title).tag(side)
@@ -42,10 +36,7 @@ struct DesignSettingsView: View {
                     .pickerStyle(.segmented)
                     Toggle(
                         "Show input levels",
-                        isOn: Binding(
-                            get: { preferences.islandLayout.showsLevels },
-                            set: { preferences.islandLayout.showsLevels = $0 }
-                        )
+                        isOn: Bindable(preferences).islandLayout.showsLevels
                     )
                     // Shown off while it can't apply, but remembered for when it can.
                     Toggle(
