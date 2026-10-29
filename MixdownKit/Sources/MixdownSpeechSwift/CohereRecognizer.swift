@@ -19,18 +19,13 @@ final class CohereRecognizer: SpeechRecognizer, @unchecked Sendable {
     }
 
     static func load(
-        repositoryID: String,
+        _ cached: CachedModel,
         cacheBase: URL,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws -> CohereRecognizer {
-        let directory = try ModelCache.directory(for: repositoryID, base: cacheBase)
-        let model = try await ModelDirectory.loadPreferringCache(
-            repositoryID,
-            cacheLooksComplete: cacheLooksComplete(in: directory),
-            progress: progress
-        ) { offline, progress in
+        let model = try await cached.load(base: cacheBase, progress: progress) { directory, offline, progress in
             try await CohereTranscribeModel.fromPretrained(
-                repositoryID,
+                cached.repositoryID,
                 cacheDir: directory,
                 offlineMode: offline,
                 progressHandler: { progress($0) }
@@ -41,9 +36,7 @@ final class CohereRecognizer: SpeechRecognizer, @unchecked Sendable {
 
     /// Offline, `fromPretrained` checks only for weights, so also require the config and the
     /// tokenizer files it downloads with them (`CohereTranscribeModel.downloadAdditionalFiles`).
-    static func cacheLooksComplete(in directory: URL) -> Bool {
-        ModelCache.contains(weightsAnd: ["config.json", "tokenizer.model", "tokenizer_config.json"], in: directory)
-    }
+    static let requiredFiles = ["config.json", "tokenizer.model", "tokenizer_config.json"]
 
     func languageHint(forISOCode code: String) -> String? {
         Self.languages.contains(code) ? code : nil

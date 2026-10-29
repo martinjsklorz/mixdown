@@ -76,8 +76,14 @@ extension SpeechSwiftModel {
         // INT8 rather than speech-swift's INT5 default: FP16's WER (6.18% vs 6.29% on FLEURS
         // English) for ~650 MB more RAM (docs/benchmarks/cohere-voxtral-asr.md).
         case .cohereTranscribe: "aufklarer/Cohere-Transcribe-2B-MLX-8bit"
-        case .nemotronStreaming: LiveRecognizer.repositoryID
+        case .nemotronStreaming: LiveRecognizer.cachedModel.repositoryID
         }
+    }
+
+    /// The model's files on disk (the VAD's aren't included).
+    var cachedModel: CachedModel {
+        guard let recognizerType else { return LiveRecognizer.cachedModel }
+        return CachedModel(repositoryID: repositoryID, requiredFiles: recognizerType.requiredFiles)
     }
 
     /// Seconds of audio a piece takes per second of recognition, for the progress estimate until

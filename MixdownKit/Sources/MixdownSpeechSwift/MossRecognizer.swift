@@ -31,20 +31,15 @@ final class MossRecognizer: SpeechRecognizer, @unchecked Sendable {
     }
 
     static func load(
-        repositoryID: String,
+        _ cached: CachedModel,
         cacheBase: URL,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws -> MossRecognizer {
-        let directory = try ModelCache.directory(for: repositoryID, base: cacheBase)
         // Offline loads validate the whole bundle (`fromDirectory`), so a partial cache throws and
         // falls through to the online load.
-        let model = try await ModelDirectory.loadPreferringCache(
-            repositoryID,
-            cacheLooksComplete: cacheLooksComplete(in: directory),
-            progress: progress
-        ) { offline, progress in
+        let model = try await cached.load(base: cacheBase, progress: progress) { directory, offline, progress in
             try await MossMLXModel.fromPretrained(
-                modelId: repositoryID,
+                modelId: cached.repositoryID,
                 cacheDir: directory,
                 offlineMode: offline,
                 progressHandler: { fraction, _ in progress(fraction) }
@@ -54,15 +49,10 @@ final class MossRecognizer: SpeechRecognizer, @unchecked Sendable {
     }
 
     /// `MossMLXModel.requiredBundleFiles`, which speech-swift doesn't expose.
-    static func cacheLooksComplete(in directory: URL) -> Bool {
-        ModelCache.contains(
-            weightsAnd: [
-                "config.json", "audio_encoder.safetensors", "decoder.safetensors", "processor_config.json",
-                "preprocessor_config.json", "generation_config.json", "tokenizer.json", "tokenizer_config.json",
-            ],
-            in: directory
-        )
-    }
+    static let requiredFiles = [
+        "config.json", "audio_encoder.safetensors", "decoder.safetensors", "processor_config.json",
+        "preprocessor_config.json", "generation_config.json", "tokenizer.json", "tokenizer_config.json",
+    ]
 
     /// MOSS takes no language hint; it transcribes whatever it hears.
     func languageHint(forISOCode code: String) -> String? { nil }
