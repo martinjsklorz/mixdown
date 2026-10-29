@@ -57,16 +57,26 @@ struct CallRecorderTests {
             )
         }
 
-        /// Starts a call and waits until the detector has said so.
-        func callStarts() async throws {
+        /// Starts a call and waits until the recorder has posted or recorded for it, or, if it's
+        /// not meant to do either, a while.
+        func callStarts(expectsNothing: Bool = false) async throws {
+            let before = notifier.posted.count + starts
             monitor.send([CallRecorderTests.zoom])
-            try await Task.sleep(for: .milliseconds(60))
+            if expectsNothing {
+                try await Task.sleep(for: .milliseconds(100))
+            } else {
+                try await waitUntil { self.notifier.posted.count + self.starts > before }
+            }
         }
 
-        /// Ends the call and waits until the detector has said so.
-        func callEnds() async throws {
+        /// Ends the call and waits until `condition`, or a while without one.
+        func callEnds(until condition: (() -> Bool)? = nil) async throws {
             monitor.send([])
-            try await Task.sleep(for: .milliseconds(60))
+            if let condition {
+                try await waitUntil(condition)
+            } else {
+                try await Task.sleep(for: .milliseconds(100))
+            }
         }
 
         /// The recording the recorder asked for has started, as the coordinator would say.
@@ -88,8 +98,7 @@ struct CallRecorderTests {
         try await harness.callStarts()
         let id = try #require(harness.notifier.id(of: .recordPrompt(app: "Zoom")))
 
-        try await harness.callEnds()
-        #expect(harness.notifier.removed == [id])
+        try await harness.callEnds { harness.notifier.removed == [id] }
         // Clicking it now would start an empty recording.
         harness.recorder.recordFromPrompt(app: "Zoom", id: id)
         #expect(harness.starts == 0)
@@ -123,8 +132,8 @@ struct CallRecorderTests {
         let harness = Harness()
         harness.recorder.notifies = true
         harness.isRecording = true  // started by hand
-        try await harness.callStarts()
-        try await harness.callEnds()
+        try await harness.callStarts(expectsNothing: true)
+        try await harness.callEnds { harness.notifier.id(of: .stopPrompt(app: "Zoom")) != nil }
         let id = try #require(harness.notifier.id(of: .stopPrompt(app: "Zoom")))
 
         harness.recorder.stopFromPrompt(id: "from-an-earlier-run")
@@ -141,8 +150,7 @@ struct CallRecorderTests {
         harness.recorder.recordPromptDismissed(app: "Zoom", id: id)
         try await harness.callEnds()
 
-        harness.monitor.send([Self.zoom])
-        try await Task.sleep(for: .milliseconds(60))
+        try await harness.callStarts(expectsNothing: true)
         #expect(harness.notifier.posted.count == 1)
     }
 
@@ -153,8 +161,7 @@ struct CallRecorderTests {
         let id = try #require(harness.notifier.id(of: .recordPrompt(app: "Zoom")))
 
         harness.recorder.recordPromptDismissed(app: "Zoom", id: "from-an-earlier-run")
-        try await harness.callEnds()
-        #expect(harness.notifier.removed == [id])
+        try await harness.callEnds { harness.notifier.removed == [id] }
     }
 
     @Test func turningNotificationsOffTakesThemAway() async throws {
@@ -216,7 +223,7 @@ struct CallRecorderTests {
         harness.recorder.recordsAutomatically = true
         harness.isRecording = true
         harness.recordingStarted()
-        try await harness.callStarts()
+        try await harness.callStarts(expectsNothing: true)
         try await harness.callEnds()
         try await Task.sleep(for: .milliseconds(100))
         #expect(harness.stops == 0)

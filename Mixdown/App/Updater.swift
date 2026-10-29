@@ -43,17 +43,19 @@ final class Updater {
         )
         self.controller = controller
         let updater = controller.updater
+        // The values come from the change, as the updater itself is the main actor's and these
+        // closures may run elsewhere.
         observations = [
-            updater.observe(\.canCheckForUpdates, options: [.initial, .new]) { [weak self] updater, _ in
-                let value = updater.canCheckForUpdates
+            updater.observe(\.canCheckForUpdates, options: [.initial, .new]) { [weak self] _, change in
+                let value = change.newValue ?? false
                 Task { @MainActor in self?.canCheckForUpdates = value }
             },
-            updater.observe(\.automaticallyChecksForUpdates, options: [.initial, .new]) { [weak self] updater, _ in
-                let value = updater.automaticallyChecksForUpdates
+            updater.observe(\.automaticallyChecksForUpdates, options: [.initial, .new]) { [weak self] _, change in
+                let value = change.newValue ?? false
                 Task { @MainActor in self?.syncAutomaticallyChecks(value) }
             },
-            updater.observe(\.automaticallyDownloadsUpdates, options: [.initial, .new]) { [weak self] updater, _ in
-                let value = updater.automaticallyDownloadsUpdates
+            updater.observe(\.automaticallyDownloadsUpdates, options: [.initial, .new]) { [weak self] _, change in
+                let value = change.newValue ?? false
                 Task { @MainActor in self?.syncAutomaticallyDownloads(value) }
             },
         ]

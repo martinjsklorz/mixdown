@@ -17,7 +17,7 @@ public final class MLXSummarizer: Summarizer {
     public let info: SummarizerInfo
     public let model: MLXLanguageModel
 
-    private let runtime: LanguageModelRuntime
+    private let runtime: any LanguageModelResponding
     /// Whether the model is on disk, checked when created and after `download` and `deleteModel`,
     /// so `availability` doesn't touch the disk.
     private let downloaded: Mutex<Bool>
@@ -32,11 +32,18 @@ public final class MLXSummarizer: Summarizer {
     /// Most tokens of an answer naming speakers: a few labels and names.
     static let maximumNamesTokens = 300
 
-    public init(model: MLXLanguageModel) {
+    public convenience init(model: MLXLanguageModel) {
+        self.init(model: model, runtime: LanguageModelRuntime(model: model), isDownloaded: ModelFiles.isComplete(model))
+    }
+
+    /// - Parameters:
+    ///   - runtime: Answers the prompts.
+    ///   - isDownloaded: Whether the model is on disk.
+    init(model: MLXLanguageModel, runtime: any LanguageModelResponding, isDownloaded: Bool) {
         self.model = model
         self.info = SummarizerInfo(id: "mlx-\(model.rawValue)", displayName: model.displayName)
-        self.runtime = LanguageModelRuntime(model: model)
-        self.downloaded = Mutex(ModelFiles.isComplete(model))
+        self.runtime = runtime
+        self.downloaded = Mutex(isDownloaded)
     }
 
     public var availability: SummarizerAvailability {
