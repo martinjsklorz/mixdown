@@ -46,12 +46,6 @@ enum Notifications {
         center.removeDeliveredNotifications(withIdentifiers: [id])
     }
 
-    /// Whether the user turned Mixdown's notifications off in System Settings, so none are shown
-    /// even with them on in Mixdown's Settings.
-    nonisolated static func isDeniedBySystem() async -> Bool {
-        await authorizationStatus() == .denied
-    }
-
     /// Whether Mixdown may notify: `.notDetermined` until the user answers the system prompt.
     nonisolated static func authorizationStatus() async -> UNAuthorizationStatus {
         await UNUserNotificationCenter.current().notificationSettings().authorizationStatus

@@ -4,27 +4,16 @@ import SwiftUI
 /// Notifications and the sounds that mark recording starting, pausing, stopping and finishing.
 struct NotificationsSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
-    @State private var notificationsDeniedBySystem = false
 
     var body: some View {
         @Bindable var preferences = environment.preferences
         Form {
             Section {
-                Toggle("Show notifications", isOn: $preferences.showsNotifications)
-                if preferences.showsNotifications, notificationsDeniedBySystem {
-                    HStack {
-                        Caption("Turned off for Mixdown in System Settings.", isWarning: true)
-                        Spacer()
-                        Button("Open System Settings") { SystemSettings.open(.notifications) }
-                    }
-                }
+                NotificationsToggle()
             } header: {
                 Text("Notifications")
             } footer: {
-                Caption(
-                    "Say when a note is ready, ask about calls, confirm copying a transcript, and offer "
-                        + "Restore after deleting a note."
-                )
+                Caption(NotificationsToggle.footer)
             }
 
             Section {
@@ -40,15 +29,6 @@ struct NotificationsSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        // The user can turn notifications off in System Settings › Notifications, so re-read on
-        // switching to this tab, and whenever a window of ours comes back to the front: on reopening
-        // Settings (which keeps this view alive) and on returning from System Settings.
-        .onAppear { refresh() }
-        .onWindowBecomesKey { refresh() }
-    }
-
-    private func refresh() {
-        Task { notificationsDeniedBySystem = await Notifications.isDeniedBySystem() }
     }
 }
 
