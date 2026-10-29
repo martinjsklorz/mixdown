@@ -503,80 +503,33 @@ final class AppEnvironment {
 
     // MARK: Global shortcut
 
-    /// Starts or stops recording on the global shortcut, from any app. `applyPreferences()` turns
-    /// it on or off.
+    /// Starts or stops recording on the global shortcut, from any app, like `mixdown://toggle`.
+    /// `applyPreferences()` turns it on or off.
     private func listenForRecordingShortcut() {
         KeyboardShortcuts.onKeyUp(for: .toggleRecording) { [weak self] in
-            self?.toggleRecordingFromOutside()
-        }
-    }
-
-    /// Starts or stops recording from another app: the global shortcut or a `mixdown://` link.
-    /// See `startRecordingFromOutside()`.
-    private func toggleRecordingFromOutside() {
-        if coordinator.canStopRecording {
-            Task { [coordinator] in await coordinator.stopRecording() }
-        } else {
-            startRecordingFromOutside()
-        }
-    }
-
-    /// Starts recording from another app. While busy downloading, transcribing, translating or
-    /// summarizing, it beeps, as recording can start once that's done. When recording can't start
-    /// for something the user has to do (no notes folder, model or input), it opens Record
-    /// instead, which says what.
-    private func startRecordingFromOutside() {
-        if coordinator.canStartRecording {
-            Task { [coordinator] in await coordinator.startRecording() }
-        } else if !coordinator.isIdle {
-            NSSound.beep()
-        } else {
-            showRecorder()
+            self?.perform(.toggleRecording)
         }
     }
 
     // MARK: Links
 
-    /// Does what a `mixdown://` link asks, for Raycast, Stream Deck, Keyboard Maestro and the like.
-    /// Starting and stopping work like the global shortcut. Starting while recording, stopping
-    /// while not, and the like do nothing, so a script can ask without checking first; pausing,
-    /// resuming and marking a moment beep when not recording, like the Mark Moment shortcut. Only
-    /// opening, and starting when recording can't start, bring the main window forward.
+    /// Does what a `mixdown://` link asks, for Raycast, Stream Deck, Keyboard Maestro and the like:
+    /// whatever `RecordingCoordinator.action(for:)` makes of it now.
     func perform(_ command: URLCommand) {
-        switch command {
-        case .toggleRecording:
-            toggleRecordingFromOutside()
-        case .startRecording:
-            guard !coordinator.canStopRecording else { return }
-            startRecordingFromOutside()
-        case .stopRecording:
-            guard coordinator.canStopRecording else { return }
-            Task { [coordinator] in await coordinator.stopRecording() }
-        case .pauseRecording, .resumeRecording, .togglePause:
-            guard coordinator.isRecording else {
-                NSSound.beep()
-                return
-            }
-            // Pausing while paused and resuming while recording are ignored.
-            Task { [coordinator] in
-                switch command {
-                case .pauseRecording: await coordinator.pauseRecording()
-                case .resumeRecording: await coordinator.resumeRecording()
-                default: await coordinator.togglePause()
-                }
-            }
-        case .markMoment(nil):
-            island.markMoment()
-        case .markMoment(let text?):
-            guard let time = coordinator.momentTime else {
-                NSSound.beep()
-                return
-            }
-            coordinator.addMoment(at: time, text: text)
-        case .open(nil):
-            showMainWindow()
-        case .open(let reference?):
-            Task { await openNote(reference) }
+        let coordinator = coordinator
+        switch coordinator.action(for: command) {
+        case .startRecording: Task { await coordinator.startRecording() }
+        case .stopRecording: Task { await coordinator.stopRecording() }
+        case .pauseRecording: Task { await coordinator.pauseRecording() }
+        case .resumeRecording: Task { await coordinator.resumeRecording() }
+        case .togglePause: Task { await coordinator.togglePause() }
+        case .beep: NSSound.beep()
+        case .showRecorder: showRecorder()
+        case .markMoment: island.markMoment()
+        case .addMoment(let time, let text): coordinator.addMoment(at: time, text: text)
+        case .showMainWindow: showMainWindow()
+        case .openNote(let reference): Task { await openNote(reference) }
+        case .nothing: break
         }
     }
 
