@@ -20,8 +20,8 @@ struct MainView: View {
     @State private var noteToTrash: NoteDocument?
     /// What to fill in as heard when adding to the vocabulary, while its sheet is open.
     @State private var vocabularyDraft: VocabularyDraft?
-    @AppStorage(AppSettings.Key.suppressesTrashConfirmation) private var suppressesTrashConfirmation = false
-    @AppStorage(AppSettings.Key.collapsesPinnedNotes) private var collapsesPinnedNotes = false
+    @AppStorage(.suppressesTrashConfirmation) private var suppressesTrashConfirmation: Bool
+    @AppStorage(.collapsesPinnedNotes) private var collapsesPinnedNotes: Bool
     @State private var titleDraft = ""
     @FocusState private var isChatFieldFocused: Bool
 

@@ -4,7 +4,7 @@ import SwiftUI
 struct DesignSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
     private var preferences: Preferences { environment.preferences }
-    @AppStorage(AppSettings.Key.appearance) private var appearance: Appearance = .auto
+    @AppStorage(.appearance) private var appearance: Appearance
 
     var body: some View {
         Form {

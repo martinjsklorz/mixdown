@@ -1,5 +1,6 @@
 import Foundation
 import MixdownCore
+import SwiftUI
 import os
 
 /// Typed access to Mixdown's preferences in `UserDefaults`.
@@ -307,7 +308,8 @@ struct AppSettings {
 
     /// Light or dark mode for the app. Follows the system unless set.
     var appearance: Appearance {
-        defaults.string(forKey: Key.appearance).flatMap(Appearance.init(rawValue:)) ?? .auto
+        defaults.string(forKey: Key.appearance).flatMap(Appearance.init(rawValue:))
+            ?? Preference.appearance.defaultValue
     }
 
     /// Whether to show a recording in the Dynamic Island. On unless turned off.
@@ -363,4 +365,37 @@ extension AppSettings {
 
     /// Where `decoded(_:forKey:)` keeps a copy of data at `key` it couldn't read.
     static func unreadableKey(_ key: String) -> String { "\(key).unreadable" }
+}
+
+/// A setting read with `@AppStorage`: its key, and its value while nothing is stored, so the views
+/// that read it and `AppSettings` agree on that value.
+struct Preference<Value> {
+    let key: String
+    let defaultValue: Value
+}
+
+extension Preference where Value == Bool {
+    static var suppressesTrashConfirmation: Self {
+        Self(key: AppSettings.Key.suppressesTrashConfirmation, defaultValue: false)
+    }
+
+    static var collapsesPinnedNotes: Self {
+        Self(key: AppSettings.Key.collapsesPinnedNotes, defaultValue: false)
+    }
+}
+
+extension Preference where Value == Appearance {
+    static var appearance: Self {
+        Self(key: AppSettings.Key.appearance, defaultValue: .auto)
+    }
+}
+
+extension AppStorage {
+    init(_ preference: Preference<Value>) where Value == Bool {
+        self.init(wrappedValue: preference.defaultValue, preference.key)
+    }
+
+    init(_ preference: Preference<Value>) where Value: RawRepresentable, Value.RawValue == String {
+        self.init(wrappedValue: preference.defaultValue, preference.key)
+    }
 }

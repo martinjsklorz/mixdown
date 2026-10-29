@@ -4,7 +4,7 @@ import SwiftUI
 struct GeneralSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
     private var preferences: Preferences { environment.preferences }
-    @AppStorage(AppSettings.Key.suppressesTrashConfirmation) private var suppressesTrashConfirmation = false
+    @AppStorage(.suppressesTrashConfirmation) private var suppressesTrashConfirmation: Bool
 
     var body: some View {
         let notesFolder = environment.notesFolder

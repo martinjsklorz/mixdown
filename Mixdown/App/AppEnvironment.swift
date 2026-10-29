@@ -663,6 +663,11 @@ final class AppEnvironment {
     /// Whether `summaryModel` is on disk; always true for one macOS provides.
     var isSummaryModelDownloaded: Bool { summaryModelDownload?.isDownloaded ?? true }
 
+    /// Marks the setup assistant as done, so it doesn't open again at the next launch.
+    func finishSetup() {
+        settings.needsSetup = false
+    }
+
     /// Checks again whether the speaker and summary models are on disk, for views that show it,
     /// as recordings download them when they need them and Finder can remove them.
     func refreshModelDownloads() {
