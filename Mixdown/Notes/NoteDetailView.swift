@@ -2,11 +2,12 @@ import MixdownNotes
 import SwiftUI
 
 /// A rendered preview of one note. The text is read-only; `DetailToolbar` pins, renames, copies,
-/// shares and trashes the note. Scrolls to a line picked in Spotlight and highlights it for a
+/// summarizes again, shares and trashes the note. Scrolls to a line picked in Spotlight and highlights it for a
 /// moment.
 struct NoteDetailView: View {
     let note: NoteDocument
     @Environment(MainNavigation.self) private var navigation
+    @Environment(AppEnvironment.self) private var environment
     /// The block `MainNavigation.blockToShow` asked for, while it's highlighted. Kept with its
     /// note, as this view stays when another note is selected.
     @State private var highlight: MainNavigation.NoteBlock?
@@ -30,6 +31,15 @@ struct NoteDetailView: View {
             LazyVStack(alignment: .leading, spacing: 0) {
                 NoteMetadataView(note: note)
                     .padding(.bottom, 16)
+                if environment.library.summarizingNoteID == note.id {
+                    Label {
+                        Text("Summarizing again…")
+                    } icon: {
+                        ProgressView().controlSize(.small)
+                    }
+                    .foregroundStyle(.secondary)
+                    .padding(.bottom, 16)
+                }
                 // In place of the note's `## Talk Time` table, which `displayBlocks()` leaves out.
                 if let timeline = note.talkTimeline {
                     TalkTimelineView(timeline: timeline)

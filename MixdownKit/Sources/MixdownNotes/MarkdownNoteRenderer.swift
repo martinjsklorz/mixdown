@@ -52,10 +52,7 @@ public enum MarkdownNoteRenderer {
         if note.isCall, let app = note.callApp.map(singleLine), !app.isEmpty {
             lines.append("call_app: \(yamlQuoted(app))")
         }
-        // `general` says nothing about the kind of recording. Built-ins go by their id, so a note
-        // still counts as a 1:1 after the user renames that template; the user's own by name.
-        if let template = note.template, template.id != SummaryTemplate.general.id {
-            let value = template.isBuiltIn ? template.id : yamlQuoted(singleLine(template.displayName))
+        if let value = note.template.flatMap(templateField) {
             lines.append("template: \(value)")
         }
         if let language = note.transcript.language, !language.isEmpty {
@@ -81,6 +78,14 @@ public enum MarkdownNoteRenderer {
         lines.append("tags: [mixdown]")
         lines.append("---")
         return lines.joined(separator: "\n")
+    }
+
+    /// The frontmatter's `template` value for `template`, or `nil` to leave the field out:
+    /// `general` says nothing about the kind of recording. Built-ins go by their id, so a note
+    /// still counts as a 1:1 after the user renames that template; the user's own by name.
+    static func templateField(for template: SummaryTemplate) -> String? {
+        guard template.id != SummaryTemplate.general.id else { return nil }
+        return template.isBuiltIn ? template.id : yamlQuoted(singleLine(template.displayName))
     }
 
     /// Body sections in display order.

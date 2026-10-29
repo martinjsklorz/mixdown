@@ -67,6 +67,16 @@ Deleting one of yours leaves the notes summarized with it as they are.
 That template is preselected for each recording. To use another one for this recording only, pick
 it on **Record** while recording or transcribing, until the summary starts.
 
+## Summarizing again
+
+To summarize a saved note again, click **Summarize Again** (the sparkles) above it, right-click it
+in the sidebar, or use **File → Summarize Again**, and pick a template. The note's own template is
+checked; pick it to just try again, e.g. after summarizing failed or with another model. The
+summary model reads the note's transcript (or its translation) and the moments you marked, and
+replaces the `## Summary` section and the `template` field. A note without a summary gets one. The
+moments, the transcript, the title and the file name stay as they are, so edits you made there are
+kept; edits inside the old summary aren't.
+
 ## Turning summaries off
 
 Untick **Settings → Summary → Summarize recordings**. That tab also says why summaries

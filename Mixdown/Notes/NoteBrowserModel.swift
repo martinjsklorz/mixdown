@@ -1,9 +1,10 @@
 import Foundation
+import MixdownCore
 import MixdownNotes
 import Observation
 
 /// What the main window's note browser does with the notes: searching them, picking the
-/// selection as they change, and renaming, pinning and trashing them. One for the whole app (see
+/// selection as they change, and renaming, summarizing again, pinning and trashing them. One for the whole app (see
 /// `AppEnvironment.noteBrowser`), next to the `library` it shows; `MainView` only lays it out and
 /// asks for what it needs.
 @MainActor @Observable
@@ -135,6 +136,18 @@ final class NoteBrowserModel {
             try await library.renameSpeaker(speaker, to: name, in: note)
         } catch {
             failure = Failure(title: "Couldn't Rename Speaker", message: error.localizedDescription)
+        }
+        await reload()
+    }
+
+    func summarizeAgain(_ note: NoteDocument, with template: SummaryTemplate, by summarizer: any Summarizer) async {
+        do {
+            try await library.summarizeAgain(note, template: template, with: summarizer)
+        } catch is CancellationError {
+            return
+        } catch {
+            failure = Failure(title: "Couldn't Summarize Note", message: error.localizedDescription)
+            return
         }
         await reload()
     }

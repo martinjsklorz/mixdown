@@ -23,6 +23,8 @@ The buttons above a note, right-clicking it in the sidebar, and the File and Edi
   out characters that break Obsidian links: `[ ]` become `( )`, `|` becomes `-`, and `#` and `^`
   are dropped.
 - **Copy Transcript** as plain text. A notification confirms it.
+- **Summarize Again**, with the same template or another. See
+  [Summaries](summaries.md#summarizing-again).
 - **Add to Vocabulary** a word the speech model got wrong: select it first, then say how it's
   written. It's corrected in this note and all the others. See
   [Speech models](speech-models.md#vocabulary).

@@ -143,6 +143,12 @@ private struct NotesFileMenuItems: View {
             shownNote?.actions.addToVocabulary()
         }
         .disabled(shownNote == nil)
+        if let shownNote {
+            SummarizeAgainMenu(note: shownNote.note, actions: shownNote.actions) { Text("Summarize Again") }
+        } else {
+            Menu("Summarize Again") {}
+                .disabled(true)
+        }
         if let note = shownNote?.note {
             ShareLink(item: note.url, preview: SharePreview(note.title))
         } else {
