@@ -40,6 +40,9 @@ Everything happens on your Mac. Your audio never leaves it.
   transcript line or action item without opening Mixdown.
 - **Always at hand**: a global shortcut (⌃⌥⌘R), `mixdown://` links for Raycast, Stream Deck and
   Keyboard Maestro, the menu bar, and a Dynamic Island around the camera notch while recording.
+- **Command line and AI agents**: the `mixdown` command lists, searches and prints your notes and
+  starts and stops recording, and an agent skill teaches Claude Code and other agents to use it, so
+  you can ask your agent "what are my action items from today's calls?"
 
 ## Getting started
 
@@ -55,8 +58,8 @@ recording. The note opens a few seconds later.
 The [docs](docs/README.md) cover every feature in detail: [recording](docs/recording.md),
 [calls](docs/calls.md), [speech models](docs/speech-models.md), [summaries](docs/summaries.md),
 [translation](docs/translation.md), [notes and their file format](docs/notes.md), [chat](docs/chat.md),
-[settings](docs/settings.md), [shortcuts](docs/keyboard-shortcuts.md) and
-[troubleshooting](docs/troubleshooting.md).
+[settings](docs/settings.md), [shortcuts](docs/keyboard-shortcuts.md), the
+[command line and AI agents](docs/command-line.md) and [troubleshooting](docs/troubleshooting.md).
 
 ## Building from source
 

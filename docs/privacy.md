@@ -28,6 +28,9 @@ and their embeddings, are kept in Mixdown's container
 (`~/Library/Containers/app.mixdown.Mixdown/Data/Library/Application Support/ChatIndex.plist`), so
 only changed notes are read again.
 
+The [`mixdown` command](command-line.md) only reads your notes on your Mac. An AI agent you let use
+it, though, may send what it reads to its model, as cloud-based agents like Claude Code do.
+
 ## Permissions
 
 The first time, macOS asks for permission:
