@@ -124,8 +124,7 @@ struct SetupAssistantView: View {
 
     /// Closes the assistant for good, leaving Record to show what's still missing.
     private func finish() {
-        let settings = AppSettings()
-        settings.needsSetup = false
+        environment.finishSetup()
         navigation.destination = .recorder
         navigation.isShowingSetup = false
     }

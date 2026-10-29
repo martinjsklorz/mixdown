@@ -71,19 +71,21 @@ private final class LocalVQEFrameCanceller: EchoCanceller, @unchecked Sendable {
         self.canceller = canceller
     }
 
+    /// Its files are named outright: the frontend's weights are an `.npz` file, which
+    /// `HuggingFaceDownloader.weightsExist` doesn't look for.
+    private static let cachedModel = CachedModel(
+        repositoryID: LocalVQEEchoCanceller.defaultModelId,
+        requiredFiles: ["config.json", "LocalVQEAECResidualMask.mlmodelc", "LocalVQEAECFrontend.npz"],
+        requiresWeights: false
+    )
+
     /// Loads from the cache, else downloads. `nil` if neither works; the reason is logged.
     static func load() async -> LocalVQEFrameCanceller? {
         do {
-            let repositoryID = LocalVQEEchoCanceller.defaultModelId
-            let directory = try ModelCache.directory(for: repositoryID, base: SpeechSwiftEngine.modelDirectory())
-            let canceller = try await ModelDirectory.loadPreferringCache(
-                repositoryID,
-                cacheLooksComplete: ModelCache.contains(
-                    ["config.json", "LocalVQEAECResidualMask.mlmodelc", "LocalVQEAECFrontend.npz"],
-                    in: directory
-                ),
+            let canceller = try await cachedModel.load(
+                base: SpeechSwiftEngine.modelDirectory(),
                 progress: { _ in }
-            ) { offline, _ in
+            ) { directory, offline, _ in
                 try await LocalVQEEchoCanceller.fromPretrained(cacheDir: directory, offlineMode: offline)
             }
             return LocalVQEFrameCanceller(canceller: canceller)

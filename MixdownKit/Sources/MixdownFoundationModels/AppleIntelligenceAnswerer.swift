@@ -101,9 +101,7 @@ public struct AppleIntelligenceAnswerer: NoteAnswerer {
     private static func instructions(now: Date, language: String?) -> String {
         // The model answers in the language of its input, and the excerpts may be in another one
         // than the question.
-        let languageName = language.flatMap { Locale(identifier: "en").localizedString(forIdentifier: $0) }
-        let languageRule =
-            languageName.map { "You MUST answer in \($0)." } ?? "You MUST answer in the language of the question."
+        let languageRule = SummaryPrompt.languageRule(language, verb: "answer", fallback: "the question")
         return """
             You answer questions about the user's notes: transcripts and summaries of their meetings, \
             calls and voice memos. Today is \(formatted(now)).
@@ -121,10 +119,7 @@ public struct AppleIntelligenceAnswerer: NoteAnswerer {
         if !turns.isEmpty {
             let lines = turns.map { turn in
                 // Its citations were of other excerpts.
-                let answer = ChatCitations.pieces(of: turn.answer, valid: []).map { piece in
-                    if case .text(let text) = piece { text } else { "" }
-                }
-                .joined()
+                let answer = ChatCitations.removingCitations(from: turn.answer)
                 return "Question: \(turn.question)\nAnswer: \(answer.prefix(maxHistoryAnswerLength))"
             }
             parts.append("Earlier in this chat:\n" + lines.joined(separator: "\n\n"))

@@ -22,18 +22,16 @@ final class VoiceActivityDetector: @unchecked Sendable {
         self.model = model
     }
 
-    static let repositoryID = SileroVADModel.defaultCoreMLModelId
+    static let cachedModel = CachedModel(
+        repositoryID: SileroVADModel.defaultCoreMLModelId,
+        requiredFiles: ["silero_vad.mlmodelc"]
+    )
 
     static func load(
         cacheBase: URL,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws -> VoiceActivityDetector {
-        let directory = try ModelCache.directory(for: repositoryID, base: cacheBase)
-        let model = try await ModelDirectory.loadPreferringCache(
-            repositoryID,
-            cacheLooksComplete: cacheLooksComplete(in: directory),
-            progress: progress
-        ) { offline, progress in
+        let model = try await cachedModel.load(base: cacheBase, progress: progress) { directory, offline, progress in
             try await SileroVADModel.fromPretrained(
                 engine: .coreml,
                 cacheDir: directory,
@@ -42,10 +40,6 @@ final class VoiceActivityDetector: @unchecked Sendable {
             )
         }
         return VoiceActivityDetector(model: model)
-    }
-
-    static func cacheLooksComplete(in directory: URL) -> Bool {
-        ModelCache.contains(weightsAnd: ["silero_vad.mlmodelc"], in: directory)
     }
 
     /// Same frames as `SileroVADModel.detectSpeech(audio:sampleRate:config:)` (512 samples, last one

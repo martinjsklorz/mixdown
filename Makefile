@@ -8,6 +8,10 @@ DESTINATION   := 'platform=macOS,arch=arm64'
 # mlx-swift's CudaBuild plugin), so skip validation for command-line builds.
 XCODEBUILD_FLAGS := -skipPackagePluginValidation -skipMacroValidation
 BUNDLE_ID     := app.mixdown.Mixdown
+# The app's package versions, committed (the project isn't). Xcode reads them from inside the
+# project, where `pin` puts them; MixdownKit/Package.resolved only pins the package's own graph.
+RESOLVED      := Mixdown.resolved
+PROJECT_RESOLVED := $(PROJECT)/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 # The full output of the last `make build`, which ends with a summary of its errors when it fails.
 BUILD_LOG     := build/xcodebuild.log
 # Bash for `pipefail`, so a failing xcodebuild isn't hidden by the `tee` after it.
@@ -24,7 +28,7 @@ INSTALL_DIR   ?= /Applications
 setting = $$(xcodebuild -project $(PROJECT) -scheme $(SCHEME) -destination $(DESTINATION) $(XCODEBUILD_FLAGS) \
 	-showBuildSettings 2>/dev/null | awk -F" = " '/ $(1) /{print $$2; exit}')
 
-.PHONY: bootstrap project open build run install logs test format lint clean
+.PHONY: bootstrap project pin resolve open build run install logs test format lint ci clean
 
 ## Install XcodeGen (Homebrew) and the Metal Toolchain MLX needs. swift-format ships with Xcode.
 bootstrap:
@@ -34,6 +38,20 @@ bootstrap:
 ## Generate Mixdown.xcodeproj from project.yml.
 project:
 	xcodegen generate
+	@$(MAKE) --no-print-directory pin
+
+## Put the committed package versions where Xcode reads them, so every checkout builds the app
+## with the same ones.
+pin:
+	@mkdir -p $(dir $(PROJECT_RESOLVED))
+	@cp $(RESOLVED) $(PROJECT_RESOLVED)
+
+## Update the app's packages to the newest versions project.yml allows, and commit what changed
+## in Mixdown.resolved.
+resolve: $(PBXPROJ)
+	rm -f $(PROJECT_RESOLVED)
+	xcodebuild -resolvePackageDependencies -project $(PROJECT) -scheme $(SCHEME) $(XCODEBUILD_FLAGS)
+	cp $(PROJECT_RESOLVED) $(RESOLVED)
 
 open: $(PBXPROJ)
 	open $(PROJECT)
@@ -86,6 +104,9 @@ format:
 lint:
 	$(SWIFT_FORMAT) lint --strict --recursive --parallel $(FORMAT_PATHS)
 
+## What CI checks on every push and pull request; see .github/workflows/ci.yml.
+ci: lint test
+
 ## Quit Mixdown, unregister its builds from Launch Services and delete them (this checkout's
 ## DerivedData folder), the generated project and the package build. Restarts the Dock so it
 ## drops its cached copy of the app icon.
@@ -102,6 +123,7 @@ clean: $(PBXPROJ)
 
 # Regenerate when the spec changes or app files are added, removed or edited (XcodeGen
 # lists every file explicitly). The touch keeps the stamp fresh if XcodeGen skips writing.
-$(PBXPROJ): project.yml $(shell find Mixdown -type f)
+$(PBXPROJ): project.yml $(RESOLVED) $(shell find Mixdown -type f)
 	xcodegen generate
+	@$(MAKE) --no-print-directory pin
 	@touch $@

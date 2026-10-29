@@ -263,6 +263,81 @@ struct ChunkedSummarizerTests {
         #expect(steps.current == 2)
     }
 
+    /// With 40 tokens the parts are combined in one step, with 30 in several.
+    @Test(arguments: [30, 40]) func failedCombineMergesTheParts(maxTokens: Int) async throws {
+        let combineSteps = LockedValue(0)
+
+        let summary = try await ChunkedSummarizer(maxTokens: maxTokens).summarize(transcript(longTurns)) {
+            text,
+            kind in
+            if kind == .combine {
+                combineSteps.update { $0 += 1 }
+                throw SummarizationError.failed("No summary in the answer.")
+            }
+            let speaker = String(text.prefix(2))
+            return NoteSummary(
+                title: "Part \(speaker)",
+                overview: speaker == "S2" ? "S2." : "",
+                actionItems: [speaker]
+            )
+        }
+
+        #expect(summary == NoteSummary(overview: "S2.", actionItems: ["S1", "S2", "S3"]))
+        #expect(combineSteps.current == (maxTokens == 40 ? 1 : 2))
+    }
+
+    @Test func failedCombineTooLongToSplitMergesTheParts() async throws {
+        let summary = try await ChunkedSummarizer(maxTokens: 30, minTokens: 30).summarize(transcript(longTurns)) {
+            text,
+            kind in
+            if kind == .combine { throw SummarizationError.tooLong }
+            return NoteSummary(keyPoints: [String(text.prefix(2))])
+        }
+        #expect(summary.keyPoints == ["S1", "S2", "S3"])
+    }
+
+    @Test func failedSingleTranscriptStepStillThrows() async throws {
+        await #expect(throws: SummarizationError.failed("No summary in the answer.")) {
+            try await ChunkedSummarizer(maxTokens: 1000).summarize(transcript(["Hello."])) { _, _ in
+                throw SummarizationError.failed("No summary in the answer.")
+            }
+        }
+    }
+
+    @Test func cancelledCombineIsNotMerged() async throws {
+        await #expect(throws: CancellationError.self) {
+            try await ChunkedSummarizer(maxTokens: 30).summarize(transcript(longTurns)) { _, kind in
+                if kind == .combine { throw CancellationError() }
+                return NoteSummary(overview: "Part")
+            }
+        }
+    }
+
+    @Test func unavailableModelEndsTheSummaryAtOnce() async throws {
+        let steps = LockedValue(0)
+
+        await #expect(throws: SummarizationError.unavailable("No model.")) {
+            try await ChunkedSummarizer(maxTokens: 30).summarize(transcript(longTurns)) { _, _ in
+                steps.update { $0 += 1 }
+                throw SummarizationError.unavailable("No model.")
+            }
+        }
+        #expect(steps.current == 1)
+    }
+
+    @Test func mergingDropsRepeatsAndKeepsAtMostEightItems() {
+        let parts = [
+            NoteSummary(overview: " ", keyPoints: (1...5).map { "Point \($0)" }, language: "de"),
+            NoteSummary(overview: "Second.", keyPoints: ["point 2", " "] + (6...10).map { "Point \($0)" }),
+        ]
+        let merged = NoteSummary.merging(parts, template: .standup)
+        #expect(merged.template == .standup)
+        #expect(merged.title.isEmpty)
+        #expect(merged.overview == "Second.")
+        #expect(merged.keyPoints == (1...8).map { "Point \($0)" })
+        #expect(merged.language == "de")
+    }
+
     /// Six turns of 11 tokens each, which pack two to a piece of at most 25 tokens.
     private let shortTurns = (1...6).map { "Line \($0) " + String(repeating: "x", count: 20) }
 

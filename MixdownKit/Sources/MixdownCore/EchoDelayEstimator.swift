@@ -27,6 +27,9 @@ struct EchoDelayEstimator {
     /// Windows whose system audio is this much quieter than the loudest so far say little about
     /// the echo, so they're skipped. As LocalVQE does.
     static let gateDecibels: Float = 26
+    /// How much of the loudest level so far each window keeps, so the gate follows the system
+    /// audio getting quieter for good: down by `gateDecibels` in about 30 windows (15 s).
+    static let loudestDecay: Float = 0.9
     /// How far the peak must stand out from the average correlation to count.
     static let confidenceThreshold: Float = 8
 
@@ -49,7 +52,7 @@ struct EchoDelayEstimator {
     mutating func add(microphone: [Float], reference: [Float]) -> Estimate? {
         precondition(microphone.count == Self.windowSize && reference.count == Self.windowSize)
         let referenceLevel = Self.rms(reference)
-        loudestReference = max(loudestReference, referenceLevel)
+        loudestReference = max(referenceLevel, loudestReference * Self.loudestDecay)
         guard referenceLevel > InputLevel.silenceThreshold,
             referenceLevel > loudestReference * pow(10, -Self.gateDecibels / 20),
             Self.rms(microphone) > InputLevel.silenceThreshold

@@ -3,35 +3,24 @@ import SwiftUI
 
 /// Notifications and the sounds that mark recording starting, pausing, stopping and finishing.
 struct NotificationsSettingsView: View {
-    @AppStorage(AppSettings.Key.showsNotifications) private var showsNotifications = true
-    @AppStorage(AppSettings.Key.playsSounds) private var playsSounds = true
-    @State private var notificationsDeniedBySystem = false
+    @Environment(AppEnvironment.self) private var environment
 
     var body: some View {
+        @Bindable var preferences = environment.preferences
         Form {
             Section {
-                Toggle("Show notifications", isOn: $showsNotifications)
-                if showsNotifications, notificationsDeniedBySystem {
-                    HStack {
-                        Caption("Turned off for Mixdown in System Settings.", isWarning: true)
-                        Spacer()
-                        Button("Open System Settings") { SystemSettings.open(.notifications) }
-                    }
-                }
+                NotificationsToggle()
             } header: {
                 Text("Notifications")
             } footer: {
-                Caption(
-                    "Say when a note is ready, ask about calls, confirm copying a transcript, and offer "
-                        + "Restore after deleting a note."
-                )
+                Caption(NotificationsToggle.footer)
             }
 
             Section {
-                Toggle("Play sounds", isOn: $playsSounds)
+                Toggle("Play sounds", isOn: $preferences.playsSounds)
                 ForEach(AudioCue.allCases) { cue in
                     AudioCuePicker(cue: cue)
-                        .disabled(!playsSounds)
+                        .disabled(!preferences.playsSounds)
                 }
             } header: {
                 Text("Sounds")
@@ -40,15 +29,6 @@ struct NotificationsSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        // The user can turn notifications off in System Settings › Notifications, so re-read on
-        // switching to this tab, and whenever a window of ours comes back to the front: on reopening
-        // Settings (which keeps this view alive) and on returning from System Settings.
-        .onAppear { refresh() }
-        .onWindowBecomesKey { refresh() }
-    }
-
-    private func refresh() {
-        Task { notificationsDeniedBySystem = await Notifications.isDeniedBySystem() }
     }
 }
 

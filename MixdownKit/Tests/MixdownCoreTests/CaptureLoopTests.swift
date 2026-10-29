@@ -37,6 +37,22 @@ struct CaptureLoopTests {
         }
     }
 
+    @Test func reportsAudioThatCouldNotBeWrittenToDisk() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let written = await loop(audioFile: folder.appendingPathComponent("0-0.audio"))
+            .start(stream([Fixtures.chunk(seconds: 1)])).value
+        // In a folder that isn't there.
+        let unwritten = await loop(audioFile: folder.appendingPathComponent("missing/0-0.audio"))
+            .start(stream([Fixtures.chunk(seconds: 1)])).value
+
+        #expect(!written.diskWriteFailed)
+        #expect(unwritten.diskWriteFailed)
+        #expect(unwritten.track.duration == 1)
+    }
+
     @Test func drainsTheStreamIntoATrackWithGapsFilled() async {
         let levels = LockedValue<[InputLevel]>([])
         let output = await loop(levels: levels).start(

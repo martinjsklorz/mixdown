@@ -60,18 +60,12 @@ struct TranscriptionSettingsView: View {
             Section {
                 TextField(
                     "Microphone",
-                    text: Binding(
-                        get: { preferences.sourceLabels.microphone },
-                        set: { preferences.sourceLabels.microphone = $0 }
-                    ),
+                    text: Bindable(preferences).sourceLabels.microphone,
                     prompt: Text(SourceLabels.defaultMicrophone)
                 )
                 TextField(
                     "System audio",
-                    text: Binding(
-                        get: { preferences.sourceLabels.systemAudio },
-                        set: { preferences.sourceLabels.systemAudio = $0 }
-                    ),
+                    text: Bindable(preferences).sourceLabels.systemAudio,
                     prompt: Text(SourceLabels.defaultSystemAudio)
                 )
             } header: {
@@ -95,10 +89,7 @@ struct TranscriptionSettingsView: View {
                 speakerModelStatus
                 Toggle(
                     "Name speakers from the conversation",
-                    isOn: Binding(
-                        get: { preferences.namesSpeakers },
-                        set: { preferences.namesSpeakers = $0 }
-                    )
+                    isOn: Bindable(preferences).namesSpeakers
                 )
                 .disabled(!preferences.identifiesSpeakers)
             } header: {
@@ -111,6 +102,8 @@ struct TranscriptionSettingsView: View {
         .task(id: preferences.language) {
             isAppleSpeechInstalled = await AppleSpeechEngine.isInstalled(language: preferences.language)
         }
+        // The speaker model may have been downloaded or removed elsewhere meanwhile.
+        .onAppear { environment.refreshModelDownloads() }
     }
 
     /// A row under the model while it downloads or after it failed; nothing otherwise, as the
@@ -139,7 +132,7 @@ struct TranscriptionSettingsView: View {
                 ProgressView(value: progress) {
                     Text("Downloading the speaker model…")
                 } currentValueLabel: {
-                    Text(progress.formatted(.percent.precision(.fractionLength(0))))
+                    Text(ProgressText.percent(progress))
                         .monospacedDigit()
                 }
                 Button("Cancel", systemImage: "xmark.circle") { environment.speakerModelDownload.cancel() }

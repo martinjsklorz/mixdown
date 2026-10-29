@@ -13,10 +13,12 @@ import os
 /// public API to check it and prompts when the tap first starts. If the user declines, the tap
 /// still runs but delivers silence, so a denial can't be reported as an error.
 ///
-/// `@unchecked Sendable`: `start` and `invalidate` are called one after another, never
-/// concurrently; `formats` is safe from the listener and IO threads.
+/// `@unchecked Sendable`: `start` and `invalidate` are called one after another on
+/// `IOProcCapture`'s control queue, never concurrently; `formats` and `lifecycle` are safe from
+/// the listener and IO threads.
 final class SystemAudioTap: CaptureSource, @unchecked Sendable {
     let formats = FormatHistory()
+    private let lifecycle = CaptureSourceLifecycle()
     private var tapID = AudioObjectID(kAudioObjectUnknown)
     private var aggregateID = AudioObjectID(kAudioObjectUnknown)
     private var ioProcID: AudioDeviceIOProcID?
@@ -78,10 +80,12 @@ final class SystemAudioTap: CaptureSource, @unchecked Sendable {
 
         // The tap follows the output device, so connecting AirPods, which switch to a lower
         // sample rate for calls, can change its format mid-recording. The IDs are captured by
-        // value because the listener runs on its own queue and `invalidate` resets them.
+        // value because the listeners run on their own queue and `invalidate` resets them. Both
+        // format listeners share that queue, so neither can publish a format older than the other's.
         let onChange: @Sendable () -> Void = { [weak self, aggregateID = self.aggregateID, tapID = self.tapID] in
             self?.formatChanged(aggregateID: aggregateID, tapID: tapID)
         }
+        lifecycle.setFormatCheck(onChange)
         listeners = [
             HALPropertyListener(
                 objectID: aggregateID,
@@ -91,21 +95,32 @@ final class SystemAudioTap: CaptureSource, @unchecked Sendable {
                     kAudioDevicePropertyStreamConfiguration,
                 ],
                 scope: kAudioObjectPropertyScopeWildcard,
+                queue: lifecycle.listenerQueue,
                 onChange: onChange
             ),
-            HALPropertyListener(objectID: tapID, selectors: [kAudioTapPropertyFormat], onChange: onChange),
-            HALPropertyListener(selectors: [kAudioHardwarePropertyServiceRestarted]) {
-                onFailure(.audioServiceRestarted)
-            },
+            HALPropertyListener(
+                objectID: tapID,
+                selectors: [kAudioTapPropertyFormat],
+                queue: lifecycle.listenerQueue,
+                onChange: onChange
+            ),
+            lifecycle.serviceRestartListener(onFailure: onFailure),
         ]
         listeners.forEach { $0.install() }
     }
 
+    func refreshFormat() {
+        lifecycle.checkFormat()
+    }
+
     /// Stops IO and destroys whatever `start` set up. Safe after a partial setup.
     func invalidate() {
+        // After a restart of the audio service, the tap and the aggregate device are gone and
+        // their IDs may belong to other objects, so they're only forgotten.
+        let ownsObjects = lifecycle.invalidate()
         listeners.forEach { $0.remove(logsFailures: false) }
         listeners = []
-        if aggregateID != AudioObjectID(kAudioObjectUnknown) {
+        if ownsObjects, aggregateID != AudioObjectID(kAudioObjectUnknown) {
             if let ioProcID {
                 CoreAudioHAL.logFailure(AudioDeviceStop(aggregateID, ioProcID), "AudioDeviceStop")
                 CoreAudioHAL.logFailure(AudioDeviceDestroyIOProcID(aggregateID, ioProcID), "AudioDeviceDestroyIOProcID")
@@ -115,7 +130,7 @@ final class SystemAudioTap: CaptureSource, @unchecked Sendable {
                 "AudioHardwareDestroyAggregateDevice"
             )
         }
-        if tapID != AudioObjectID(kAudioObjectUnknown) {
+        if ownsObjects, tapID != AudioObjectID(kAudioObjectUnknown) {
             CoreAudioHAL.logFailure(AudioHardwareDestroyProcessTap(tapID), "AudioHardwareDestroyProcessTap")
         }
         ioProcID = nil

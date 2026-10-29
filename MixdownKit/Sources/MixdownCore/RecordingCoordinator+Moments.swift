@@ -34,23 +34,25 @@ extension RecordingCoordinator {
     }
 
     /// How far the recording in progress has got, paused or not, in seconds not counting pauses:
-    /// where a moment marked now goes. `nil` when not recording.
+    /// where a moment marked now goes. `nil` when not recording. Counted on the host clock, like
+    /// the audio, so it stays in step with it even if the Mac sleeps or its clock is set.
     public var momentTime: TimeInterval? {
         switch phase {
-        case .recording(let startedAt): max(now().timeIntervalSince(startedAt), 0)
+        case .recording: session.map { $0.recordedTime(at: hostClock()) }
         case .paused(let recorded): recorded
         default: nil
         }
     }
 
     /// Adds a moment at `time` (see `momentTime`) to the note of the recording in progress, with
-    /// `text` trimmed. Returns it, or `nil` when not recording.
+    /// `text` trimmed, also while it stops, until its note is begun. Returns it, or `nil` when
+    /// there's no such recording.
     @discardableResult
     public func addMoment(at time: TimeInterval, text: String = "") -> Moment? {
-        guard isRecording else { return nil }
+        guard let session = session ?? endingSession else { return nil }
         let moment = Moment(time: time, text: text.trimmingCharacters(in: .whitespacesAndNewlines))
         moments.append(moment)
-        if let session { storeDescription(of: session) }
+        storeDescription(of: session)
         logger.info("Moment added at \(time, format: .fixed(precision: 1)) s")
         return moment
     }

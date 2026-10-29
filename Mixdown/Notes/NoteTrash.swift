@@ -36,12 +36,17 @@ final class NoteTrash {
     )
 
     /// Moves the note to the Trash, then posts a notification offering to restore it, unless
-    /// notifications are turned off. Asks for permission to notify the first time.
-    func moveToTrash(_ note: NoteDocument) throws {
-        let data = try? Data(contentsOf: note.url)
-        var trashedURL: NSURL?
-        try FileManager.default.trashItem(at: note.url, resultingItemURL: &trashedURL)
-        guard let trashedURL = trashedURL as URL? else { return }
+    /// notifications are turned off. Asks for permission to notify the first time. Reads and moves
+    /// the file off the main thread, as the notes folder can be on a slow or network disk.
+    func moveToTrash(_ note: NoteDocument) async throws {
+        let url = note.url
+        let (data, trashedURL) = try await Task.detached(priority: .userInitiated) {
+            let data = try? Data(contentsOf: url)
+            var trashedURL: NSURL?
+            try FileManager.default.trashItem(at: url, resultingItemURL: &trashedURL)
+            return (data, trashedURL as URL?)
+        }.value
+        guard let trashedURL else { return }
 
         let trashed = TrashedNote(title: note.title, originalURL: note.url, trashedURL: trashedURL)
         let notificationID = UUID().uuidString

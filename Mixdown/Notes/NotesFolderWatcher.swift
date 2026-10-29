@@ -16,7 +16,13 @@ enum NotesFolderWatcher {
     /// iterating it is cancelled. Covers subfolders too. Changes to files that aren't notes, like
     /// `.DS_Store` or an editor's temporary files, and to hidden folders like `.obsidian` are
     /// left out. Batches that arrive while the last one is still being handled are merged into one.
-    static func changes(in directory: URL, latency: TimeInterval = 0.3) -> AsyncStream<Void> {
+    ///
+    /// `.rootChanged` once the folder itself is renamed, moved or deleted, after which no more
+    /// changes arrive for it: FSEvents watches a path, not the folder.
+    static func changes(
+        in directory: URL,
+        latency: TimeInterval = 0.3
+    ) -> AsyncStream<NoteLibrary.FolderChange> {
         AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
             guard let stream = EventStream(directory: directory, latency: latency, continuation: continuation) else {
                 logger.error("Couldn't watch the notes folder for changes")
@@ -33,13 +39,15 @@ enum NotesFolderWatcher {
 /// Kept alive by the stream's `onTermination` until `stop()`, so the event stream's context
 /// doesn't retain it.
 private final class EventStream: @unchecked Sendable {
-    private let continuation: AsyncStream<Void>.Continuation
+    private let continuation: AsyncStream<NoteLibrary.FolderChange>.Continuation
     private let directory: URL
     private let queue = DispatchQueue(label: "app.mixdown.NotesFolderWatcher")
     /// Only touched on `queue` once started.
     private var stream: FSEventStreamRef?
+    /// Whether the folder was renamed, moved or deleted since the stream started. On `queue`.
+    private var rootChanged = false
 
-    init?(directory: URL, latency: TimeInterval, continuation: AsyncStream<Void>.Continuation) {
+    init?(directory: URL, latency: TimeInterval, continuation: AsyncStream<NoteLibrary.FolderChange>.Continuation) {
         self.continuation = continuation
         self.directory = directory
         var context = FSEventStreamContext(
@@ -60,7 +68,11 @@ private final class EventStream: @unchecked Sendable {
             [directory.path(percentEncoded: false)] as CFArray,
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
             latency,
-            FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes)
+            // Watching the root too reports the folder itself being renamed or moved.
+            FSEventStreamCreateFlags(
+                kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes
+                    | kFSEventStreamCreateFlagWatchRoot
+            )
         )
         guard let created else { return nil }
         FSEventStreamSetDispatchQueue(created, queue)
@@ -90,18 +102,20 @@ private final class EventStream: @unchecked Sendable {
     ) {
         // A `CFArray` of `CFString`s, with `kFSEventStreamCreateFlagUseCFTypes`.
         let paths = Unmanaged<CFArray>.fromOpaque(paths).takeUnretainedValue() as? [String] ?? []
-        // Events were dropped or coalesced, so the folder has to be read again whatever the paths.
-        let mustRescan = FSEventStreamEventFlags(kFSEventStreamEventFlagMustScanSubDirs)
-        let isDirectory = FSEventStreamEventFlags(kFSEventStreamEventFlagItemIsDir)
-        let changesNotes = (0..<count).contains { index in
-            guard flags[index] & mustRescan == 0 else { return true }
-            guard paths.indices.contains(index) else { return false }
-            return NoteLibrary.affectsNotes(
-                URL(fileURLWithPath: paths[index]),
-                isDirectory: flags[index] & isDirectory != 0,
-                in: directory
+        let events = (0..<count).compactMap { index -> NoteLibrary.FolderEvent? in
+            guard paths.indices.contains(index) else { return nil }
+            let flags = flags[index]
+            return NoteLibrary.FolderEvent(
+                path: paths[index],
+                isDirectory: flags & FSEventStreamEventFlags(kFSEventStreamEventFlagItemIsDir) != 0,
+                mustRescan: flags & FSEventStreamEventFlags(kFSEventStreamEventFlagMustScanSubDirs) != 0,
+                rootChanged: flags & FSEventStreamEventFlags(kFSEventStreamEventFlagRootChanged) != 0
             )
         }
-        if changesNotes { continuation.yield() }
+        guard let change = NoteLibrary.change(from: events, in: directory) else { return }
+        // Every batch after a root change reports one, as a newer batch replaces one not yet
+        // handled, and the folder has to be found again all the same.
+        if change == .rootChanged { rootChanged = true }
+        continuation.yield(rootChanged ? .rootChanged : change)
     }
 }

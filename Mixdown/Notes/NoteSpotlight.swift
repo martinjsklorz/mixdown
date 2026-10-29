@@ -59,6 +59,24 @@ private actor NoteSpotlightIndex {
     /// What the index holds, once checked against it.
     private var state: NoteSearchIndex.State?
 
+    /// Hands `update`'s changes to the batch begun. Not with the async versions, which aren't
+    /// documented to work within a batch, and synchronous so it doesn't wait for each. Errors are
+    /// logged here; `endBatch` reports whether the batch as a whole made it.
+    private func submit(_ update: NoteSearchIndex.Update) {
+        let logger = Self.logger
+        if !update.deletedIDs.isEmpty {
+            index.deleteSearchableItems(withIdentifiers: update.deletedIDs) { error in
+                if let error { logger.error("Couldn't remove notes from Spotlight: \(error.localizedDescription)") }
+            }
+        }
+        for start in stride(from: 0, to: update.items.count, by: Self.chunkSize) {
+            let chunk = update.items[start..<min(start + Self.chunkSize, update.items.count)]
+            index.indexSearchableItems(chunk.map(Self.searchableItem)) { error in
+                if let error { logger.error("Couldn't add notes to Spotlight: \(error.localizedDescription)") }
+            }
+        }
+    }
+
     /// Brings the index in line with `notes`: adds new and changed notes, and removes notes that
     /// are gone.
     func update(to notes: [NoteDocument]) async {
@@ -68,13 +86,7 @@ private actor NoteSpotlightIndex {
         let token = UUID().uuidString
         // One batch, so the index and its client state change together.
         index.beginBatch()
-        if !update.deletedIDs.isEmpty {
-            index.deleteSearchableItems(withIdentifiers: update.deletedIDs, completionHandler: nil)
-        }
-        for start in stride(from: 0, to: update.items.count, by: Self.chunkSize) {
-            let chunk = update.items[start..<min(start + Self.chunkSize, update.items.count)]
-            index.indexSearchableItems(chunk.map(Self.searchableItem), completionHandler: nil)
-        }
+        submit(update)
         do {
             try await endBatch(clientState: Data(token.utf8))
         } catch {

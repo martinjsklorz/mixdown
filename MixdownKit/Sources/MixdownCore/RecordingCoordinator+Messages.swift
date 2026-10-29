@@ -1,6 +1,16 @@
 import Foundation
 
 extension RecordingCoordinator {
+    /// What to tell the user about a note the pipeline made, e.g. a track that couldn't be
+    /// transcribed or a translation that failed.
+    nonisolated static func messages(for outcome: NotePipeline.Outcome) -> [String] {
+        [
+            outcome.trackFailure.map { untranscribedMessage(for: $0.devices, error: $0.error) },
+            outcome.translationError.map(untranslatedMessage(for:)),
+            outcome.saveError.map(unsavedMessage(for:)),
+        ].compactMap { $0 }
+    }
+
     /// Shown only once the note is written.
     nonisolated static func interruptedMessage(for error: any Error) -> String {
         "Recording stopped early. \(error.localizedDescription) The note has what was recorded until then."

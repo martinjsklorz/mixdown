@@ -35,6 +35,14 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
     /// Seconds of audio per second of recognition, as last measured on this Mac.
     private var measuredSpeed: Double?
 
+    /// The model calls are synchronous and can take minutes (a MOSS window), so the actor runs on
+    /// a thread of its own rather than hold one of the few threads all of Swift's tasks share.
+    private nonisolated let queue = DispatchSerialQueue(label: "app.mixdown.speech-swift", qos: .userInitiated)
+
+    public nonisolated var unownedExecutor: UnownedSerialExecutor {
+        queue.asUnownedSerialExecutor()
+    }
+
     /// How long the models stay in memory after the last recording or transcription (or
     /// `prepare`). Loading them again from disk takes seconds; keeping them costs 1–3.5 GB.
     private static let idleUnloadDelay: Duration = .seconds(120)
@@ -80,7 +88,7 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
 
     /// Transcribes a whole recording of 16 kHz mono samples. Segments follow the VAD's speech regions
     /// (or the model's own timestamps for MOSS).
-    /// Throws for the live model, which transcribes while recording instead.
+    /// Throws for the live model, which transcribes while recording instead, before loading it.
     ///
     /// `progress` covers the VAD pass, then the pieces by length. Within a piece it moves on an
     /// estimate of the model's speed on this Mac, since the recognizers don't report progress.
@@ -89,6 +97,9 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
         options: TranscriptionOptions,
         progress: (@Sendable (Double) -> Void)?
     ) async throws -> Transcript {
+        guard !model.isLive else {
+            throw TranscriptionError.failed("\(model.displayName) transcribes while recording")
+        }
         let progress = progress.map { MonotonicProgress($0) }
         // A model that detects the language itself ignores the setting, so the note mustn't claim it.
         let language = model.supportsLanguageSelection ? Self.languageCode(options.language) : nil
@@ -107,9 +118,11 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
     }
 
     /// A session for one input of a recording; see `LiveRecognizer`. Loads the model if it isn't
-    /// yet. Throws `TranscriptionError` for offline models or if the session can't start.
+    /// yet. Throws `TranscriptionError` for offline models (before loading them) or if the session
+    /// can't start.
     public func makeLiveSession(options: TranscriptionOptions) async throws -> any LiveTranscriptionSession {
-        guard case .live(let recognizer) = try await loadedModels(progress: nil) else {
+        let models = model.isLive ? try await loadedModels(progress: nil) : nil
+        guard case .live(let recognizer) = models else {
             throw TranscriptionError.failed("\(model.displayName) transcribes once the recording ends")
         }
         // The model stays loaded while recording; see `recordingWillStart()`.
@@ -117,7 +130,7 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
             let state = try recognizer.makeSession(languageCode: Self.languageCode(options.language))
             return SpeechSwiftLiveSession(engine: self, state: state)
         } catch {
-            throw TranscriptionError.failed(error.localizedDescription)
+            throw TranscriptionError.failure(error)
         }
     }
 
@@ -127,7 +140,7 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
         do {
             return try state.push(samples)
         } catch {
-            throw TranscriptionError.failed(error.localizedDescription)
+            throw TranscriptionError.failure(error)
         }
     }
 
@@ -135,7 +148,7 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
         do {
             return try state.finish()
         } catch {
-            throw TranscriptionError.failed(error.localizedDescription)
+            throw TranscriptionError.failure(error)
         }
     }
 
@@ -144,25 +157,23 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
     }
 
     /// Whether `model` (and for offline models the VAD) is already on disk, so `prepare` won't
-    /// download anything. Checks files only; it doesn't validate them.
+    /// download anything. Checks files only; it doesn't validate them, and creates nothing.
     public static func isDownloaded(_ model: SpeechSwiftModel) -> Bool {
-        guard let base = try? modelDirectory(),
-            let modelCacheDirectory = try? ModelCache.directory(for: model.repositoryID, base: base)
-        else { return false }
-        guard let recognizerType = model.recognizerType else {
-            return LiveRecognizer.cacheLooksComplete(in: modelCacheDirectory)
-        }
-        guard let detectorDirectory = try? ModelCache.directory(for: VoiceActivityDetector.repositoryID, base: base)
-        else { return false }
-        return VoiceActivityDetector.cacheLooksComplete(in: detectorDirectory)
-            && recognizerType.cacheLooksComplete(in: modelCacheDirectory)
+        guard let base = ModelDirectory.url else { return false }
+        return isDownloaded(model, base: base)
+    }
+
+    static func isDownloaded(_ model: SpeechSwiftModel, base: URL) -> Bool {
+        let required = model.isLive ? [model.cachedModel] : [VoiceActivityDetector.cachedModel, model.cachedModel]
+        return required.allSatisfy { $0.isDownloaded(base: base) }
     }
 
     /// Removes the ASR model's files and drops the loaded instance. The VAD (~2 MB) is kept, since
     /// every offline model shares it.
     public func deleteModel() async throws {
         await residency.unload()
-        let directory = try ModelCache.directory(for: model.repositoryID, base: Self.modelDirectory())
+        guard let directory = try ModelCache.existingDirectory(for: model.repositoryID, base: Self.modelDirectory())
+        else { return }
         try FileManager.default.removeItem(at: directory)
         transcriptionLogger.info("Deleted \(self.model.displayName, privacy: .public)")
     }
@@ -174,8 +185,7 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
         do {
             return try await residency.load(progress: progress)
         } catch {
-            if error is CancellationError || Task.isCancelled { throw CancellationError() }
-            throw TranscriptionError.unavailable(error)
+            throw TranscriptionError.unavailableOrCancelled(error)
         }
     }
 
@@ -190,10 +200,9 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
         }
         // The VAD is ~2 MB; give it a sliver of the bar.
         let detector = try await VoiceActivityDetector.load(cacheBase: base) { progress(0.02 * $0) }
-        let recognizer = try await recognizerType.load(
-            repositoryID: model.repositoryID,
-            cacheBase: base
-        ) { progress(0.02 + 0.98 * $0) }
+        let recognizer = try await recognizerType.load(model.cachedModel, cacheBase: base) {
+            progress(0.02 + 0.98 * $0)
+        }
         return .offline(detector: detector, recognizer: recognizer)
     }
 
@@ -229,9 +238,10 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
         // Only a language the model was told to use is known; the detected one isn't reported.
         let language = hint == nil ? nil : requestedLanguage
 
-        // The VAD and recognizer calls below are synchronous and run on this actor. That's fine: the
-        // actor has no other work while transcribing, and `info` is nonisolated. Cancellation is checked
-        // inside the VAD, between pieces and (for Qwen3-ASR) between decoded tokens.
+        // The VAD and recognizer calls below are synchronous and run on this actor, which has a
+        // thread of its own (see `unownedExecutor`). That's fine: the actor has no other work while
+        // transcribing, and `info` is nonisolated. Cancellation is checked inside the VAD, between
+        // pieces and (for Qwen3-ASR) between decoded tokens.
         let detection = try detector.detect(samples) { progress?.report(RecognitionProgress.detection($0)) }
         let pieces = SpeechChunker.pieces(
             regions: detection.regions,
@@ -245,36 +255,62 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
             return Transcript(segments: [], language: language)
         }
 
+        let recognition = try await Self.recognize(
+            samples,
+            pieces: pieces,
+            recognizer: recognizer,
+            hint: hint,
+            vocabulary: options.vocabularyTerms,
+            initialSpeed: measuredSpeed ?? model.expectedSpeed,
+            progress: progress
+        )
+        if let speed = recognition.speed { measuredSpeed = speed }
+
+        transcriptionLogger.info(
+            "Transcribed \(audioDuration, format: .fixed(precision: 1)) s in \(pieces.count) pieces, \(recognition.segments.count) segments, \(String(describing: ContinuousClock.now - started), privacy: .public)"
+        )
+        return Transcript(segments: recognition.segments, language: language)
+    }
+
+    /// Runs `recognizer` on each piece of `samples`, in order, and places what it recognized on the
+    /// recording's timeline. Runs on the caller's actor, as the recognizer calls block it.
+    /// - Parameter initialSpeed: Seconds of audio per second of recognition to expect, for the
+    ///   progress within the first piece.
+    /// - Returns: The segments, and the speed measured, if there was enough audio to tell.
+    static func recognize(
+        _ samples: [Float],
+        pieces: [SpeechPiece],
+        recognizer: any SpeechRecognizer,
+        hint: String?,
+        vocabulary: [String],
+        initialSpeed: Double,
+        progress: MonotonicProgress?,
+        isolation: isolated (any Actor)? = #isolation
+    ) async throws -> (segments: [TranscriptSegment], speed: Double?) {
         let plan = RecognitionProgress(pieceDurations: pieces.map(\.window.duration))
-        var speed = measuredSpeed ?? model.expectedSpeed
+        var speed = initialSpeed
         var recognizedDuration = 0.0
         var recognitionTime = 0.0
         var segments: [TranscriptSegment] = []
         for (index, piece) in pieces.enumerated() {
             try Task.checkCancellation()
-            let audio = Self.slice(samples, to: piece.window)
+            let audio = slice(samples, to: piece.window)
             if !audio.isEmpty {
                 let pieceStarted = ContinuousClock.now
                 let ticker = progress.map {
-                    Self.estimateProgress(of: index, in: plan, expected: piece.window.duration / speed, reportingTo: $0)
+                    estimateProgress(of: index, in: plan, expected: piece.window.duration / speed, reportingTo: $0)
                 }
                 let recognized: [RecognizedSegment]
                 do {
                     defer { ticker?.cancel() }
-                    recognized = try recognizer.recognize(
-                        audio,
-                        languageHint: hint,
-                        vocabulary: options.vocabularyTerms
-                    )
-                } catch let error as CancellationError {
-                    throw error
+                    recognized = try recognizer.recognize(audio, languageHint: hint, vocabulary: vocabulary)
                 } catch {
-                    throw TranscriptionError.failed(error.localizedDescription)
+                    throw TranscriptionError.failure(error)
                 }
                 segments.append(contentsOf: recognized.compactMap { piece.place($0) })
 
                 recognizedDuration += piece.window.duration
-                recognitionTime += Self.seconds(ContinuousClock.now - pieceStarted)
+                recognitionTime += seconds(ContinuousClock.now - pieceStarted)
                 if recognitionTime > 0 {
                     speed = recognizedDuration / recognitionTime
                 }
@@ -283,12 +319,7 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
             await Task.yield()
         }
         // Too little audio says more about warm-up than about speed.
-        if recognizedDuration >= 30 { measuredSpeed = speed }
-
-        transcriptionLogger.info(
-            "Transcribed \(audioDuration, format: .fixed(precision: 1)) s in \(pieces.count) pieces, \(segments.count) segments, \(String(describing: ContinuousClock.now - started), privacy: .public)"
-        )
-        return Transcript(segments: segments, language: language)
+        return (segments, recognizedDuration >= 30 ? speed : nil)
     }
 
     /// Reports `plan.running(index, …)` twice a second until cancelled, i.e. while the
@@ -316,14 +347,14 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
         return Double(seconds) + Double(attoseconds) * 1e-18
     }
 
-    private static func slice(_ samples: [Float], to span: TimeSpan) -> [Float] {
+    static func slice(_ samples: [Float], to span: TimeSpan) -> [Float] {
         let lower = max(0, Int((span.start * AudioChunk.sampleRate).rounded(.down)))
         let upper = min(samples.count, Int((span.end * AudioChunk.sampleRate).rounded(.up)))
         return lower < upper ? Array(samples[lower..<upper]) : []
     }
 
     /// `"de-DE"` → `"de"`. `nil` for nil or empty input.
-    private static func languageCode(_ language: String?) -> String? {
+    static func languageCode(_ language: String?) -> String? {
         guard let language else { return nil }
         let primary = language.lowercased().split(whereSeparator: { $0 == "-" || $0 == "_" }).first
         return primary.map(String.init)
@@ -332,7 +363,7 @@ public actor SpeechSwiftEngine: TranscriptionEngine {
 
 /// Forwards transcription progress, never moving backwards: the estimate for a piece can arrive
 /// after the piece has finished.
-private final class MonotonicProgress: Sendable {
+final class MonotonicProgress: Sendable {
     private let forward: @Sendable (Double) -> Void
     private let value = Mutex(-1.0)
 

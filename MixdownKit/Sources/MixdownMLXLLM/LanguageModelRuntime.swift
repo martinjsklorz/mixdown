@@ -4,10 +4,18 @@ internal import MLXLLM
 internal import MLXLMCommon
 import MixdownCore
 
+/// Answers prompts with a language model: `LanguageModelRuntime`, or a stand-in in tests.
+protocol LanguageModelResponding: Sendable {
+    /// The model's answer to `prompt`, in a fresh conversation. Honors task cancellation.
+    func respond(instructions: String, prompt: String, maximumTokens: Int) async throws -> String
+    /// Frees the model's memory until it's needed again.
+    func unload() async
+}
+
 /// Keeps one `MLXLanguageModel` in memory while it's used: loaded on the first answer asked for,
 /// and unloaded again once none has been for `idleUnloadDelay`. Loading it again from disk takes
 /// seconds; keeping it costs 1–5 GB.
-final class LanguageModelRuntime: Sendable {
+final class LanguageModelRuntime: LanguageModelResponding {
     private let model: MLXLanguageModel
     /// Retained by every answer being generated.
     private let residency: ModelResidency<ModelContainer>

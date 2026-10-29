@@ -1,10 +1,9 @@
 import Foundation
-import MixdownNotes
 
 /// A page of Mixdown Help. The text is Markdown, rendered like a note. Links to
 /// `mixdown-help:<topic>` open another topic, and `mixdown-help:setup-assistant` the setup
 /// assistant.
-enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
+public enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
     case gettingStarted = "getting-started"
     case recording
     case calls
@@ -19,19 +18,19 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
 
     private static let urlScheme = "mixdown-help"
     /// Whether `url` is the link in a topic that opens the setup assistant.
-    static func isSetupAssistantLink(_ url: URL) -> Bool {
+    public static func isSetupAssistantLink(_ url: URL) -> Bool {
         url.absoluteString == "\(urlScheme):setup-assistant"
     }
 
-    var id: Self { self }
+    public var id: Self { self }
 
     /// The topic a `mixdown-help:<topic>` link points to.
-    init?(url: URL) {
+    public init?(url: URL) {
         guard url.scheme == Self.urlScheme else { return nil }
         self.init(rawValue: url.absoluteString.dropFirst(Self.urlScheme.count + 1).lowercased())
     }
 
-    var title: String {
+    public var title: String {
         switch self {
         case .gettingStarted: "Getting Started"
         case .recording: "Recording"
@@ -47,7 +46,7 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    var systemImage: String {
+    public var systemImage: String {
         switch self {
         case .gettingStarted: "star"
         case .recording: "record.circle"
@@ -63,13 +62,13 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    var blocks: [MarkdownBlock] { MarkdownBlock.parse(markdown) }
+    public var blocks: [MarkdownBlock] { MarkdownBlock.parse(markdown) }
 
     // MARK: Search
 
     /// The topics matching every word of `query`, those matching in their title first. All topics
     /// for an empty query.
-    static func search(_ query: String) -> [HelpTopic] {
+    public static func search(_ query: String) -> [HelpTopic] {
         let words = query.split(whereSeparator: \.isWhitespace).map(String.init)
         guard !words.isEmpty else { return allCases }
 
@@ -93,7 +92,7 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
 
     // MARK: Text
 
-    var markdown: String {
+    public var markdown: String {
         switch self {
         case .gettingStarted:
             """
@@ -251,7 +250,8 @@ enum HelpTopic: String, CaseIterable, Identifiable, Sendable {
 
             - **Notify when calls start and end** (on by default): a notification asks **Record \
             This Call?** Click it to record with System Audio turned on, plus your microphone if one \
-            is selected. When the call ends, a notification asks **Stop Recording?** Close a \
+            is selected. System Audio stays on for later recordings too. When the call ends, a \
+            notification asks **Stop Recording?** Close a \
             **Record This Call?** notification, and Mixdown won't ask about that app for 30 minutes.
             - **Record calls automatically** (off by default): recording starts by itself when a \
             call starts and stops when it ends, once no one has spoken for 20 seconds (two minutes \

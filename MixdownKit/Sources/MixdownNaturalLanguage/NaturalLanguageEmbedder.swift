@@ -24,19 +24,41 @@ public actor NaturalLanguageEmbedder: TextEmbedder {
 
     public init() {}
 
+    /// Text whose language's model can't be downloaded or loaded gets `nil`, like text no model
+    /// covers, so one passage in another script doesn't cost a note its other embeddings. Throws
+    /// only if that's every text with a model.
     public func embed(_ texts: [String]) async throws -> [TextEmbedding?] {
         let batchLanguage = Self.language(of: texts.joined(separator: "\n"), minimumConfidence: 0)
         var embeddings: [TextEmbedding?] = []
+        // Tried once per call, so a failing download isn't retried for every passage.
+        var failedLanguages: [NLLanguage: any Error] = [:]
+        var anyModelLoaded = false
         for text in texts {
             try Task.checkCancellation()
-            guard let language = Self.language(of: text) ?? batchLanguage,
-                let model = try await model(for: language)
-            else {
+            guard let language = Self.language(of: text) ?? batchLanguage, failedLanguages[language] == nil else {
                 embeddings.append(nil)
                 continue
             }
+            let model: NLContextualEmbedding?
+            do {
+                model = try await self.model(for: language)
+            } catch {
+                if error is CancellationError || Task.isCancelled { throw error }
+                logger.error(
+                    "No embedding model for \(language.rawValue, privacy: .public): \(error, privacy: .public)"
+                )
+                failedLanguages[language] = error
+                embeddings.append(nil)
+                continue
+            }
+            guard let model else {
+                embeddings.append(nil)
+                continue
+            }
+            anyModelLoaded = true
             embeddings.append(try Self.embedding(of: text, language: language, model: model))
         }
+        if !anyModelLoaded, let error = failedLanguages.values.first { throw error }
         return embeddings
     }
 

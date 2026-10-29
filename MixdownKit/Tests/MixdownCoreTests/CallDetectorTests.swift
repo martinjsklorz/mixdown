@@ -29,7 +29,7 @@ struct CallDetectorTests {
                 startDelay: .milliseconds(50),
                 endDelay: .milliseconds(50)
             )
-            run = Task { [detector] in
+            run = Task { [detector, weak self] in
                 await detector.run { [weak self] event in self?.events.append(event) }
             }
         }

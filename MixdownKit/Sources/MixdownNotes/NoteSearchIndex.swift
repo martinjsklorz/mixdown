@@ -36,7 +36,7 @@ public enum NoteSearchIndex {
 
     /// Bumped when items are built differently, so notes indexed by an older version are indexed
     /// again.
-    static let formatVersion = 1
+    static let formatVersion = 2
     /// Spotlight only shows the start of a long title anyway.
     static let maxTitleLength = 300
     /// The placeholders `MarkdownNoteRenderer` writes where there's nothing to show, as plain text.
@@ -79,11 +79,16 @@ public enum NoteSearchIndex {
     }
 
     /// The text blocks of the note as shown, each as a single line of plain text. Headings,
-    /// rules, empty blocks and Mixdown's "nothing here" placeholders are left out.
+    /// rules, empty blocks and Mixdown's "nothing here" placeholders are left out. Worked out once
+    /// per note and kept with it.
     public static func lines(of note: NoteDocument) -> [Line] {
+        note.derived.value(\.lines) { uncachedLines(of: note) }
+    }
+
+    private static func uncachedLines(of note: NoteDocument) -> [Line] {
         var lines: [Line] = []
         var section: String?
-        for (index, block) in note.displayBlocks().enumerated() {
+        for (index, block) in note.uncachedDisplayBlocks().enumerated() {
             var text: String
             switch block {
             case .heading(_, let markdown):
@@ -97,7 +102,7 @@ public enum NoteSearchIndex {
                     text.removeFirst(checkbox.count)
                 }
             case .code(_, let code):
-                text = code.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+                text = code.collapsingWhitespace
             case .rule:
                 continue
             }
@@ -187,15 +192,19 @@ public enum NoteSearchIndex {
     }
 
     /// Tells notes apart that would get different items: a hash of what the items are made from.
-    /// `NoteLibrary` works it out once as it reads a note, so updates don't hash every note again.
+    /// Worked out once per note and kept with it; `NoteLibrary` does that as it reads a note, so
+    /// updates don't hash every note again.
     static func fingerprint(of note: NoteDocument) -> String {
-        if let fingerprint = note.cachedFingerprint.value { return fingerprint }
-        return hash(
-            [
-                "\(formatVersion)", note.url.absoluteString, note.title, "\(note.createdAt.timeIntervalSince1970)",
-                note.folder ?? "", note.body,
-            ] + note.sources
-        )
+        note.derived.value(\.fingerprint) {
+            hash(
+                [
+                    "\(formatVersion)", note.url.absoluteString, note.title, "\(note.createdAt.timeIntervalSince1970)",
+                    note.folder ?? "", note.body,
+                    // With one, `lines(of:)` leaves out the Talk Time section.
+                    note.talkTimeline == nil ? "" : "talk timeline",
+                ] + note.sources
+            )
+        }
     }
 
     /// A 64-bit FNV-1a hash of `fields`, in hex. Stable between launches, unlike `Hasher`.

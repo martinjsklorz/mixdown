@@ -40,8 +40,10 @@ final class AppEnvironment {
     let notesFolder: NotesFolderStore
     /// The notes in `notesFolder`, read and watched for as long as the app runs, for the main
     /// window, Chat and Spotlight alike.
-    let library = NoteLibraryModel()
+    let library: NoteLibraryModel
     let noteTrash: NoteTrash
+    /// Searching, selecting, renaming and trashing the notes in the main window.
+    let noteBrowser: NoteBrowserModel
     /// Chat across the notes, kept while the main window is closed.
     let noteChat: NoteChat
     private let noteReady: NoteReady
@@ -90,8 +92,14 @@ final class AppEnvironment {
         let translator: any Translator = AppleTranslator()
         let noteTrash = NoteTrash()
         let noteReady = NoteReady(navigation: navigation)
+        let library = NoteLibraryModel()
         // Likewise the ONE place Chat's model and embeddings are chosen.
-        self.noteChat = NoteChat(answerer: AppleIntelligenceAnswerer(), embedder: NaturalLanguageEmbedder())
+        self.noteChat = NoteChat(
+            answerer: AppleIntelligenceAnswerer(),
+            embedder: NaturalLanguageEmbedder(),
+            indexDirectory: URL.applicationSupportDirectory.appending(path: "ChatIndex", directoryHint: .isDirectory),
+            legacyIndexFile: URL.applicationSupportDirectory.appending(path: "ChatIndex.plist")
+        )
         self.settings = settings
         self.preferences = preferences
         self.model = model
@@ -101,14 +109,21 @@ final class AppEnvironment {
         self.speakerModelDownload = Self.makeSpeakerModelDownload()
         self.translator = translator
         self.notesFolder = notesFolder
+        self.library = library
         self.noteTrash = noteTrash
+        self.noteBrowser = NoteBrowserModel(
+            library: library,
+            notesFolder: notesFolder,
+            noteTrash: noteTrash,
+            navigation: navigation
+        )
         self.noteReady = noteReady
         self.notificationResponder = NotificationResponder(noteTrash: noteTrash, noteReady: noteReady)
         self.coordinator = Self.makeCoordinator(
             model: model,
             summarizer: summarizer,
             translator: translator,
-            notesDirectory: notesFolder.directory,
+            noteWriter: notesFolder.noteWriter,
             preferredDeviceIDs: settings.selectedDeviceIDs,
             preferences: preferences
         )
@@ -145,7 +160,7 @@ final class AppEnvironment {
         model: TranscriptionModel,
         summarizer: any Summarizer,
         translator: any Translator,
-        notesDirectory: URL?,
+        noteWriter: (any NoteWriting)?,
         pendingNotes: [Note] = [],
         recordingsInMemory: RecordingsInMemory = RecordingsInMemory(),
         preferredDeviceIDs: [String],
@@ -157,7 +172,7 @@ final class AppEnvironment {
             // `TranscriptionModel.makeEngine()` is the ONE place the transcription engine is chosen.
             // To add a backend, give it a case there; nothing else here changes.
             engine: model.makeEngine(),
-            noteWriter: notesDirectory.map { MarkdownNoteWriter(directory: $0) },
+            noteWriter: noteWriter,
             pendingNotes: pendingNotes,
             recordingsInMemory: recordingsInMemory,
             summarizer: nil,
@@ -173,43 +188,17 @@ final class AppEnvironment {
             audioFileDecoder: AudioFileDecoder(),
             recordingStore: .default
         )
-        configure(coordinator, with: preferences, summarizer: summarizer)
+        coordinator.apply(preferences.coordinatorSettings, summarizer: summarizer, diarizer: speakerDiarizer)
         return coordinator
-    }
-
-    /// Hands `coordinator` everything in `preferences` it uses. Assigning a value it already has
-    /// changes nothing.
-    private static func configure(
-        _ coordinator: RecordingCoordinator,
-        with preferences: Preferences,
-        summarizer: any Summarizer
-    ) {
-        coordinator.options.language = preferences.language
-        coordinator.sourceLabels = preferences.sourceLabels
-        coordinator.vocabulary = preferences.vocabulary
-        coordinator.cancelsEcho = preferences.cancelsEcho
-        coordinator.measuresTalkTime = preferences.measuresTalkTime
-        coordinator.keepsAudioOnDisk = preferences.keepsAudioOnDisk
-        let minutes = preferences.stillRecordingMinutes
-        coordinator.stillRecordingDelay = minutes > 0 ? .seconds(minutes * 60) : nil
-        coordinator.speakerDiarizer = preferences.identifiesSpeakers ? speakerDiarizer : nil
-        coordinator.speakerNamer = preferences.identifiesSpeakers && preferences.namesSpeakers ? summarizer : nil
-        coordinator.summarizer = preferences.summarizesNotes ? summarizer : nil
-        let templates = preferences.summaryTemplates
-        coordinator.summaryTemplate = templates.recordingTemplate
-        coordinator.callSummaryTemplate = templates.callTemplate
-        coordinator.updateRecordingSummaryTemplate(from: templates.templates)
-        coordinator.translationLanguage = preferences.translatesNotes ? preferences.translationLanguage : nil
-        coordinator.translatesLiveText = preferences.translatesLiveText
     }
 
     /// Hands the preferences to the coordinator, the call prompt and the recording shortcut. Runs
     /// whenever one changes.
     private func applyPreferences() {
-        Self.configure(coordinator, with: preferences, summarizer: summarizer)
+        coordinator.apply(preferences.coordinatorSettings, summarizer: summarizer, diarizer: Self.speakerDiarizer)
         if let callPrompt {
             callPrompt.apps = preferences.callApps.apps
-            callPrompt.notifies = preferences.notifiesAboutCalls
+            callPrompt.notifies = preferences.notifiesAboutCalls && preferences.showsNotifications
             if callPrompt.recordsAutomatically != preferences.recordsCallsAutomatically {
                 callPrompt.recordsAutomatically = preferences.recordsCallsAutomatically
             }
@@ -284,19 +273,21 @@ final class AppEnvironment {
 
     // MARK: Observation
     //
-    // Each `observe…` method reads what it depends on in `withObservationTracking`, acts on it, and
-    // re-registers itself on the next change, as tracking only fires once. Those that read
-    // `coordinator` also run again when it's replaced, by a new one that starts out idle and
-    // without a note.
+    // Each `observe…` method acts on what it depends on now and on every change to it, with
+    // `observeContinuously`. Those that read `coordinator` also run again when it's replaced, by a
+    // new one that starts out idle and without a note.
 
     /// Ticks `recordingElapsed` while recording and holds it while paused, and tells the call
     /// prompt when a recording starts and stops.
     private func observeRecording() {
-        let phase = withObservationTracking {
-            coordinator.phase
-        } onChange: { [weak self] in
-            Task { @MainActor in self?.observeRecording() }
+        observeContinuously(self) {
+            $0.coordinator.phase
+        } onValue: {
+            $0.recordingPhaseChanged(to: $1)
         }
+    }
+
+    private func recordingPhaseChanged(to phase: RecordingCoordinator.Phase) {
         switch phase {
         case .startingCapture:
             // Neither started nor stopped yet; the call prompt is waiting for the recording to start.
@@ -340,40 +331,37 @@ final class AppEnvironment {
 
     /// Posts "Still Recording?" while the coordinator asks, and takes it away once answered.
     private func observeStillRecording() {
-        let isAsking = withObservationTracking {
-            coordinator.isAskingIfStillRecording
-        } onChange: { [weak self] in
-            Task { @MainActor in self?.observeStillRecording() }
-        }
-        if isAsking {
-            stillRecordingPrompt?.ask()
-        } else {
-            stillRecordingPrompt?.withdraw()
+        observeContinuously(self) {
+            $0.coordinator.isAskingIfStillRecording
+        } onValue: { environment, isAsking in
+            if isAsking {
+                environment.stillRecordingPrompt?.ask()
+            } else {
+                environment.stillRecordingPrompt?.withdraw()
+            }
         }
     }
 
     /// Plays the audio cue for each phase change, such as recording starting.
     private func observePhaseForCues() {
-        let phase = withObservationTracking {
-            coordinator.phase
-        } onChange: { [weak self] in
-            Task { @MainActor in self?.observePhaseForCues() }
+        observeContinuously(self) {
+            $0.coordinator.phase
+        } onValue: { environment, phase in
+            defer { environment.cuedPhase = phase }
+            guard let cue = AudioCue.cue(from: environment.cuedPhase, to: phase) else { return }
+            AudioCues.play(cue, settings: environment.settings)
         }
-        defer { cuedPhase = phase }
-        guard let cue = AudioCue.cue(from: cuedPhase, to: phase) else { return }
-        AudioCues.play(cue, settings: settings)
     }
 
     /// Points the coordinator and `library` at the notes folder whenever it's chosen, goes away or
     /// comes back. Without one, recording is disabled.
     private func observeNotesFolder() {
-        let directory = withObservationTracking {
-            notesFolder.directory
-        } onChange: { [weak self] in
-            Task { @MainActor in self?.observeNotesFolder() }
+        observeContinuously(self) {
+            $0.notesFolder.directory
+        } onValue: { environment, directory in
+            environment.coordinator.noteWriter = environment.notesFolder.noteWriter
+            environment.watchLibrary(in: directory)
         }
-        coordinator.noteWriter = directory.map { MarkdownNoteWriter(directory: $0) }
-        watchLibrary(in: directory)
     }
 
     /// Reads the notes in `directory` into `library`, and again whenever its files change, until
@@ -383,12 +371,21 @@ final class AppEnvironment {
             guard libraryWatch.directory != directory else { return }
             libraryWatch.task.cancel()
         }
-        let task = Task { [library] in
+        let task = Task { [library, notesFolder] in
             // Started first, so nothing that changes during the first reload is missed.
             let changes = directory.map { NotesFolderWatcher.changes(in: $0) }
             await library.reload(from: directory)
             guard let changes else { return }
-            for await _ in changes { await library.reload(from: directory) }
+            for await change in changes {
+                // The folder was renamed or moved, which the app doesn't otherwise notice until
+                // it's next in front. `refresh()` finds it again, and `observeNotesFolder()`
+                // watches it there.
+                if change == .rootChanged {
+                    notesFolder.refresh()
+                    guard notesFolder.directory == directory else { return }
+                }
+                await library.reload(from: directory)
+            }
         }
         libraryWatch = (directory, task)
     }
@@ -396,26 +393,31 @@ final class AppEnvironment {
     /// Hands Spotlight the notes whenever they change, and adds or removes them as the preference
     /// is turned on or off.
     private func observeSpotlight() {
-        let (notes, isEnabled) = withObservationTracking {
+        observeContinuously(self) { environment in
             // Without following the notes while it's off, so they aren't taken out on every change.
-            preferences.indexesNotesInSpotlight ? (library.folder.map { _ in library.notes }, true) : (nil, false)
-        } onChange: { [weak self] in
-            Task { @MainActor in self?.observeSpotlight() }
+            environment.preferences.indexesNotesInSpotlight
+                ? (environment.library.folder.map { _ in environment.library.notes }, true) : (nil, false)
+        } onValue: { environment, value in
+            environment.noteSpotlight.update(notes: value.0, isEnabled: value.1)
         }
-        noteSpotlight.update(notes: notes, isEnabled: isEnabled)
     }
 
     /// Posts "Note Ready", and plays its cue, for every note the coordinator writes.
     private func observeNewNotes() {
-        let url = withObservationTracking {
-            coordinator.lastNoteURL
-        } onChange: { [weak self] in
-            Task { @MainActor in self?.observeNewNotes() }
+        observeContinuously(self) {
+            $0.coordinator.lastNoteURL
+        } onValue: {
+            $0.noteSaved(at: $1)
         }
+    }
+
+    private func noteSaved(at url: URL?) {
         guard let url, url != notifiedNoteURL else { return }
         notifiedNoteURL = url
+        // Making the note may have downloaded the speaker or summary model.
+        refreshModelDownloads()
         AudioCues.play(.noteReady, settings: settings)
-        Task { await noteReady.notify(noteAt: url) }
+        Task { await noteReady.notify(noteAt: url, in: library.notes) }
     }
 
     // MARK: Input
@@ -503,80 +505,33 @@ final class AppEnvironment {
 
     // MARK: Global shortcut
 
-    /// Starts or stops recording on the global shortcut, from any app. `applyPreferences()` turns
-    /// it on or off.
+    /// Starts or stops recording on the global shortcut, from any app, like `mixdown://toggle`.
+    /// `applyPreferences()` turns it on or off.
     private func listenForRecordingShortcut() {
         KeyboardShortcuts.onKeyUp(for: .toggleRecording) { [weak self] in
-            self?.toggleRecordingFromOutside()
-        }
-    }
-
-    /// Starts or stops recording from another app: the global shortcut or a `mixdown://` link.
-    /// See `startRecordingFromOutside()`.
-    private func toggleRecordingFromOutside() {
-        if coordinator.canStopRecording {
-            Task { [coordinator] in await coordinator.stopRecording() }
-        } else {
-            startRecordingFromOutside()
-        }
-    }
-
-    /// Starts recording from another app. While busy downloading, transcribing, translating or
-    /// summarizing, it beeps, as recording can start once that's done. When recording can't start
-    /// for something the user has to do (no notes folder, model or input), it opens Record
-    /// instead, which says what.
-    private func startRecordingFromOutside() {
-        if coordinator.canStartRecording {
-            Task { [coordinator] in await coordinator.startRecording() }
-        } else if !coordinator.isIdle {
-            NSSound.beep()
-        } else {
-            showRecorder()
+            self?.perform(.toggleRecording)
         }
     }
 
     // MARK: Links
 
-    /// Does what a `mixdown://` link asks, for Raycast, Stream Deck, Keyboard Maestro and the like.
-    /// Starting and stopping work like the global shortcut. Starting while recording, stopping
-    /// while not, and the like do nothing, so a script can ask without checking first; pausing,
-    /// resuming and marking a moment beep when not recording, like the Mark Moment shortcut. Only
-    /// opening, and starting when recording can't start, bring the main window forward.
+    /// Does what a `mixdown://` link asks, for Raycast, Stream Deck, Keyboard Maestro and the like:
+    /// whatever `RecordingCoordinator.action(for:)` makes of it now.
     func perform(_ command: URLCommand) {
-        switch command {
-        case .toggleRecording:
-            toggleRecordingFromOutside()
-        case .startRecording:
-            guard !coordinator.canStopRecording else { return }
-            startRecordingFromOutside()
-        case .stopRecording:
-            guard coordinator.canStopRecording else { return }
-            Task { [coordinator] in await coordinator.stopRecording() }
-        case .pauseRecording, .resumeRecording, .togglePause:
-            guard coordinator.isRecording else {
-                NSSound.beep()
-                return
-            }
-            // Pausing while paused and resuming while recording are ignored.
-            Task { [coordinator] in
-                switch command {
-                case .pauseRecording: await coordinator.pauseRecording()
-                case .resumeRecording: await coordinator.resumeRecording()
-                default: await coordinator.togglePause()
-                }
-            }
-        case .markMoment(nil):
-            island.markMoment()
-        case .markMoment(let text?):
-            guard let time = coordinator.momentTime else {
-                NSSound.beep()
-                return
-            }
-            coordinator.addMoment(at: time, text: text)
-        case .open(nil):
-            showMainWindow()
-        case .open(let reference?):
-            Task { await openNote(reference) }
+        let coordinator = coordinator
+        switch coordinator.action(for: command) {
+        case .startRecording: Task { await coordinator.startRecording() }
+        case .stopRecording: Task { await coordinator.stopRecording() }
+        case .pauseRecording: Task { await coordinator.pauseRecording() }
+        case .resumeRecording: Task { await coordinator.resumeRecording() }
+        case .togglePause: Task { await coordinator.togglePause() }
+        case .beep: NSSound.beep()
+        case .showRecorder: showRecorder()
+        case .markMoment: island.markMoment()
+        case .addMoment(let time, let text): coordinator.addMoment(at: time, text: text)
+        case .showMainWindow: showMainWindow()
+        case .openNote(let reference): Task { await openNote(reference) }
+        case .nothing: break
         }
     }
 
@@ -623,7 +578,7 @@ final class AppEnvironment {
             model: model,
             summarizer: summarizer,
             translator: translator,
-            notesDirectory: notesFolder.directory,
+            noteWriter: notesFolder.noteWriter,
             pendingNotes: coordinator.takePendingNotes(),
             recordingsInMemory: coordinator.takeRecordingsInMemory(),
             preferredDeviceIDs: settings.selectedDeviceIDs,
@@ -636,6 +591,18 @@ final class AppEnvironment {
 
     /// Whether `summaryModel` is on disk; always true for one macOS provides.
     var isSummaryModelDownloaded: Bool { summaryModelDownload?.isDownloaded ?? true }
+
+    /// Marks the setup assistant as done, so it doesn't open again at the next launch.
+    func finishSetup() {
+        settings.needsSetup = false
+    }
+
+    /// Checks again whether the speaker and summary models are on disk, for views that show it,
+    /// as recordings download them when they need them and Finder can remove them.
+    func refreshModelDownloads() {
+        speakerModelDownload.refresh()
+        summaryModelDownload?.refresh()
+    }
 
     /// Whether `summarizer` can summarize right now, and if not, why. Read this rather than
     /// `summarizer.availability` in views, so they update when the model finishes downloading.
@@ -658,18 +625,19 @@ final class AppEnvironment {
 
     // MARK: Vocabulary
 
+    /// How many `correctNotes(with:)` calls are running or waiting their turn.
+    private var correctionsRunning = 0
     /// Whether `correctNotes(with:)` is running.
-    private(set) var isCorrectingNotes = false
+    var isCorrectingNotes: Bool { correctionsRunning > 0 }
 
-    /// Applies `vocabulary` to every note in the notes folder, off the main thread. `nil` without
-    /// a notes folder. The main window picks up the changed files as it watches the folder.
+    /// Applies `vocabulary` to every note in the notes folder, off the main thread, after any
+    /// other change to notes asked for before. `nil` without a notes folder. The main window picks
+    /// up the changed files as it watches the folder.
     func correctNotes(with vocabulary: Vocabulary) async throws -> NoteLibrary.VocabularyChanges? {
         guard let directory = notesFolder.directory else { return nil }
-        isCorrectingNotes = true
-        defer { isCorrectingNotes = false }
-        return try await Task.detached(priority: .userInitiated) {
-            try NoteLibrary.applyVocabulary(vocabulary, toNotesIn: directory)
-        }.value
+        correctionsRunning += 1
+        defer { correctionsRunning -= 1 }
+        return try await library.applyVocabulary(vocabulary, toNotesIn: directory)
     }
 
     // MARK: Notes

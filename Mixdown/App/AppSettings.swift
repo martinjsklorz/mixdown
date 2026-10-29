@@ -1,5 +1,7 @@
 import Foundation
 import MixdownCore
+import SwiftUI
+import os
 
 /// Typed access to Mixdown's preferences in `UserDefaults`.
 ///
@@ -146,9 +148,9 @@ struct AppSettings {
         nonmutating set { defaults.set(newValue, forKey: Key.notesFolderBookmark) }
     }
 
-    /// Set with `@AppStorage`.
     var showsNotifications: Bool {
-        defaults.object(forKey: Key.showsNotifications) as? Bool ?? true
+        get { defaults.object(forKey: Key.showsNotifications) as? Bool ?? true }
+        nonmutating set { defaults.set(newValue, forKey: Key.showsNotifications) }
     }
 
     var indexesNotesInSpotlight: Bool {
@@ -193,10 +195,7 @@ struct AppSettings {
     /// they came is stored.
     var summaryTemplates: SummaryTemplateLibrary {
         get {
-            let stored =
-                defaults.data(forKey: Key.summaryTemplates).flatMap {
-                    try? JSONDecoder().decode([SummaryTemplate].self, from: $0)
-                } ?? []
+            let stored = decoded(LossyArray<SummaryTemplate>.self, forKey: Key.summaryTemplates)?.elements ?? []
             return SummaryTemplateLibrary(
                 stored: stored,
                 recordingTemplateID: defaults.string(forKey: Key.summaryTemplate),
@@ -247,9 +246,9 @@ struct AppSettings {
     /// What Settings offers for `stillRecordingMinutes`, besides never.
     static let stillRecordingMinuteChoices = [5, 10, 15, 30, 60]
 
-    /// Set with `@AppStorage`.
     var playsSounds: Bool {
-        defaults.object(forKey: Key.playsSounds) as? Bool ?? true
+        get { defaults.object(forKey: Key.playsSounds) as? Bool ?? true }
+        nonmutating set { defaults.set(newValue, forKey: Key.playsSounds) }
     }
 
     /// The name of the sound for `cue`, or `nil` if the user chose none.
@@ -279,10 +278,7 @@ struct AppSettings {
 
     /// Words to correct in transcripts. Empty if none were added, or what's stored can't be read.
     var vocabulary: Vocabulary {
-        get {
-            defaults.data(forKey: Key.vocabulary).flatMap { try? JSONDecoder().decode(Vocabulary.self, from: $0) }
-                ?? Vocabulary()
-        }
+        get { decoded(Vocabulary.self, forKey: Key.vocabulary) ?? Vocabulary() }
         nonmutating set { defaults.set(try? JSONEncoder().encode(newValue), forKey: Key.vocabulary) }
     }
 
@@ -306,16 +302,14 @@ struct AppSettings {
 
     /// Which apps count as calls. Every known one unless changed.
     var callApps: CallAppSelection {
-        get {
-            defaults.data(forKey: Key.callApps).flatMap { try? JSONDecoder().decode(CallAppSelection.self, from: $0) }
-                ?? CallAppSelection()
-        }
+        get { decoded(CallAppSelection.self, forKey: Key.callApps) ?? CallAppSelection() }
         nonmutating set { defaults.set(try? JSONEncoder().encode(newValue), forKey: Key.callApps) }
     }
 
     /// Light or dark mode for the app. Follows the system unless set.
     var appearance: Appearance {
-        defaults.string(forKey: Key.appearance).flatMap(Appearance.init(rawValue:)) ?? .auto
+        defaults.string(forKey: Key.appearance).flatMap(Appearance.init(rawValue:))
+            ?? Preference.appearance.defaultValue
     }
 
     /// Whether to show a recording in the Dynamic Island. On unless turned off.
@@ -348,5 +342,60 @@ struct AppSettings {
             defaults.set(newValue.showsLiveText, forKey: Key.islandShowsLiveText)
             defaults.set(newValue.showsTalkShare, forKey: Key.islandShowsTalkShare)
         }
+    }
+}
+
+extension AppSettings {
+    private static let logger = Logger(subsystem: "app.mixdown", category: "settings")
+
+    /// The JSON stored at `key`, decoded; `nil` if there's none. The types stored this way decode
+    /// leniently, so this only fails for data that isn't JSON of the right shape at all. Then the
+    /// data is copied to `<key>.unreadable` before the caller falls back to a default, which the
+    /// next change would write over it.
+    func decoded<Value: Decodable>(_ type: Value.Type, forKey key: String) -> Value? {
+        guard let data = defaults.data(forKey: key) else { return nil }
+        do {
+            return try JSONDecoder().decode(type, from: data)
+        } catch {
+            Self.logger.error("Can't read setting \(key, privacy: .public): \(error.localizedDescription)")
+            defaults.set(data, forKey: Self.unreadableKey(key))
+            return nil
+        }
+    }
+
+    /// Where `decoded(_:forKey:)` keeps a copy of data at `key` it couldn't read.
+    static func unreadableKey(_ key: String) -> String { "\(key).unreadable" }
+}
+
+/// A setting read with `@AppStorage`: its key, and its value while nothing is stored, so the views
+/// that read it and `AppSettings` agree on that value.
+struct Preference<Value> {
+    let key: String
+    let defaultValue: Value
+}
+
+extension Preference where Value == Bool {
+    static var suppressesTrashConfirmation: Self {
+        Self(key: AppSettings.Key.suppressesTrashConfirmation, defaultValue: false)
+    }
+
+    static var collapsesPinnedNotes: Self {
+        Self(key: AppSettings.Key.collapsesPinnedNotes, defaultValue: false)
+    }
+}
+
+extension Preference where Value == Appearance {
+    static var appearance: Self {
+        Self(key: AppSettings.Key.appearance, defaultValue: .auto)
+    }
+}
+
+extension AppStorage {
+    init(_ preference: Preference<Value>) where Value == Bool {
+        self.init(wrappedValue: preference.defaultValue, preference.key)
+    }
+
+    init(_ preference: Preference<Value>) where Value: RawRepresentable, Value.RawValue == String {
+        self.init(wrappedValue: preference.defaultValue, preference.key)
     }
 }

@@ -33,9 +33,18 @@ final class Preferences {
     /// How many of the last minutes of a recording Catch Me Up sums up.
     var catchUpMinutes: Int { didSet { save { $0.catchUpMinutes = catchUpMinutes } } }
 
+    // MARK: Notifications
+
+    /// Whether Mixdown posts notifications at all. Off, it doesn't notify about calls either. See
+    /// `Notifications`.
+    var showsNotifications: Bool { didSet { save { $0.showsNotifications = showsNotifications } } }
+    /// Whether recording starting, pausing, stopping and finishing plays a sound. See `AudioCues`.
+    var playsSounds: Bool { didSet { save { $0.playsSounds = playsSounds } } }
+
     // MARK: Calls
 
-    /// Whether to post notifications when calls start and end. See `CallPrompt`.
+    /// Whether to post notifications when calls start and end, while `showsNotifications` is on.
+    /// See `CallPrompt`.
     var notifiesAboutCalls: Bool { didSet { save { $0.notifiesAboutCalls = notifiesAboutCalls } } }
     /// Whether to start and stop recording with calls, without asking. See `CallPrompt`.
     var recordsCallsAutomatically: Bool {
@@ -111,6 +120,8 @@ final class Preferences {
         stillRecordingMinutes = settings.stillRecordingMinutes
         isRecordingShortcutEnabled = settings.isRecordingShortcutEnabled
         catchUpMinutes = settings.catchUpMinutes
+        showsNotifications = settings.showsNotifications
+        playsSounds = settings.playsSounds
         notifiesAboutCalls = settings.notifiesAboutCalls
         recordsCallsAutomatically = settings.recordsCallsAutomatically
         callApps = settings.callApps
@@ -128,6 +139,26 @@ final class Preferences {
         islandLayout = settings.islandLayout
         indexesNotesInSpotlight = settings.indexesNotesInSpotlight
         isChatEnabled = settings.isChatEnabled
+    }
+
+    /// What of these the recording coordinator follows; see `RecordingCoordinator.apply`.
+    var coordinatorSettings: CoordinatorSettings {
+        CoordinatorSettings(
+            language: language,
+            sourceLabels: sourceLabels,
+            vocabulary: vocabulary,
+            cancelsEcho: cancelsEcho,
+            measuresTalkTime: measuresTalkTime,
+            keepsAudioOnDisk: keepsAudioOnDisk,
+            stillRecordingMinutes: stillRecordingMinutes,
+            identifiesSpeakers: identifiesSpeakers,
+            namesSpeakers: namesSpeakers,
+            summarizesNotes: summarizesNotes,
+            summaryTemplates: summaryTemplates,
+            translatesNotes: translatesNotes,
+            translationLanguage: translationLanguage,
+            translatesLiveText: translatesLiveText
+        )
     }
 
     private func save(_ write: (AppSettings) -> Void) {

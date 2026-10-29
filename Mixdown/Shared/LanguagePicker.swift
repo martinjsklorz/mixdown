@@ -11,10 +11,7 @@ struct LanguagePicker: View {
     var body: some View {
         Picker(
             "Language",
-            selection: Binding(
-                get: { environment.preferences.language },
-                set: { environment.preferences.language = $0 }
-            )
+            selection: Bindable(environment.preferences).language
         ) {
             Text("Automatic").tag(String?.none)
             Divider()

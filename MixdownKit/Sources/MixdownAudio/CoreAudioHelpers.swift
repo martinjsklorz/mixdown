@@ -2,6 +2,7 @@
 import CoreAudio
 import Foundation
 import MixdownCore
+import Synchronization
 import os
 
 let audioLogger = Logger(subsystem: "app.mixdown", category: "audio")
@@ -17,11 +18,23 @@ enum CoreAudioHAL {
         AudioObjectPropertyAddress(mSelector: selector, mScope: scope, mElement: kAudioObjectPropertyElementMain)
     }
 
-    /// Converts a non-zero `OSStatus` into `AudioCaptureError.deviceUnavailable`.
-    static func check(_ status: OSStatus, _ action: String) throws {
+    /// Converts a non-zero `OSStatus` into `AudioCaptureError.deviceUnavailable`, or into
+    /// `.deviceNotFound(deviceName)` if the device it was about went away in the meantime.
+    static func check(_ status: OSStatus, _ action: String, deviceName: String? = nil) throws {
         guard status == noErr else {
-            throw AudioCaptureError.deviceUnavailable("Couldn't \(action) (OSStatus \(status))")
+            if let deviceName, status == kAudioHardwareBadDeviceError || status == kAudioHardwareBadObjectError {
+                throw AudioCaptureError.deviceNotFound(deviceName)
+            }
+            throw AudioCaptureError.deviceUnavailable("Couldn't \(action) (OSStatus \(describe(status)))")
         }
+    }
+
+    /// `status` as the four-character code most Core Audio errors are, e.g. `'!dev'`, or else as
+    /// a number.
+    static func describe(_ status: OSStatus) -> String {
+        let bytes = withUnsafeBytes(of: UInt32(bitPattern: status).bigEndian) { Array($0) }
+        guard bytes.allSatisfy({ (0x20...0x7E).contains($0) }) else { return "\(status)" }
+        return "'\(String(decoding: bytes, as: UTF8.self))'"
     }
 
     /// Every audio device known to the HAL, inputs and outputs alike.
@@ -133,7 +146,7 @@ enum CoreAudioHAL {
         let status = AudioObjectGetPropertyData(streams[0], &formatAddress, 0, nil, &formatSize, &description)
         guard status == noErr, description.mSampleRate > 0, description.mChannelsPerFrame > 0 else {
             audioLogger.error(
-                "Device \(deviceID, privacy: .public) input format unreadable (OSStatus \(status, privacy: .public)): \(description.mSampleRate, privacy: .public) Hz, \(description.mChannelsPerFrame, privacy: .public) channels"
+                "Device \(deviceID, privacy: .public) input format unreadable (OSStatus \(describe(status), privacy: .public)): \(description.mSampleRate, privacy: .public) Hz, \(description.mChannelsPerFrame, privacy: .public) channels"
             )
             return nil
         }
@@ -189,10 +202,10 @@ enum CoreAudioHAL {
         return value.takeRetainedValue() as String
     }
 
-    /// Logs a failed teardown call, which there's nothing else to do about.
+    /// Logs a failed call there's nothing else to do about, such as one in teardown.
     static func logFailure(_ status: OSStatus, _ call: String) {
         guard status != noErr else { return }
-        audioLogger.error("\(call, privacy: .public) failed: \(status, privacy: .public)")
+        audioLogger.error("\(call, privacy: .public) failed: \(describe(status), privacy: .public)")
     }
 }
 
@@ -203,21 +216,25 @@ final class HALPropertyListener: @unchecked Sendable {
     private let objectID: AudioObjectID
     private let selectors: [AudioObjectPropertySelector]
     private let scope: AudioObjectPropertyScope
-    private let queue = DispatchQueue(label: "app.mixdown.audio.hal-listener")
+    private let queue: DispatchQueue
     // CoreAudio identifies listener blocks by identity, so the same block instance must be
     // passed to both add and remove.
     private let block: AudioObjectPropertyListenerBlock
     private let isInstalled = OSAllocatedUnfairLock(initialState: false)
 
+    /// - Parameter queue: Where `onChange` runs. Listeners that share a serial queue are called
+    ///   one after another, in the order of their notifications.
     init(
         objectID: AudioObjectID = CoreAudioHAL.systemObject,
         selectors: [AudioObjectPropertySelector],
         scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal,
+        queue: DispatchQueue = DispatchQueue(label: "app.mixdown.audio.hal-listener"),
         onChange: @escaping @Sendable () -> Void
     ) {
         self.objectID = objectID
         self.selectors = selectors
         self.scope = scope
+        self.queue = queue
         self.block = { _, _ in onChange() }
     }
 
@@ -228,9 +245,7 @@ final class HALPropertyListener: @unchecked Sendable {
             for selector in selectors {
                 var address = CoreAudioHAL.propertyAddress(selector, scope: scope)
                 let status = AudioObjectAddPropertyListenerBlock(objectID, &address, queue, block)
-                if status != noErr {
-                    audioLogger.error("AudioObjectAddPropertyListenerBlock failed: \(status, privacy: .public)")
-                }
+                CoreAudioHAL.logFailure(status, "AudioObjectAddPropertyListenerBlock")
             }
         }
     }
@@ -244,8 +259,8 @@ final class HALPropertyListener: @unchecked Sendable {
             for selector in selectors {
                 var address = CoreAudioHAL.propertyAddress(selector, scope: scope)
                 let status = AudioObjectRemovePropertyListenerBlock(objectID, &address, queue, block)
-                if status != noErr, logsFailures {
-                    audioLogger.error("AudioObjectRemovePropertyListenerBlock failed: \(status, privacy: .public)")
+                if logsFailures {
+                    CoreAudioHAL.logFailure(status, "AudioObjectRemovePropertyListenerBlock")
                 }
             }
         }
@@ -277,6 +292,24 @@ final class HALPropertyListener: @unchecked Sendable {
             // The process has exited or the device is gone, so the HAL may have dropped the listener.
             listener.remove(logsFailures: false)
             listeners[objectID] = nil
+        }
+    }
+}
+
+/// Runs a refresh once for however many requests arrive before it starts. A single plug or call
+/// start fires several listeners, and each would otherwise queue a refresh that reads everything
+/// again. A request made once the refresh has started gets a refresh of its own.
+///
+/// `Sendable`: the flag is atomic.
+final class CoalescedRefresh: Sendable {
+    private let isScheduled = Atomic<Bool>(false)
+
+    /// Queues `refresh` on `queue` unless an earlier one is still waiting there.
+    func schedule(on queue: DispatchQueue, _ refresh: @escaping @Sendable () -> Void) {
+        guard !isScheduled.exchange(true, ordering: .acquiringAndReleasing) else { return }
+        queue.async {
+            self.isScheduled.store(false, ordering: .releasing)
+            refresh()
         }
     }
 }

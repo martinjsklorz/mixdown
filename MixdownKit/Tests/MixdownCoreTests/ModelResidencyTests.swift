@@ -23,9 +23,12 @@ struct ModelResidencyTests {
 
         private let state = Mutex(State())
         let loadDelay: Duration
+        /// Whether loads take `loadDelay` even when cancelled, as a loader that doesn't check.
+        let ignoresCancellation: Bool
 
-        init(loadDelay: Duration = .zero, failures: Int = 0) {
+        init(loadDelay: Duration = .zero, failures: Int = 0, ignoresCancellation: Bool = false) {
             self.loadDelay = loadDelay
+            self.ignoresCancellation = ignoresCancellation
             state.withLock { $0.failuresLeft = failures }
         }
 
@@ -46,7 +49,12 @@ struct ModelResidencyTests {
                         return ($0.loads, fails)
                     }
                     progress(0.5)
-                    if self.loadDelay > .zero { try await Task.sleep(for: self.loadDelay) }
+                    if self.ignoresCancellation {
+                        let delay = self.loadDelay
+                        await Task.detached { try? await Task.sleep(for: delay) }.value
+                    } else if self.loadDelay > .zero {
+                        try await Task.sleep(for: self.loadDelay)
+                    }
                     if fails { throw TestError() }
                     let weights = Weights(id: id)
                     self.state.withLock { $0.lastWeights = weights }
@@ -168,30 +176,38 @@ struct ModelResidencyTests {
         #expect(await !residency.isLoaded)
     }
 
-    @Test func callerJoiningACancelledLoadStartsOver() async throws {
-        let probe = Probe(loadDelay: .milliseconds(200))
+    @Test func cancellingOneOfTwoCallersKeepsTheSharedLoad() async throws {
+        // Scaled, so a slow machine doesn't finish the load before the first caller is cancelled.
+        let probe = Probe(loadDelay: .milliseconds(200) * testTimeoutScale)
         let residency = probe.residency()
         let first = Task { try await residency.load() }
-        try await Task.sleep(for: .milliseconds(30))
+        try await Task.sleep(for: .milliseconds(30) * testTimeoutScale)
         let second = Task { try await residency.load() }
-        try await Task.sleep(for: .milliseconds(30))
+        try await Task.sleep(for: .milliseconds(30) * testTimeoutScale)
         first.cancel()
+        // The cancelled caller doesn't wait for the load.
+        let cancelled = ContinuousClock.now
+        await #expect(throws: CancellationError.self) { try await first.value }
+        #expect(ContinuousClock.now - cancelled < .milliseconds(100) * testTimeoutScale)
         let weights = try await second.value
-        #expect(weights.id == 2)
-        #expect(probe.loads == 2)
+        #expect(weights.id == 1)
+        #expect(probe.loads == 1)
     }
 
-    private func waitUntil(
-        timeout: Duration = .seconds(2),
-        _ condition: @Sendable () async -> Bool
-    ) async throws {
-        let deadline = ContinuousClock.now + timeout
-        while await !condition() {
-            guard ContinuousClock.now < deadline else {
-                Issue.record("Timed out")
-                return
-            }
-            try await Task.sleep(for: .milliseconds(10))
-        }
+    @Test func unloadDuringLoadFailsWaitersAndStaysUnloaded() async throws {
+        let probe = Probe(loadDelay: .milliseconds(150) * testTimeoutScale, ignoresCancellation: true)
+        let residency = probe.residency()
+        let first = Task { try await residency.load() }
+        let second = Task { try await residency.load() }
+        try await Task.sleep(for: .milliseconds(30) * testTimeoutScale)
+        await residency.unload()
+        await #expect(throws: CancellationError.self) { try await first.value }
+        await #expect(throws: CancellationError.self) { try await second.value }
+        // The load finishes anyway; what it loaded is dropped, and nothing loads it again.
+        try await waitUntil { probe.didUnloads == 1 }
+        #expect(probe.willUnloads == 1)
+        #expect(probe.loads == 1)
+        #expect(probe.weightsAliveAtDidUnload == [false])
+        #expect(await !residency.isLoaded)
     }
 }

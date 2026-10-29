@@ -1,4 +1,5 @@
 import AppKit
+import MixdownCore
 import SwiftUI
 
 /// A Dynamic Island for the Mac: a black panel that grows out of the camera notch while recording,
@@ -36,6 +37,17 @@ final class DynamicIsland {
         /// Whether a ring next to the time shows how the talking is shared between the user and the
         /// others. Only while recording both a microphone and system audio.
         var showsTalkShare = true
+
+        /// Where the island goes around the notch, with the time's wing `timeWingWidth` wide.
+        @MainActor func geometry(timeWingWidth: CGFloat) -> NotchLayout {
+            NotchLayout(
+                timeOnLeft: timeSide == .left,
+                timeWingWidth: timeWingWidth,
+                levelsWingWidth: showsLevels ? DynamicIslandView.levelsWingWidth : 0,
+                liveTextHeight: showsLiveText ? DynamicIslandView.liveTextHeight : 0,
+                liveTextGapWidth: DynamicIslandView.liveTextGapWidth
+            )
+        }
     }
 
     /// Whether the wings are out. They grow out of the notch on `show(_:)` and back into it on
@@ -159,7 +171,7 @@ final class DynamicIsland {
         let hostingView = NSHostingView(
             rootView: DynamicIslandView(
                 environment: environment,
-                notchWidth: gap(for: notch).width,
+                notchWidth: layout.geometry(timeWingWidth: timeWingWidth).gap(for: notch).width,
                 layout: layout,
                 presence: presence,
                 openRecorder: openRecorder,
@@ -176,28 +188,7 @@ final class DynamicIsland {
         } else {
             panel.collectionBehavior.remove(.fullScreenAuxiliary)
         }
-        panel.setFrame(frame(around: notch), display: true)
-    }
-
-    /// The space between the wings: `notch`, or without one, room for the live text to be wide
-    /// enough to read.
-    private func gap(for notch: NSRect) -> NSRect {
-        guard notch.width == 0, layout.showsLiveText else { return notch }
-        return notch.insetBy(dx: -DynamicIslandView.liveTextGapWidth / 2, dy: 0)
-    }
-
-    /// The island's frame: the wings, each as wide as its content, either side of `notch`, and the
-    /// live text under all three.
-    private func frame(around notch: NSRect) -> NSRect {
-        let gap = gap(for: notch)
-        let levelsWidth = layout.showsLevels ? DynamicIslandView.levelsWingWidth : 0
-        let (left, right) =
-            layout.timeSide == .left ? (timeWingWidth, levelsWidth) : (levelsWidth, timeWingWidth)
-        let width = left + gap.width + right
-        // Without a notch to grow out of: centered.
-        let x = gap.width == 0 ? gap.midX - width / 2 : gap.minX - left
-        let liveTextHeight = layout.showsLiveText ? DynamicIslandView.liveTextHeight : 0
-        return NSRect(x: x, y: gap.minY - liveTextHeight, width: width, height: gap.height + liveTextHeight)
+        panel.setFrame(layout.geometry(timeWingWidth: timeWingWidth).islandFrame(around: notch), display: true)
     }
 
     /// Widens or narrows the island as the time gets longer, such as from "9:59" to "10:00".
@@ -205,7 +196,8 @@ final class DynamicIsland {
         guard abs(width - timeWingWidth) >= 0.5 else { return }
         timeWingWidth = width
         guard isShown, let panel, let screen = Self.screen else { return }
-        panel.setFrame(frame(around: Self.notch(on: screen)), display: true)
+        let notch = Self.notch(on: screen)
+        panel.setFrame(layout.geometry(timeWingWidth: timeWingWidth).islandFrame(around: notch), display: true)
     }
 
     /// The notch in screen coordinates. On a screen without one, a zero-width rectangle at the top

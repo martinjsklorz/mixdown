@@ -121,9 +121,16 @@ public enum SummaryPrompt {
     /// Models answer in the language of their input, and the instructions are English. Without a
     /// firm rule, a German recording gets an English overview, and a catch-up asked for in another
     /// language (when the live text is translated) comes in the recording's.
-    static func languageRule(_ language: String?) -> String {
+    /// - Parameters:
+    ///   - verb: What the model does in the language, e.g. "answer".
+    ///   - fallback: Whose language to use when `language` is `nil`, e.g. "the question".
+    public static func languageRule(
+        _ language: String?,
+        verb: String = "write",
+        fallback: String = "the transcript"
+    ) -> String {
         let languageName = language.flatMap { Locale(identifier: "en").localizedString(forIdentifier: $0) }
-        return languageName.map { "You MUST write in \($0)." } ?? "You MUST write in the language of the transcript."
+        return "You MUST \(verb) in \(languageName ?? "the language of \(fallback)")."
     }
 
     /// Drops a bullet the model sometimes writes itself, since the note adds its own.
@@ -136,37 +143,51 @@ public enum SummaryPrompt {
     }
 }
 
-/// Summaries from models without structured output, which are asked for a JSON object and whose
-/// answer is read leniently: reasoning, code fences and text around the object are skipped.
-public enum JSONSummary {
-    /// Most items asked for in each list, as for Apple's model.
-    static let maximumItems = 8
+/// What each part of a summary or catch-up is, and how many items a list has at most, for every
+/// backend: Apple's model reads them from its response schema, others from `JSONSummary.format`.
+public enum SummaryFields {
+    /// Most items of each list of a summary.
+    public static let maximumItems = 8
     /// Most points of a catch-up.
-    static let maximumCatchUpPoints = 4
+    public static let maximumCatchUpPoints = 4
 
+    public static let keyPoints = "The most important points, decisions and conclusions, one short sentence each"
+    public static let decisions =
+        "Decisions that were made, not just suggested, one short sentence each. Empty if there are none"
+    public static let actionItems =
+        "Tasks someone agreed to do, naming who and by when if the text says. Empty if there are none"
+    public static let openQuestions = "Questions that were raised but not answered, one each. Empty if there are none"
+    public static let overview = "Two to four sentences on what the recording is about"
+    public static let tldr = "TL;DR: one to three sentences on what the recording is about and its outcome"
+    public static let title =
+        "The topic in two to six words, as a title. Not a sentence; no \"Meeting about\" or similar"
+    public static let catchUpPoints =
+        "What was missed, oldest first, one short sentence each, naming who said what where it matters"
+}
+
+/// Summaries from models without structured output, which are asked for a JSON object and whose
+/// answer is read leniently: reasoning, code fences and text around the object are skipped, and
+/// an answer cut off before its end is read as far as it goes.
+public enum JSONSummary {
     /// How to answer, appended to `SummaryPrompt.instructions`. Keys are listed in the order they
     /// should be written, so the overview and the title can draw on what comes before them. Small
     /// models follow an exact shape better than a description, and the language rule last.
     public static func format(for template: SummaryTemplate, language: String?) -> String {
-        let decisionsDescription =
-            "decisions that were made, not just suggested, one short sentence each; empty if there are none"
-        let actionItemsDescription =
-            "tasks someone agreed to do, naming who and by when if the text says; empty if there are none"
         let keys: [(String, String)] =
             if template.hasFixedSections {
                 [
-                    ("decisions", decisionsDescription),
-                    ("actionItems", actionItemsDescription),
-                    ("openQuestions", "questions that were raised but not answered, one each; empty if there are none"),
-                    ("tldr", "one to three sentences on what the recording is about and its outcome"),
-                    ("title", titleDescription),
+                    ("decisions", SummaryFields.decisions),
+                    ("actionItems", SummaryFields.actionItems),
+                    ("openQuestions", SummaryFields.openQuestions),
+                    ("tldr", SummaryFields.tldr),
+                    ("title", SummaryFields.title),
                 ]
             } else {
                 [
-                    ("keyPoints", "the most important points, decisions and conclusions, one short sentence each"),
-                    ("actionItems", actionItemsDescription),
-                    ("overview", "two to four sentences on what the recording is about"),
-                    ("title", titleDescription),
+                    ("keyPoints", SummaryFields.keyPoints),
+                    ("actionItems", SummaryFields.actionItems),
+                    ("overview", SummaryFields.overview),
+                    ("title", SummaryFields.title),
                 ]
             }
         return object(keys: keys, language: language)
@@ -174,19 +195,8 @@ public enum JSONSummary {
 
     /// How to answer a catch-up, appended to `SummaryPrompt.catchUpInstructions`.
     public static func catchUpFormat(language: String?) -> String {
-        object(
-            keys: [
-                (
-                    "points",
-                    "what was missed, oldest first, one short sentence each in your own words, naming who said what where it matters; at most \(maximumCatchUpPoints)"
-                )
-            ],
-            language: language
-        )
+        object(keys: [("points", SummaryFields.catchUpPoints)], language: language)
     }
-
-    private static let titleDescription =
-        "the topic in two to six words, as a title. Not a sentence; no \"Meeting about\" or similar"
 
     /// Keys that hold a string rather than a list.
     private static let textKeys: Set<String> = ["overview", "tldr", "title"]
@@ -196,7 +206,8 @@ public enum JSONSummary {
             textKeys.contains(key) ? "\"\(key)\": \"...\"" : "\"\(key)\": [\"...\"]"
         }
         let lines = keys.map { key, description in
-            let limit = textKeys.contains(key) || key == "points" ? "" : "; at most \(maximumItems)"
+            let maximum = key == "points" ? SummaryFields.maximumCatchUpPoints : SummaryFields.maximumItems
+            let limit = textKeys.contains(key) ? "" : "; at most \(maximum)"
             return "- \"\(key)\": \(description)\(limit)"
         }
         return """
@@ -231,18 +242,100 @@ public enum JSONSummary {
 
     /// The catch-up points in `response`, or nil if it holds no JSON object.
     public static func catchUpPoints(from response: String) -> [String]? {
-        jsonObject(in: response).map { Array(list($0["points"]).prefix(maximumCatchUpPoints)) }
+        jsonObject(in: response).map { Array(list($0["points"]).prefix(SummaryFields.maximumCatchUpPoints)) }
     }
 
-    /// The outermost JSON object in `response`, after any `<think>` block. Repaired if need be.
+    /// The first JSON object in `response` that can be read, after any `<think>` block. Repaired
+    /// if need be. Small models sometimes write the object twice, or add a remark with braces, so
+    /// each object is read on its own; one cut off before its end, as when the answer ran out of
+    /// tokens, is read as far as its last complete item.
     static func jsonObject(in response: String) -> [String: Any]? {
         var text = Substring(response)
         if let end = text.range(of: "</think>") { text = text[end.upperBound...] }
-        guard let start = text.firstIndex(of: "{"), let end = text.lastIndex(of: "}"), start < end else {
-            return nil
+        while let start = text.firstIndex(of: "{") {
+            let (json, end) = firstObject(in: text[start...])
+            let object = parse(json) ?? parse(repaired(json))
+            // Cut off before anything was complete, it's no answer.
+            if let object, end != nil || !object.isEmpty { return object }
+            guard let end else { return nil }
+            text = text[end...]
         }
-        let json = String(text[start...end])
-        return parse(json) ?? parse(repaired(json))
+        return nil
+    }
+
+    /// The JSON object `text` starts with, up to the brace that closes it, and the index after
+    /// that brace. If none does, the object is cut back to its last complete value and closed, with
+    /// a `nil` index.
+    ///
+    /// Reads only as much of JSON as that takes: strings with their escapes, so braces in them
+    /// don't count, and which strings are keys, so a cut-off key is dropped with the rest.
+    private static func firstObject(in text: Substring) -> (json: String, end: Substring.Index?) {
+        enum Container {
+            case object(expectingValue: Bool)
+            case array
+        }
+        var stack: [Container] = []
+        var inString = false
+        var isEscaped = false
+        // Where the text could be cut and closed with `closers` to make valid JSON.
+        var cut = text.startIndex
+        var closers = ""
+        func markCut(before end: Substring.Index) {
+            cut = end
+            closers = String(
+                stack.reversed().map {
+                    if case .object = $0 { "}" } else { "]" }
+                }
+            )
+        }
+        // A string or container just ended; what it was depends on where it was.
+        func endValue(at index: Substring.Index) {
+            guard case .object(expectingValue: let expectingValue) = stack.last else {
+                markCut(before: text.index(after: index))
+                return
+            }
+            // A key isn't complete without its value.
+            guard expectingValue else { return }
+            stack[stack.count - 1] = .object(expectingValue: false)
+            markCut(before: text.index(after: index))
+        }
+        for index in text.indices {
+            let character = text[index]
+            if inString {
+                if isEscaped {
+                    isEscaped = false
+                } else if character == "\\" {
+                    isEscaped = true
+                } else if character == "\"" {
+                    inString = false
+                    endValue(at: index)
+                }
+                continue
+            }
+            switch character {
+            case "\"":
+                inString = true
+            case "{":
+                stack.append(.object(expectingValue: false))
+                markCut(before: text.index(after: index))
+            case "[":
+                stack.append(.array)
+                markCut(before: text.index(after: index))
+            case "}", "]":
+                _ = stack.popLast()
+                if stack.isEmpty { return (String(text[...index]), text.index(after: index)) }
+                endValue(at: index)
+            case ":":
+                if case .object = stack.last { stack[stack.count - 1] = .object(expectingValue: true) }
+            case ",":
+                if case .object = stack.last { stack[stack.count - 1] = .object(expectingValue: false) }
+                // What came before the comma is complete, whatever it was.
+                markCut(before: index)
+            default:
+                break
+            }
+        }
+        return (String(text[..<cut]) + closers, nil)
     }
 
     private static func parse(_ json: String) -> [String: Any]? {
@@ -265,7 +358,9 @@ public enum JSONSummary {
         }
     }
 
-    /// A list of strings, or a single string as one item. Blank items are dropped.
+    /// A list of strings, or a single string as one item. Blank and repeated items are dropped,
+    /// and only the first `SummaryFields.maximumItems` kept: small models that loop write the
+    /// same items again and again.
     private static func list(_ value: Any?) -> [String] {
         let items: [String] =
             switch value {
@@ -273,6 +368,8 @@ public enum JSONSummary {
             case let text as String: [text]
             default: []
             }
-        return items.map(SummaryPrompt.listItem).filter { !$0.isEmpty }
+        var seen = Set<String>()
+        let kept = items.map(SummaryPrompt.listItem).filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
+        return Array(kept.prefix(SummaryFields.maximumItems))
     }
 }

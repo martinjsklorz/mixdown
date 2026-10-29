@@ -21,6 +21,9 @@ Press ⌘, or click the cog above the sidebar to open Settings. **Settings…** 
   [Recording](recording.md#catch-up).
 - **Startup → Launch Mixdown at login**. If macOS needs your approval, allow Mixdown in System
   Settings › General › Login Items.
+- **Updates → Check for updates automatically** and **Download and install updates
+  automatically**, which needs the first on. **Check Now** looks right away. Checking sends only
+  the app's version; updates downloaded automatically are installed when you quit.
 
 ## Recording
 
@@ -35,7 +38,8 @@ Press ⌘, or click the cog above the sidebar to open Settings. **Settings…** 
 - **Audio**: **Keep audio until the note is saved** **On Disk** (the default) or **In Memory
   Only**. See [Privacy](privacy.md).
 - **Calls**: **Notify when calls start and end** (on) and **Record calls automatically** (off).
-  See [Recording calls](calls.md#call-detection).
+  **Apps that count as calls → Choose…** picks which apps do, and adds others. See
+  [Recording calls](calls.md#call-detection).
 
 ## Transcription
 
@@ -44,6 +48,11 @@ Press ⌘, or click the cog above the sidebar to open Settings. **Settings…** 
 - **Language**: **Automatic** or a specific language.
 - **Speaker Names**: the labels for the microphone (**Me**) and system audio (**Others**) when you
   record both.
+- **Speakers → Tell speakers apart**: off by default. Labels the people on the system audio
+  Speaker 1, Speaker 2 and so on, once a recording ends. It needs the speaker model (about
+  100 MB), with buttons to download, cancel, retry or delete it.
+- **Speakers → Name speakers from the conversation**: on by default, with **Tell speakers apart**
+  on. Your summary model looks for names said in the recording.
 
 ## Summary
 
@@ -52,6 +61,13 @@ Press ⌘, or click the cog above the sidebar to open Settings. **Settings…** 
 - **Templates**: **Manual recordings** and **Detected calls**, the template for each.
 - **Model**: Apple Intelligence, or an open model such as Qwen3 that runs on your Mac with MLX,
   with a **Download** button until it's downloaded. See [Summaries](summaries.md#models).
+
+## Templates
+
+The templates summaries are made with: change one, or add your own with **+**. A template has a
+name, its sections and instructions on what kind of recording it's for and what to look out for.
+**Restore Default** undoes your changes to a built-in template. See
+[Summaries](summaries.md#templates).
 
 ## Translation
 
@@ -70,7 +86,9 @@ Press ⌘, or click the cog above the sidebar to open Settings. **Settings…** 
 
 ## Notifications
 
-- **Show notifications**: on by default.
+- **Show notifications**: on by default. While it's on, **Permission** shows whether macOS lets
+  Mixdown notify, with **Allow…** if it hasn't asked yet and **Open System Settings** if they
+  were turned off there.
 - **Sounds**: **Play sounds**, and a sound for each moment. See
   [Notifications and sounds](notifications-and-sounds.md).
 

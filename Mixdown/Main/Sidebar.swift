@@ -166,7 +166,7 @@ struct RecorderStatusBadge: View {
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
         case .preparingModel(let progress), .transcribing(let progress):
-            Text(progress.formatted(.percent.precision(.fractionLength(0))))
+            Text(ProgressText.percent(progress))
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
         case .startingCapture, .identifyingSpeakers, .translating, .summarizing:

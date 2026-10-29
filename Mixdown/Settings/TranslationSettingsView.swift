@@ -24,18 +24,12 @@ struct TranslationSettingsView: View {
             Section {
                 Toggle(
                     "Translate recordings",
-                    isOn: Binding(
-                        get: { preferences.translatesNotes },
-                        set: { preferences.translatesNotes = $0 }
-                    )
+                    isOn: Bindable(preferences).translatesNotes
                 )
                 Group {
                     Picker(
                         "Translate to",
-                        selection: Binding(
-                            get: { preferences.translationLanguage },
-                            set: { preferences.translationLanguage = $0 }
-                        )
+                        selection: Bindable(preferences).translationLanguage
                     ) {
                         ForEach(choices, id: \.self) { identifier in
                             Text(Self.name(of: identifier)).tag(identifier)

@@ -52,3 +52,57 @@ public enum URLCommand: Equatable, Sendable {
         }
     }
 }
+
+/// What to do for a `URLCommand` (or the global recording shortcut), given what the coordinator is
+/// doing; see `RecordingCoordinator.action(for:)`.
+public enum URLCommandAction: Equatable, Sendable {
+    case startRecording
+    case stopRecording
+    case pauseRecording
+    case resumeRecording
+    case togglePause
+    /// The command can't be done now: nothing to pause, or busy with a note until recording can
+    /// start. A beep says so.
+    case beep
+    /// Recording can't start for something the user has to do, such as choosing a notes folder;
+    /// Record says what.
+    case showRecorder
+    /// Marks a moment and opens the field under the notch to write about it.
+    case markMoment
+    /// Adds a moment with `text` where the recording is now.
+    case addMoment(at: TimeInterval, text: String)
+    case showMainWindow
+    case openNote(String)
+    /// Already done, like starting while recording, so a script can ask without checking first.
+    case nothing
+}
+
+extension RecordingCoordinator {
+    /// What `command` comes to now. Starting and stopping work like the global shortcut. Starting
+    /// while recording, stopping while not, and the like do nothing; pausing, resuming and adding
+    /// a moment beep when not recording, like the Mark Moment shortcut. Only opening, and starting
+    /// when recording can't start, bring the main window forward.
+    public func action(for command: URLCommand) -> URLCommandAction {
+        switch command {
+        case .toggleRecording: canStopRecording ? .stopRecording : startFromOutside
+        case .startRecording: canStopRecording ? .nothing : startFromOutside
+        case .stopRecording: canStopRecording ? .stopRecording : .nothing
+        // Pausing while paused and resuming while recording are ignored by the coordinator.
+        case .pauseRecording: isRecording ? .pauseRecording : .beep
+        case .resumeRecording: isRecording ? .resumeRecording : .beep
+        case .togglePause: isRecording ? .togglePause : .beep
+        case .markMoment(nil): .markMoment
+        case .markMoment(let text?): momentTime.map { .addMoment(at: $0, text: text) } ?? .beep
+        case .open(nil): .showMainWindow
+        case .open(let note?): .openNote(note)
+        }
+    }
+
+    /// Starting from another app. While busy downloading, transcribing, translating or
+    /// summarizing, it beeps, as recording can start once that's done. When recording can't start
+    /// for something the user has to do (no notes folder, model or input), it opens Record
+    /// instead, which says what.
+    private var startFromOutside: URLCommandAction {
+        if canStartRecording { .startRecording } else if !isIdle { .beep } else { .showRecorder }
+    }
+}

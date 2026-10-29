@@ -55,6 +55,26 @@ public struct CallApp: Hashable, Codable, Identifiable, Sendable {
     /// Its first bundle ID, which stays the same when the list of them grows.
     public var id: String { bundleIDs.first ?? name }
 
+    private enum CodingKeys: String, CodingKey {
+        case name, bundleIDs, isBrowser
+    }
+
+    /// Lenient, so an app stored by another version still reads. Throws only without bundle IDs,
+    /// as such an app matches nothing.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        bundleIDs = container.decodeLossyArray([String].self, forKey: .bundleIDs)
+        guard let first = bundleIDs.first else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .bundleIDs,
+                in: container,
+                debugDescription: "A call app needs a bundle ID"
+            )
+        }
+        name = (try? container.decodeIfPresent(String.self, forKey: .name)) ?? first
+        isBrowser = (try? container.decodeIfPresent(Bool.self, forKey: .isBrowser)) ?? false
+    }
+
     /// Whether `bundleID` is one of `bundleIDs` or a helper of one (it continues with a dot).
     /// Case-insensitive, since helpers don't always keep the app's capitalization.
     public func matches(bundleID: String) -> Bool {
@@ -120,6 +140,17 @@ public struct CallAppSelection: Codable, Equatable, Sendable {
     public init(excludedIDs: Set<String> = [], added: [CallApp] = []) {
         self.excludedIDs = excludedIDs
         self.added = added
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case excludedIDs, added
+    }
+
+    /// Lenient, so one odd app doesn't lose the user's whole selection.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        excludedIDs = Set(container.decodeLossyArray([String].self, forKey: .excludedIDs))
+        added = container.decodeLossyArray([CallApp].self, forKey: .added)
     }
 
     /// The apps that count, known ones first.

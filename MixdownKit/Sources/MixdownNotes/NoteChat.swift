@@ -1,6 +1,5 @@
 import Foundation
 import MixdownCore
-import MixdownNotes
 import Observation
 import os
 
@@ -12,69 +11,89 @@ import os
 /// The notes are read into a `NoteChatIndex` once the chat is first shown, and kept up to date
 /// from then on. The chat lasts until the app quits or it's cleared.
 @MainActor @Observable
-final class NoteChat {
+public final class NoteChat {
     /// A line of a note an answer is from, or a note a count counted.
-    struct Source: Identifiable, Equatable {
+    public struct Source: Identifiable, Equatable, Sendable {
         /// What the answer cites it as, like `[3]`.
-        var number: Int
-        var noteURL: URL
-        var noteTitle: String
-        var date: Date
-        var section: String?
+        public var number: Int
+        public var noteURL: URL
+        public var noteTitle: String
+        public var date: Date
+        public var section: String?
         /// When it was said, like `00:12:34`.
-        var time: String?
+        public var time: String?
         /// The number of the line in `NoteSearchIndex.lines(of:)` to open the note at; `nil` for
         /// the top.
-        var line: Int?
+        public var line: Int?
         /// The lines; empty for a counted note.
-        var text: String
+        public var text: String
 
-        var id: Int { number }
+        public var id: Int { number }
     }
 
-    struct Message: Identifiable {
-        enum Role {
+    public struct Message: Identifiable, Sendable {
+        public enum Role: Sendable {
             case question
             case answer
         }
 
-        let id = UUID()
-        let role: Role
+        public let id = UUID()
+        public let role: Role
         /// Markdown, with citations like `[2]` of `sources`.
-        var text: String
+        public var text: String
         /// What the answer had to go on, by number.
-        var sources: [Source] = []
+        public var sources: [Source] = []
         /// Whether every source is shown under the answer, not only the cited ones: the notes a
         /// count counted, or lines found without Apple Intelligence.
-        var showsAllSources = false
+        public var showsAllSources = false
         /// Says how the answer came about, e.g. that it was counted on this Mac.
-        var footnote: String?
-        var isWriting = false
-        var isError = false
+        public var footnote: String?
+        public var isWriting = false
+        public var isError = false
+        /// Whether it's Mixdown saying it has nothing to answer with, like that it found nothing,
+        /// rather than an answer. Left out of the chat so far that later questions hand the model.
+        var isNonAnswer = false
     }
 
-    private(set) var messages: [Message] = []
+    public private(set) var messages: [Message] = []
     /// How many notes have been read for Chat so far, while reading them.
-    private(set) var indexProgress: (done: Int, total: Int)?
-    var isAnswering: Bool { answering != nil }
+    public private(set) var indexProgress: (done: Int, total: Int)?
+    public var isAnswering: Bool { answering != nil }
 
-    let answerer: any NoteAnswerer
+    public let answerer: any NoteAnswerer
     private let index: NoteChatIndexStore
     /// The notes in the notes folder, newest first.
     @ObservationIgnored private var notes: [NoteDocument] = []
     @ObservationIgnored private var indexing: Task<Void, Never>?
     private var answering: Task<Void, Never>?
+    /// Counts the questions asked, so an answer cancelled by `clear()` that's still winding down
+    /// doesn't mark the next one as done.
+    @ObservationIgnored private var questionCount = 0
 
     /// Most passages looked at for an answer, before trimming to what fits the model.
-    private static let maxExcerpts = 12
+    static let maxExcerpts = 12
     /// Shown when Apple Intelligence isn't there to answer.
-    private static let fallbackSourceCount = 5
+    static let fallbackSourceCount = 5
     /// Notes listed under a count; the count itself covers them all.
-    private static let maxCountedSources = 50
+    static let maxCountedSources = 50
 
-    init(answerer: any NoteAnswerer, embedder: any TextEmbedder) {
+    /// - Parameters:
+    ///   - indexDirectory: Where the notes read for Chat are saved, a file per note; see
+    ///     `NoteChatIndex.save(in:)`.
+    ///   - legacyIndexFile: Where earlier versions saved the whole index, moved into
+    ///     `indexDirectory` when first read.
+    public init(
+        answerer: any NoteAnswerer,
+        embedder: any TextEmbedder,
+        indexDirectory: URL,
+        legacyIndexFile: URL? = nil
+    ) {
         self.answerer = answerer
-        self.index = NoteChatIndexStore(embedder: embedder)
+        self.index = NoteChatIndexStore(
+            embedder: embedder,
+            directoryURL: indexDirectory,
+            legacyFileURL: legacyIndexFile
+        )
     }
 
     // MARK: Notes
@@ -85,7 +104,7 @@ final class NoteChat {
     /// Without notes (none yet, or the folder can't be reached) the index keeps the notes it has,
     /// so a drive that's away for a while doesn't mean reading them all again. Only the notes
     /// given here are searched, so it never answers from notes that are gone.
-    func update(notes: [NoteDocument]) {
+    public func update(notes: [NoteDocument]) {
         self.notes = notes
         guard !notes.isEmpty else { return }
         let previous = indexing
@@ -103,27 +122,30 @@ final class NoteChat {
     // MARK: Asking
 
     /// Asks `question`, unless an answer is still being written.
-    func ask(_ question: String) {
+    public func ask(_ question: String) {
         let question = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty, answering == nil else { return }
         let history = turns
         messages.append(Message(role: .question, text: question))
         let answer = Message(role: .answer, text: "", isWriting: true)
         messages.append(answer)
+        questionCount += 1
+        let count = questionCount
         answering = Task {
             await self.answer(question, history: history, messageID: answer.id)
-            answering = nil
+            // After `clear()`, a newer question may be being answered by now.
+            if questionCount == count { answering = nil }
         }
     }
 
     /// Stops writing the answer, keeping what's written so far.
-    func stopAnswering() {
+    public func stopAnswering() {
         answering?.cancel()
     }
 
     /// Stops reading notes and answering, and starts a new chat, as Chat was turned off. The notes
     /// read so far stay saved, so turning it on again only reads what changed meanwhile.
-    func stop() {
+    public func stop() {
         indexing?.cancel()
         indexing = nil
         indexProgress = nil
@@ -131,16 +153,19 @@ final class NoteChat {
     }
 
     /// Starts a new chat.
-    func clear() {
+    public func clear() {
         answering?.cancel()
         answering = nil
         messages = []
     }
 
-    /// The questions asked so far and their answers, oldest first.
-    private var turns: [ChatTurn] {
+    /// The questions asked so far and their answers, oldest first. Leaves out the questions that
+    /// weren't answered: errors, non-answers, and answers stopped before they began.
+    var turns: [ChatTurn] {
         zip(messages, messages.dropFirst()).compactMap { question, answer in
-            guard question.role == .question, answer.role == .answer, !answer.isError else { return nil }
+            guard question.role == .question, answer.role == .answer, !answer.isError, !answer.isNonAnswer,
+                !answer.text.isEmpty
+            else { return nil }
             return ChatTurn(question: question.text, answer: answer.text)
         }
     }
@@ -151,7 +176,8 @@ final class NoteChat {
         let notes = self.notes
 
         if parsed.asksForCount {
-            let counted = notes.filter(parsed.counts)
+            // Reads every note in the folder the first time.
+            let counted = await Task.detached(priority: .userInitiated) { notes.filter(parsed.counts) }.value
             updateMessage(messageID) { message in
                 message.text = parsed.countAnswer(for: counted)
                 message.sources = counted.prefix(Self.maxCountedSources).enumerated().map { offset, note in
@@ -176,10 +202,16 @@ final class NoteChat {
             searchText = NoteQuestion.parse(previous.question, now: now).searchText + " " + searchText
         }
         let passages = await index.search(searchText, in: notes.filter(parsed.isInScope), limit: Self.maxExcerpts)
+        // Embedding the question doesn't stop when cancelled.
+        guard !Task.isCancelled else {
+            updateMessage(messageID) { $0.isWriting = false }
+            return
+        }
         let excerpts = self.excerpts(of: passages)
         guard !excerpts.isEmpty else {
             updateMessage(messageID) { message in
                 message.text = "I couldn’t find anything about that in your notes."
+                message.isNonAnswer = true
                 message.isWriting = false
             }
             return
@@ -193,6 +225,7 @@ final class NoteChat {
                     "Apple Intelligence can’t answer right now. \(reason) These lines of your notes match best:"
                 message.sources = Array(sources.prefix(Self.fallbackSourceCount))
                 message.showsAllSources = true
+                message.isNonAnswer = true
                 message.isWriting = false
             }
             return
@@ -260,19 +293,21 @@ final class NoteChat {
 
 /// The `NoteChatIndex` behind `NoteChat`, off the main thread and saved between launches. Searches
 /// can run while an update waits on the embedder.
-private actor NoteChatIndexStore {
+actor NoteChatIndexStore {
     private static let logger = Logger(subsystem: "app.mixdown", category: "chat")
 
     private let embedder: any TextEmbedder
     /// A file per note; see `NoteChatIndex.save(in:)`.
-    private let directoryURL = URL.applicationSupportDirectory.appending(path: "ChatIndex", directoryHint: .isDirectory)
+    private let directoryURL: URL
     /// Where earlier versions saved the whole index, moved into `directoryURL` when first read.
-    private let legacyFileURL = URL.applicationSupportDirectory.appending(path: "ChatIndex.plist")
+    private let legacyFileURL: URL?
     /// Read from `directoryURL` when first needed.
     private var index: NoteChatIndex?
 
-    init(embedder: any TextEmbedder) {
+    init(embedder: any TextEmbedder, directoryURL: URL, legacyFileURL: URL?) {
         self.embedder = embedder
+        self.directoryURL = directoryURL
+        self.legacyFileURL = legacyFileURL
     }
 
     /// Brings the index in line with `notes`, calling `progress` after each note it reads with how
@@ -285,16 +320,14 @@ private actor NoteChatIndexStore {
         save()
         guard !pending.isEmpty else { return }
 
-        var embedder: (any TextEmbedder)? = self.embedder
-        for (done, note) in pending.enumerated() {
-            guard let indexed = try? await NoteChatIndex.index(note, embedder: embedder) else { break }
+        // Only cancellation ends it early.
+        try? await NoteChatIndex.index(pending, embedder: embedder) { indexed, done in
             if indexed.embedderFailed {
                 Self.logger.info("Indexing notes for Chat without embeddings, as the embedder failed")
-                embedder = nil
             }
             index?.insert(indexed)
             save()
-            await progress(done + 1, pending.count)
+            await progress(done, pending.count)
         }
     }
 
@@ -315,13 +348,15 @@ private actor NoteChatIndexStore {
     private func loaded() -> NoteChatIndex {
         if let index { return index }
         var loaded = NoteChatIndex.load(from: directoryURL)
-        if loaded.isEmpty, let data = try? Data(contentsOf: legacyFileURL) {
+        if loaded.isEmpty, let legacyFileURL, let data = try? Data(contentsOf: legacyFileURL) {
             loaded = NoteChatIndex.decoded(fromLegacyFile: data)
         }
         index = loaded
         save()
         // Moved into `directoryURL`, or left behind by it.
-        if index?.hasUnsavedChanges == false { try? FileManager.default.removeItem(at: legacyFileURL) }
+        if let legacyFileURL, index?.hasUnsavedChanges == false {
+            try? FileManager.default.removeItem(at: legacyFileURL)
+        }
         return index ?? loaded
     }
 

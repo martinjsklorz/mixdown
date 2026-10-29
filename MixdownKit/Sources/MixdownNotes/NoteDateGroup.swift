@@ -53,4 +53,13 @@ public struct NoteSection: Sendable, Equatable, Identifiable {
         }
         return sections
     }
+
+    /// The note to select once the one with `id` is removed from `notes`, the notes in the order
+    /// the sidebar lists them: the one below it, or the one above if it was the last. `nil` if it
+    /// was the only one, or isn't in `notes`.
+    public static func selectionAfterRemoving(_ id: NoteDocument.ID, from notes: [NoteDocument]) -> NoteDocument.ID? {
+        guard let index = notes.firstIndex(where: { $0.id == id }) else { return nil }
+        let remaining = notes.filter { $0.id != id }
+        return remaining.isEmpty ? nil : remaining[min(index, remaining.count - 1)].id
+    }
 }

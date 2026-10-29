@@ -77,6 +77,9 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         COMBINE_HIDPI_IMAGES: YES
+        # A warning fails the build, so none pile up unnoticed. Only the app's own code: packages
+        # keep their own settings (MixdownKit's are in its Package.swift).
+        SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
 
 schemes:
   Mixdown:
@@ -88,11 +91,17 @@ schemes:
     test:
       config: Debug
       gatherCoverageData: true
+      # Every test target of MixdownKit/Package.swift; one left out here is skipped by Xcode's
+      # Test action (`make test` runs them all).
       targets:
         - package: MixdownKit/MixdownCoreTests
         - package: MixdownKit/MixdownAudioTests
         - package: MixdownKit/MixdownNotesTests
         - package: MixdownKit/MixdownSpeechSwiftTests
+        - package: MixdownKit/MixdownAppleSpeechTests
+        - package: MixdownKit/MixdownMLXLLMTests
+        - package: MixdownKit/MixdownFoundationModelsTests
+        - package: MixdownKit/MixdownNaturalLanguageTests
     profile:
       config: Release
     analyze:

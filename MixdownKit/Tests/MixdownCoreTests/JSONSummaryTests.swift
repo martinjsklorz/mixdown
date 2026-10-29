@@ -142,4 +142,55 @@ struct JSONSummaryTests {
         let json = "{\"a\": [\"x, y\"],\n \"b\": \"z\"}"
         #expect(JSONSummary.repaired(json) == json)
     }
+
+    // MARK: - Reading odd answers
+
+    @Test func readsTheFirstOfTwoObjects() {
+        let answer = """
+            {"keyPoints": ["First"], "overview": "The first {draft}.", "title": "One"}
+            {"keyPoints": ["Second"], "overview": "Again.", "title": "Two"}
+            """
+        let summary = JSONSummary.summary(from: answer, template: .general)
+        #expect(summary?.title == "One")
+        #expect(summary?.overview == "The first {draft}.")
+    }
+
+    @Test func skipsBracesAroundTheObject() {
+        let before = #"Here it is {as asked}: {"title": "Budget", "overview": "Quote \" and } inside."}"#
+        #expect(JSONSummary.summary(from: before, template: .general)?.overview == #"Quote " and } inside."#)
+        let after = #"{"title": "Budget"} {note: I kept it short}"#
+        #expect(JSONSummary.summary(from: after, template: .general)?.title == "Budget")
+    }
+
+    @Test func readsAnAnswerCutOffInAList() {
+        let answer = #"{"keyPoints": ["Launch moves to May", "Budget appro"#
+        let summary = JSONSummary.summary(from: answer, template: .general)
+        #expect(summary?.keyPoints == ["Launch moves to May"])
+        #expect(summary?.title == "")
+        let inAKey = #"{"keyPoints": ["Launch moves to May"], "action"#
+        #expect(JSONSummary.summary(from: inAKey, template: .general)?.keyPoints == ["Launch moves to May"])
+        let afterAValue = #"{"keyPoints": [], "title": "Launch""#
+        #expect(JSONSummary.summary(from: afterAValue, template: .general)?.title == "Launch")
+    }
+
+    @Test func answerCutOffBeforeAnyValueIsNone() {
+        #expect(JSONSummary.summary(from: #"{"keyPo"#, template: .general) == nil)
+        #expect(SpeakerNaming.guesses(fromJSON: "{}") == [:])
+    }
+
+    @Test func listsDropRepeatsAndKeepAtMostEight() {
+        let items = (1...12).map { "\"Point \($0 % 10)\"" }.joined(separator: ", ")
+        let summary = JSONSummary.summary(from: "{\"keyPoints\": [\(items), \"point 1\"]}", template: .general)
+        #expect(summary?.keyPoints == (1...8).map { "Point \($0)" })
+    }
+
+    @Test func answerInstructionsAskForTheLanguage() {
+        #expect(
+            SummaryPrompt.languageRule("fr", verb: "answer", fallback: "the question") == "You MUST answer in French."
+        )
+        #expect(
+            SummaryPrompt.languageRule(nil, verb: "answer", fallback: "the question")
+                == "You MUST answer in the language of the question."
+        )
+    }
 }

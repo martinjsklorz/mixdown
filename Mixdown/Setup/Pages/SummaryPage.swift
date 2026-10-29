@@ -21,10 +21,7 @@ struct SummaryPage: View {
                 Section {
                     Toggle(
                         "Summarize recordings",
-                        isOn: Binding(
-                            get: { preferences.summarizesNotes },
-                            set: { preferences.summarizesNotes = $0 }
-                        )
+                        isOn: Bindable(preferences).summarizesNotes
                     )
                 }
 
