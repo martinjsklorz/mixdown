@@ -260,7 +260,7 @@ enum CaptureAudioFile {
         guard let startHostTime = startHostTime(in: data) else { throw CocoaError(.fileReadCorruptFile) }
         let count = (data.count - headerSize) / MemoryLayout<Float>.size
         var samples = [Float](repeating: 0, count: count)
-        samples.withUnsafeMutableBytes { samples in
+        _ = samples.withUnsafeMutableBytes { samples in
             data.copyBytes(to: samples, from: headerSize..<(headerSize + count * MemoryLayout<Float>.size))
         }
         return AudioTrack(samples: samples, startHostTime: startHostTime)
