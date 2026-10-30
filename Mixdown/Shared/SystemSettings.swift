@@ -10,6 +10,9 @@ enum SystemSettings {
         case screenAndSystemAudioRecording
         /// Notifications, at Mixdown.
         case notifications
+        /// General › Language & Region, whose Translation Languages button lists the downloaded
+        /// translation languages, to remove them. It has no link of its own.
+        case languageAndRegion
 
         var url: URL? {
             switch self {
@@ -21,6 +24,8 @@ enum SystemSettings {
                 Bundle.main.bundleIdentifier.flatMap { bundleID in
                     URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(bundleID)")
                 }
+            case .languageAndRegion:
+                URL(string: "x-apple.systempreferences:com.apple.Localization-Settings.extension")
             }
         }
     }
