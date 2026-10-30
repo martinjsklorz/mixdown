@@ -40,6 +40,13 @@ extension RecordingCoordinator {
         set { pipeline.summarizer = newValue }
     }
 
+    /// Whether notes are named after their summary's title. Off, they're named after the time
+    /// recorded, or an imported file's name. Read once the note is summarized.
+    public var titlesNotesFromSummary: Bool {
+        get { pipeline.titlesNotesFromSummary }
+        set { pipeline.titlesNotesFromSummary = newValue }
+    }
+
     /// Adds a translation of the transcript to each note, into `translationLanguage`. Summaries are
     /// then made from the translation, so they're in that language too.
     public var translator: (any Translator)? {

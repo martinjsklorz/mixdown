@@ -36,6 +36,8 @@ struct AppSettings {
         static let catchUpMinutes = "catchUpMinutes"
         /// Whether notes get a summary. Absent means yes.
         static let summarizesNotes = "summarizesNotes"
+        /// Whether notes are named after their summary's title. Absent means yes.
+        static let titlesNotesFromSummary = "titlesNotesFromSummary"
         /// A `SummaryModel` raw value. Absent means `.appleIntelligence`.
         static let summaryModel = "summaryModel"
         /// A `SummaryTemplate` id for recordings started by hand. Absent means `general`.
@@ -184,6 +186,11 @@ struct AppSettings {
     var summarizesNotes: Bool {
         get { defaults.object(forKey: Key.summarizesNotes) as? Bool ?? true }
         nonmutating set { defaults.set(newValue, forKey: Key.summarizesNotes) }
+    }
+
+    var titlesNotesFromSummary: Bool {
+        get { defaults.object(forKey: Key.titlesNotesFromSummary) as? Bool ?? true }
+        nonmutating set { defaults.set(newValue, forKey: Key.titlesNotesFromSummary) }
     }
 
     var summaryModel: SummaryModel {

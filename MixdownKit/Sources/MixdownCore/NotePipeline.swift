@@ -15,6 +15,9 @@ import os
 final class NotePipeline {
     /// Adds a summary to each note. `nil` while summaries are off.
     var summarizer: (any Summarizer)?
+    /// Whether notes are named after their summary's title. Off, they're named after the time
+    /// recorded, or an imported file's name.
+    var titlesNotesFromSummary = true
     /// Translates each transcript into `translationLanguage`.
     var translator: (any Translator)?
     var translationLanguage: String?
@@ -124,7 +127,7 @@ final class NotePipeline {
         let summary = await summarize(translation ?? transcript, moments: details.moments, template: template)
         try Task.checkCancellation()
         let summaryTitle = summary.map(\.title).flatMap {
-            $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0
+            !titlesNotesFromSummary || $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0
         }
         let note = Note(
             title: NoteTitle.make(

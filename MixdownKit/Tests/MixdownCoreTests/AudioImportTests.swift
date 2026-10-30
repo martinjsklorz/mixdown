@@ -79,6 +79,19 @@ struct AudioImportTests {
         #expect(summarizer.receivedTranscripts == [hello])
     }
 
+    @Test func fileNameStaysWhenTitlesAreOff() async throws {
+        let writer = InMemoryNoteWriter()
+        let summarizer = MockSummarizer(summary: NoteSummary(title: "Q3 budget", overview: "Numbers."))
+        let coordinator = makeCoordinator(engine: MockEngine(transcript: hello), writer: writer, summarizer: summarizer)
+        coordinator.titlesNotesFromSummary = false
+
+        await coordinator.importAudio(from: file)
+
+        let note = try #require(await writer.notes.first)
+        #expect(note.title == "Budget review")
+        #expect(note.summary?.title == "Q3 budget")
+    }
+
     @Test func summarizesWithTemplateChosenWhileImporting() async throws {
         let writer = InMemoryNoteWriter()
         let gate = Gate()

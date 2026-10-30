@@ -44,7 +44,8 @@ naming its app, e.g. "Zoom call about Release timeline" or "FaceTime-Anruf zu Bu
 in a browser leave the browser out: "Call about Release timeline". Recordings started any other way
 aren't, even during a call.
 
-Without a summary, the note is titled with the date and time it was recorded.
+Without a summary, or with **Generate note title** off in [Settings](settings.md#summary), the
+note is titled with the date and time it was recorded, or an imported file's name.
 
 ## Templates
 

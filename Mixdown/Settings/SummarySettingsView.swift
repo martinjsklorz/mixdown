@@ -17,6 +17,11 @@ struct SummarySettingsView: View {
                     "Summarize recordings",
                     isOn: Bindable(preferences).summarizesNotes
                 )
+                Toggle(
+                    "Generate note title",
+                    isOn: Bindable(preferences).titlesNotesFromSummary
+                )
+                .disabled(!preferences.summarizesNotes)
             } footer: {
                 Caption(footer)
             }
@@ -164,7 +169,10 @@ struct SummarySettingsView: View {
     private var footer: String {
         switch environment.summaryAvailability {
         case .available:
-            return "Adds a summary above the transcript and names the note after its topic. "
+            let naming =
+                preferences.titlesNotesFromSummary
+                ? " and names the note after its topic" : "; notes are named after the time recorded"
+            return "Adds a summary above the transcript\(naming). "
                 + "\(environment.summarizer.info.displayName) makes summaries on this Mac."
         case .unavailable(let reason):
             return reason
