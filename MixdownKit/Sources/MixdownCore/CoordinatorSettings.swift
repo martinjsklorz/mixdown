@@ -17,6 +17,8 @@ public struct CoordinatorSettings: Equatable, Sendable {
     /// `identifiesSpeakers`.
     public var namesSpeakers: Bool
     public var summarizesNotes: Bool
+    /// Whether notes are named after their summary's title, while `summarizesNotes`.
+    public var titlesNotesFromSummary: Bool
     public var summaryTemplates: SummaryTemplateLibrary
     public var translatesNotes: Bool
     /// The language notes are translated into while `translatesNotes`.
@@ -34,6 +36,7 @@ public struct CoordinatorSettings: Equatable, Sendable {
         identifiesSpeakers: Bool = false,
         namesSpeakers: Bool = true,
         summarizesNotes: Bool = true,
+        titlesNotesFromSummary: Bool = true,
         summaryTemplates: SummaryTemplateLibrary = SummaryTemplateLibrary(),
         translatesNotes: Bool = false,
         translationLanguage: String = "",
@@ -49,6 +52,7 @@ public struct CoordinatorSettings: Equatable, Sendable {
         self.identifiesSpeakers = identifiesSpeakers
         self.namesSpeakers = namesSpeakers
         self.summarizesNotes = summarizesNotes
+        self.titlesNotesFromSummary = titlesNotesFromSummary
         self.summaryTemplates = summaryTemplates
         self.translatesNotes = translatesNotes
         self.translationLanguage = translationLanguage
@@ -76,6 +80,7 @@ extension RecordingCoordinator {
         speakerDiarizer = settings.identifiesSpeakers ? diarizer : nil
         speakerNamer = settings.identifiesSpeakers && settings.namesSpeakers ? summarizer : nil
         self.summarizer = settings.summarizesNotes ? summarizer : nil
+        titlesNotesFromSummary = settings.titlesNotesFromSummary
         summaryTemplate = settings.summaryTemplates.recordingTemplate
         callSummaryTemplate = settings.summaryTemplates.callTemplate
         updateRecordingSummaryTemplate(from: settings.summaryTemplates.templates)

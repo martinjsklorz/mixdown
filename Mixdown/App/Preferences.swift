@@ -76,6 +76,11 @@ final class Preferences {
     /// Whether notes get a summary. Takes effect from the next recording, even if the summarizer
     /// is unavailable right now; it's skipped until it becomes available.
     var summarizesNotes: Bool { didSet { save { $0.summarizesNotes = summarizesNotes } } }
+    /// Whether notes are named after their summary's title rather than the time recorded. Takes
+    /// effect from the next summary, including that of the recording in progress.
+    var titlesNotesFromSummary: Bool {
+        didSet { save { $0.titlesNotesFromSummary = titlesNotesFromSummary } }
+    }
     /// Every summary template, and those for recordings started by hand and for calls. Changes take
     /// effect from the next summary, including that of the recording in progress.
     var summaryTemplates: SummaryTemplateLibrary { didSet { save { $0.summaryTemplates = summaryTemplates } } }
@@ -131,6 +136,7 @@ final class Preferences {
         namesSpeakers = settings.namesSpeakers
         vocabulary = settings.vocabulary
         summarizesNotes = settings.summarizesNotes
+        titlesNotesFromSummary = settings.titlesNotesFromSummary
         summaryTemplates = settings.summaryTemplates
         translatesNotes = settings.translatesNotes
         translationLanguage = settings.translationLanguage
@@ -154,6 +160,7 @@ final class Preferences {
             identifiesSpeakers: identifiesSpeakers,
             namesSpeakers: namesSpeakers,
             summarizesNotes: summarizesNotes,
+            titlesNotesFromSummary: titlesNotesFromSummary,
             summaryTemplates: summaryTemplates,
             translatesNotes: translatesNotes,
             translationLanguage: translationLanguage,

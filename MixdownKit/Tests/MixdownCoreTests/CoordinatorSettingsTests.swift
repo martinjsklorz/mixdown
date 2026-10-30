@@ -95,6 +95,15 @@ struct CoordinatorSettingsTests {
         #expect(coordinator.translationLanguage == "fr")
     }
 
+    @Test func noteTitlesFollowTheirToggle() {
+        let coordinator = makeCoordinator()
+        #expect(coordinator.titlesNotesFromSummary)
+        coordinator.apply(CoordinatorSettings(titlesNotesFromSummary: false), summarizer: summarizer, diarizer: nil)
+        #expect(!coordinator.titlesNotesFromSummary)
+        coordinator.apply(CoordinatorSettings(titlesNotesFromSummary: true), summarizer: summarizer, diarizer: nil)
+        #expect(coordinator.titlesNotesFromSummary)
+    }
+
     @Test func picksTheTemplatesForRecordingsAndCalls() {
         let coordinator = makeCoordinator()
         let templates = SummaryTemplateLibrary(recordingTemplateID: "standup", callTemplateID: "general")
