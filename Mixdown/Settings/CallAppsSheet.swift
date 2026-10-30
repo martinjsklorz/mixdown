@@ -8,7 +8,8 @@ import UniformTypeIdentifiers
 struct CallAppsSheet: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.dismiss) private var dismiss
-    /// Icons of the apps installed, by `CallApp.id`.
+    /// Icons of the apps, by `CallApp.id`: the installed app's own, or else the one bundled for a
+    /// known app.
     @State private var icons: [String: NSImage] = [:]
     @State private var addError: String?
 
@@ -94,7 +95,7 @@ struct CallAppsSheet: View {
                     .resizable()
                     .frame(width: 20, height: 20)
             } else {
-                // Not installed.
+                // Not installed, and added by the user or without a bundled icon.
                 Image(systemName: app.isBrowser ? "globe" : "phone")
                     .foregroundStyle(.secondary)
                     .frame(width: 20, height: 20)
@@ -108,13 +109,20 @@ struct CallAppsSheet: View {
 
     private func loadIcons() {
         for app in CallApp.known + selection.added {
-            guard
-                let url = app.bundleIDs.lazy.compactMap({
-                    NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0)
-                }).first
-            else { continue }
-            icons[app.id] = NSWorkspace.shared.icon(forFile: url.path)
+            if let url = app.bundleIDs.lazy.compactMap({
+                NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0)
+            }).first {
+                icons[app.id] = NSWorkspace.shared.icon(forFile: url.path)
+            } else {
+                icons[app.id] = Self.bundledIcon(for: app)
+            }
         }
+    }
+
+    /// The icon in the asset catalog's `CallApps` folder for a known app that isn't installed,
+    /// named after its `id` with dashes for dots, as `NSImage(named:)` takes a dot for an extension.
+    private static func bundledIcon(for app: CallApp) -> NSImage? {
+        NSImage(named: "CallApps/" + app.id.replacingOccurrences(of: ".", with: "-"))
     }
 
     /// Asks for an app and adds it, or turns it on if it's known already.

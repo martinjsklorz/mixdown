@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "com-brave-Browser.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}
