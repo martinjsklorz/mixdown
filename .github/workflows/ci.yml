@@ -30,10 +30,16 @@ jobs:
       - uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: ${{ env.XCODE_VERSION }}
-      # Resolving clones about 40 repositories, so the build folder is kept between runs.
+      # Resolving clones about 40 repositories, so what it fetches is kept between runs. Build output
+      # isn't: its build description holds the path of the runner's own Metal toolchain mount, which
+      # another runner doesn't have, so mlx-swift's shaders fail to compile from a restored one.
       - uses: actions/cache@v4
         with:
-          path: MixdownKit/.build
+          path: |
+            MixdownKit/.build/artifacts
+            MixdownKit/.build/checkouts
+            MixdownKit/.build/repositories
+            MixdownKit/.build/workspace-state.json
           key: spm-${{ runner.os }}-${{ env.XCODE_VERSION }}-${{ hashFiles('MixdownKit/Package.resolved', 'MixdownKit/Package.swift') }}
           restore-keys: spm-${{ runner.os }}-${{ env.XCODE_VERSION }}-
       - run: make lint
