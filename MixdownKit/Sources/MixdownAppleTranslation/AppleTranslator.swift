@@ -85,6 +85,33 @@ public struct AppleTranslator: Translator {
         await status(from: Locale.Language(identifier: source), to: Locale.Language(identifier: target))
     }
 
+    /// `status(from:to:)` for each of `targets`, by identifier, from one look at what's downloaded;
+    /// for marking the downloaded ones in a menu. Ones in `source`'s language are left out, as
+    /// there's nothing to translate.
+    public static func statuses(
+        from source: String,
+        to targets: [String]
+    ) async -> [String: LanguageAvailability.Status] {
+        let availability = LanguageAvailability()
+        let sourceLanguage = Locale.Language(identifier: source)
+        var statuses: [String: LanguageAvailability.Status] = [:]
+        for target in targets where !isSameLanguage(source, target) {
+            if Task.isCancelled { break }
+            statuses[target] = await availability.status(from: sourceLanguage, to: Locale.Language(identifier: target))
+        }
+        return statuses
+    }
+
+    /// Like `status(from:to:)`, but makes sure of `.installed` by translating a word: macOS can say
+    /// languages are installed that aren't on the Mac (FB21678303), such as after they were removed
+    /// in System Settings. Says `.supported` then, so they can be downloaded again.
+    public static func checkedStatus(from source: String, to target: String) async -> LanguageAvailability.Status {
+        let status = await status(from: source, to: target)
+        guard status == .installed else { return status }
+        let session = makeSession(from: Locale.Language(identifier: source), to: Locale.Language(identifier: target))
+        return (try? await session.translate("Hello")) != nil ? .installed : .supported
+    }
+
     /// Whether two identifiers name the same language and script, e.g. `en-US` and `en-GB`, so
     /// there's nothing to translate. `zh-Hans` and `zh-Hant` differ.
     public static func isSameLanguage(_ first: String, _ second: String) -> Bool {

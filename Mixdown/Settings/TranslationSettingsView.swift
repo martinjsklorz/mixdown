@@ -10,14 +10,20 @@ struct TranslationSettingsView: View {
     /// BCP 47 identifiers of the languages Apple's models translate between, by name. Empty until
     /// macOS has said.
     @State private var languages: [String] = []
-    /// Whether the languages from `sourceLanguage` to the target are downloaded; `nil` while
-    /// checking.
-    @State private var status: LanguageAvailability.Status?
+    /// Whether each language can be translated into from `checkedSource`, and is downloaded, by
+    /// identifier; for the menu's checks and the chosen language's buttons.
+    @State private var statuses: [String: LanguageAvailability.Status] = [:]
+    /// The language `statuses` are from; they don't apply once it isn't `sourceLanguage`.
+    @State private var checkedSource: String?
+    /// The languages whose status in `statuses` was made sure of by translating (see
+    /// `AppleTranslator.checkedStatus`); the chosen one's buttons wait for that.
+    @State private var madeSure: Set<String> = []
     /// Asks macOS to download those languages each time it's set or invalidated; it shows its own
     /// dialog for that.
     @State private var download: TranslationSession.Configuration?
     /// The languages being downloaded, as `source>target`. macOS doesn't say how far along it is.
     @State private var downloading: String?
+    @State private var isConfirmingDelete = false
 
     var body: some View {
         Form {
@@ -27,15 +33,29 @@ struct TranslationSettingsView: View {
                     isOn: Bindable(preferences).translatesNotes
                 )
                 Group {
-                    Picker(
-                        "Translate to",
-                        selection: Bindable(preferences).translationLanguage
-                    ) {
-                        ForEach(choices, id: \.self) { identifier in
-                            Text(Self.name(of: identifier)).tag(identifier)
+                    LabeledContent("Translate to") {
+                        HStack {
+                            Picker(
+                                "Translate to",
+                                selection: Bindable(preferences).translationLanguage
+                            ) {
+                                ForEach(choices, id: \.self) { identifier in
+                                    menuTitle(for: identifier)
+                                        .tag(identifier)
+                                }
+                            }
+                            .labelsHidden()
+                            .fixedSize()
+
+                            // macOS push buttons drop the icon unless asked to show it.
+                            downloadAccessory
+                                .labelStyle(.titleAndIcon)
                         }
                     }
-                    languagePairRow(to: preferences.translationLanguage)
+                    if AppleTranslator.isSameLanguage(sourceLanguage, preferences.translationLanguage) {
+                        Text("Recordings in \(Self.name(of: preferences.translationLanguage)) are left as they are.")
+                            .foregroundStyle(.secondary)
+                    }
                     // Shown off while it can't apply, but remembered for when it can.
                     Toggle(
                         "Translate live text while recording",
@@ -52,18 +72,24 @@ struct TranslationSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .task {
-            languages = await AppleTranslator.supportedLanguages().sorted {
-                Self.name(of: $0).localizedStandardCompare(Self.name(of: $1)) == .orderedAscending
-            }
-        }
         .task(id: pair) {
-            // Not the previous languages' status while checking.
-            status = nil
+            if languages.isEmpty {
+                languages = await AppleTranslator.supportedLanguages().sorted {
+                    Self.name(of: $0).localizedStandardCompare(Self.name(of: $1)) == .orderedAscending
+                }
+            }
+            if checkedSource != sourceLanguage { await refreshStatuses() }
+            // The menu's check may be wrong, so the chosen languages are made sure of each time
+            // they're picked.
             await refreshStatus()
         }
-        // Languages may have been downloaded in System Settings meanwhile.
-        .onWindowBecomesKey { Task { await refreshStatus() } }
+        // Languages may have been downloaded or removed in System Settings meanwhile.
+        .onWindowBecomesKey {
+            Task {
+                await refreshStatuses()
+                await refreshStatus()
+            }
+        }
         // Off the main actor: the session isn't Sendable, so it can't be sent from there to
         // `prepareTranslation()`, which runs concurrently.
         .translationTask(download) { @concurrent session in
@@ -92,46 +118,73 @@ struct TranslationSettingsView: View {
         "\(sourceLanguage)>\(preferences.translationLanguage)"
     }
 
-    /// "English → German", and whether those are downloaded, with a button to download them.
+    /// Whether the chosen languages are downloaded; `nil` while checking.
+    private var status: LanguageAvailability.Status? {
+        let target = preferences.translationLanguage
+        return checkedSource == sourceLanguage && madeSure.contains(target) ? statuses[target] : nil
+    }
+
+    /// The language's name, followed by a green check if it can be translated into from
+    /// `sourceLanguage` without downloading anything, like the speech model menu.
+    private func menuTitle(for identifier: String) -> Text {
+        let name = Self.name(of: identifier)
+        guard checkedSource == sourceLanguage, statuses[identifier] == .installed else { return Text(name) }
+        return Text("\(name)  \(Image(nsImage: DownloadedBadge.image))")
+            .accessibilityLabel("\(name), downloaded")
+    }
+
+    /// Download next to the menu while the languages aren't on this Mac, Delete once they are.
+    /// Nothing for recordings already in the chosen language.
     @ViewBuilder
-    private func languagePairRow(to target: String) -> some View {
+    private var downloadAccessory: some View {
         let source = sourceLanguage
-        if AppleTranslator.isSameLanguage(source, target) {
-            Text("Recordings in \(Self.name(of: target)) are left as they are.")
-                .foregroundStyle(.secondary)
-        } else {
-            LabeledContent("\(Self.name(of: source)) → \(Self.name(of: target))") {
-                switch status {
-                case .supported where downloading == pair:
-                    HStack(spacing: 6) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("Downloading…")
-                            .foregroundStyle(.secondary)
-                    }
-                case .installed:
-                    Label {
-                        Text("Downloaded")
-                    } icon: {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                    }
-                case .supported:
-                    Button("Download", systemImage: "arrow.down.circle") {
-                        requestDownload(from: source, to: target)
-                    }
-                    .labelStyle(.titleAndIcon)
-                case .unsupported:
-                    Text("Not supported")
-                        .foregroundStyle(.secondary)
-                case nil:
+        let target = preferences.translationLanguage
+        if !AppleTranslator.isSameLanguage(source, target) {
+            switch status {
+            case .supported where downloading == pair:
+                HStack(spacing: 6) {
                     ProgressView()
                         .controlSize(.small)
-                @unknown default:
-                    EmptyView()
+                    Text("Downloading…")
+                        .foregroundStyle(.secondary)
                 }
+            case .installed:
+                deleteButton(from: source, to: target)
+                    .labelStyle(.iconOnly)
+                    .help("Delete \(Self.name(of: source)) and \(Self.name(of: target))")
+            case .supported:
+                Button("Download", systemImage: "arrow.down.circle") {
+                    requestDownload(from: source, to: target)
+                }
+                .help("Download \(Self.name(of: source)) and \(Self.name(of: target)) to translate between them")
+            case .unsupported:
+                Text("Not supported from \(Self.name(of: source))")
+                    .foregroundStyle(.secondary)
+            case nil:
+                ProgressView()
+                    .controlSize(.small)
+            @unknown default:
+                EmptyView()
             }
         }
+    }
+
+    /// macOS shares translation languages with other apps and lets only System Settings remove
+    /// them, so this opens it there.
+    private func deleteButton(from source: String, to target: String) -> some View {
+        Button("Delete", systemImage: "trash") { isConfirmingDelete = true }
+            .confirmationDialog(
+                "Delete \(Self.name(of: source)) and \(Self.name(of: target))?",
+                isPresented: $isConfirmingDelete
+            ) {
+                Button("Open System Settings") { SystemSettings.open(.languageAndRegion) }
+            } message: {
+                Text(
+                    "macOS keeps translation languages for all apps, so they're deleted in System Settings: click "
+                        + "Translation Languages under Language & Region, then the trash next to each language. "
+                        + "Other apps that translate, such as Translate, lose them too."
+                )
+            }
     }
 
     private func requestDownload(from source: String, to target: String) {
@@ -168,18 +221,42 @@ struct TranslationSettingsView: View {
         await refreshStatus()
     }
 
+    /// Checks which languages are downloaded, for the menu.
+    private func refreshStatuses() async {
+        let source = sourceLanguage
+        let statuses = await AppleTranslator.statuses(from: source, to: choices)
+        // The transcription language may have changed while macOS was asked.
+        guard source == sourceLanguage, !Task.isCancelled else { return }
+        // The chosen languages' status is kept until made sure of again, so their buttons don't
+        // flicker: macOS may say they're installed when they aren't.
+        let target = preferences.translationLanguage
+        let kept = checkedSource == source && madeSure.contains(target) ? self.statuses[target] : nil
+        self.statuses = statuses
+        madeSure = []
+        if let kept {
+            self.statuses[target] = kept
+            madeSure = [target]
+        }
+        checkedSource = source
+    }
+
+    /// Makes sure whether the chosen languages are downloaded.
     private func refreshStatus() async {
         let target = preferences.translationLanguage
         let source = sourceLanguage
-        let status = await AppleTranslator.status(from: source, to: target)
+        guard !AppleTranslator.isSameLanguage(source, target) else { return }
+        let status = await AppleTranslator.checkedStatus(from: source, to: target)
         // The languages may have changed while macOS was asked.
-        guard source == sourceLanguage, target == preferences.translationLanguage else { return }
-        self.status = status
+        guard source == sourceLanguage, target == preferences.translationLanguage, checkedSource == source
+        else { return }
+        statuses[target] = status
+        madeSure.insert(target)
     }
 
     private var footer: String {
         "Adds a translation above the transcript, and writes the summary and title in that language. "
-            + "Apple's translation models do it on this Mac, with Apple Intelligence where it's on. For "
+            + "Apple's translation models do it on this Mac, with Apple Intelligence where it's on. A green "
+            + "check marks the languages downloaded for recordings in \(Self.name(of: sourceLanguage)). For "
             + "recordings in other languages, download those under System Settings → General → Language "
             + "& Region → Translation Languages.\n\nWith a live model, the live text can be translated as "
             + "it's spoken too, under each line in Record and in the Dynamic Island, so you can follow a "
