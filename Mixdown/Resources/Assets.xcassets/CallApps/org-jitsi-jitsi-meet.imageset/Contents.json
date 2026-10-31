@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "org-jitsi-jitsi-meet.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}
