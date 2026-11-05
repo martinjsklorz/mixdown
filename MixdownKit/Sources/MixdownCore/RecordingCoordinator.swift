@@ -65,10 +65,6 @@ public final class RecordingCoordinator {
     /// none of their tracks would be.
     nonisolated static let minimumRecordingDuration = NotePipeline.minimumTrackDuration
 
-    /// See `NotePipeline.liveFeedSampleCount`; recordings feed their live sessions like the
-    /// pipeline does.
-    nonisolated static let liveFeedSampleCount = NotePipeline.liveFeedSampleCount
-
     public internal(set) var phase: Phase = .idle {
         didSet { modelError = nil }
     }

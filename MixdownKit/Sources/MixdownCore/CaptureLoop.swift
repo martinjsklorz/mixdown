@@ -6,7 +6,7 @@ import os
 /// On the way it fills gaps with silence, moves the audio back by the time the recording spent
 /// paused, writes system audio into the echo reference and takes the echo out of microphones,
 /// measures the level and finds speech, hands the audio to a live session in
-/// `RecordingCoordinator.liveFeedSampleCount` pieces, and keeps it on disk.
+/// `NotePipeline.liveFeedSampleCount` pieces, and keeps it on disk.
 struct CaptureLoop: Sendable {
     /// Audio handed to a live session.
     struct LiveFeed: Sendable {
@@ -87,7 +87,7 @@ struct CaptureLoop: Sendable {
             writer?.write(samples, startHostTime: track.startHostTime)
             guard let liveFeed else { return }
             unfed.append(contentsOf: samples)
-            if unfed.count >= RecordingCoordinator.liveFeedSampleCount {
+            if unfed.count >= NotePipeline.liveFeedSampleCount {
                 liveFeed.yield(LiveFeed(samples: unfed, startHostTime: track.startHostTime))
                 unfed.removeAll(keepingCapacity: true)
             }
