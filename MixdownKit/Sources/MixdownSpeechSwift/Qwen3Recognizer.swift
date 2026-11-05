@@ -1,5 +1,4 @@
 import Foundation
-import MixdownCore
 @preconcurrency internal import Qwen3ASR
 
 /// Qwen3-ASR (MLX). Plain text, no timestamps, so the engine feeds it short VAD pieces.

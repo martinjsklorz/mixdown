@@ -1,6 +1,5 @@
 @preconcurrency internal import CohereTranscribeASR
 import Foundation
-import MixdownCore
 
 /// Cohere Transcribe 2B (MLX). Plain text, no timestamps, so the engine feeds it short VAD pieces.
 ///

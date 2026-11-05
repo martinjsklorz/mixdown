@@ -46,23 +46,28 @@ final class IslandController {
 
     // MARK: Observation
     //
-    // Like `AppEnvironment`'s, each `observe…` method reads what it depends on in
-    // `withObservationTracking`, acts on it, and re-registers itself on the next change.
+    // Like `AppEnvironment`'s, each `observe…` method acts on what it depends on now and on every
+    // change to it, with `observeContinuously`.
 
     /// Shows the Dynamic Island while recording, if it's turned on, and lays it out again when its
     /// settings change.
     private func observeDynamicIsland() {
-        guard let environment else { return }
-        let (shows, layout) = withObservationTracking {
+        observeContinuously(self) { (island: IslandController) -> (Bool, DynamicIsland.Layout)? in
+            guard let environment = island.environment else { return nil }
             let coordinator = environment.coordinator
             let preferences = environment.preferences
             var layout = preferences.islandLayout
             // Only a live model has words to show while recording.
             layout.showsLiveText = layout.showsLiveText && coordinator.showsLiveTranscript
             return (coordinator.isRecording && preferences.showsRecordingInDynamicIsland, layout)
-        } onChange: { [weak self] in
-            Task { @MainActor in self?.observeDynamicIsland() }
+        } onValue: { island, value in
+            guard let (shows, layout) = value else { return }
+            island.dynamicIslandChanged(shows: shows, layout: layout)
         }
+    }
+
+    private func dynamicIslandChanged(shows: Bool, layout: DynamicIsland.Layout) {
+        guard let environment else { return }
         if shows {
             let island =
                 dynamicIsland
@@ -85,12 +90,14 @@ final class IslandController {
     /// otherwise, and shows the field for `momentDraft` while there is one. A recording that
     /// stops closes the field, dropping a moment not yet added with Return.
     private func observeMoments() {
-        guard let environment else { return }
-        let (isRecording, draft) = withObservationTracking {
-            (environment.coordinator.isRecording, momentDraft)
-        } onChange: { [weak self] in
-            Task { @MainActor in self?.observeMoments() }
+        observeContinuously(self) {
+            ($0.environment?.coordinator.isRecording ?? false, $0.momentDraft)
+        } onValue: {
+            $0.momentsChanged(isRecording: $1.0, draft: $1.1)
         }
+    }
+
+    private func momentsChanged(isRecording: Bool, draft: MomentDraft?) {
         if isRecording {
             KeyboardShortcuts.enable(.markMoment)
         } else {
@@ -112,12 +119,14 @@ final class IslandController {
     /// otherwise, and shows the card for `catchUpRequest` while there is one. A recording that
     /// stops closes the card.
     private func observeCatchUp() {
-        guard let environment else { return }
-        let (isRecording, request) = withObservationTracking {
-            (environment.coordinator.isRecording, catchUpRequest)
-        } onChange: { [weak self] in
-            Task { @MainActor in self?.observeCatchUp() }
+        observeContinuously(self) {
+            ($0.environment?.coordinator.isRecording ?? false, $0.catchUpRequest)
+        } onValue: {
+            $0.catchUpChanged(isRecording: $1.0, request: $1.1)
         }
+    }
+
+    private func catchUpChanged(isRecording: Bool, request: CatchUpRequest?) {
         if isRecording {
             KeyboardShortcuts.enable(.catchUp)
         } else {

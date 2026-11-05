@@ -120,7 +120,7 @@ struct AudioImportTests {
 
     @Test func liveEngineIsFedTheFileInPieces() async throws {
         let writer = InMemoryNoteWriter()
-        let piece = RecordingCoordinator.liveFeedSampleCount
+        let piece = NotePipeline.liveFeedSampleCount
         let session = MockLiveSession(
             updatesBySampleCount: [100: LiveTranscriptUpdate(words: [LiveWord(text: "Hello.", start: 0.1, end: 0.5)])],
             finishUpdate: LiveTranscriptUpdate(words: [LiveWord(text: "Bye.", start: 0.6, end: 0.9)])

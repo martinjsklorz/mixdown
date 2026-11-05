@@ -1,6 +1,5 @@
 @preconcurrency internal import AudioCommon
 import Foundation
-import MixdownCore
 @preconcurrency internal import SpeechVAD
 
 /// Silero VAD over a whole recording.
